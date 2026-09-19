@@ -125,3 +125,44 @@ Gotchas:
 Next session needs:
 - MainWindow.player is the shared engine; VoicesPage.select(voice_id) opens a voice in the player, open_note(voice_id, note_id) also focuses a note
 - Player API: load/play/pause/toggle/seek/skip/set_speed, signals position_changed/state_changed
+
+## Session 4 — episode workspace, pipeline, inbox (v0.4-workspace)
+Done:
+- Episode workspace page (off-nav): title, status, next_action, tags, EpisodeNotes as tabs + autosaving editor (Ctrl+N new, Ctrl+Tab cycle), linked voices / ideas lists (click/Enter opens, Del unlinks, "افزودن…" picker with filter), Record button (Ctrl+R)
+- Clicking a linked voice opens it on the Voices page in the player; Alt+← (or the back button) returns
+- Smart-link side panel: voices + ideas sharing ≥1 tag with the episode, ranked; Enter/double-click or button links/unlinks, "باز کردن" opens
+- Resume screen at startup (last opened episode, its most recently edited note, next_action, one "ادامه" button; Esc → episodes). Continue opens the workspace with the cursor in that note
+- Status pipeline idea → outline → recorded → script_ready → edited → published; Kanban page (nav "تابلو"): drag & drop between columns, ←/→ between columns, Ctrl+←/→ moves the card, Enter opens
+- Stale marker (>10 days since updated_at, never for published) on board cards, Episodes list rows, workspace header, resume card
+- Idea Inbox: global Ctrl+Alt+I (RegisterHotKey) opens a small always-on-top window; Enter saves an IdeaNote and closes, Shift+Enter newline, Esc closes
+- Settings dialog (sidebar, Ctrl+,): recorder program path (+browse), hotkey status. Record launches it via os.startfile; the app never records
+- Nav is now Episodes, Board, Voices, Ideas, Tags = Ctrl+1..5; search hits on episode notes open the workspace at that note
+- Tests: tests/test_smart_link_ranking.py
+Key files:
+- src/podcast_workspace/domain/smart_links.py — LinkKind, LinkCandidate, rank_smart_links
+- src/podcast_workspace/domain/pipeline.py — PIPELINE order, STALE_AFTER, is_stale, days_untouched
+- src/podcast_workspace/repositories/migrations/versions/20260919_c41e8b7d2f05_status_pipeline.py — status value remap
+- src/podcast_workspace/services/content_services.py — EpisodeService.set_status/link/smart_links/resume, ResumeInfo, EpisodeNoteService
+- src/podcast_workspace/services/recording.py — launch_recorder
+- src/podcast_workspace/ui/pages/{episode_workspace,board_page,resume_page}.py
+- src/podcast_workspace/ui/{hotkey,idea_inbox,settings_dialog}.py
+- src/podcast_workspace/ui/main_window.py — show_page/go_back history, open_episode/open_voice/open_idea
+Decisions:
+- Ranking: shared-tag count, then recency (voice imported_at / idea updated_at), then id. Exact tag ids only; parent/child tags do not count as shared
+- Smart panel lists linked items too (marked "پیوندشده ✓") so it doubles as a link/unlink surface
+- Stale = updated_at older than 10 days; note edits, link changes and status moves touch the episode, just opening it does not
+- Migration maps outlining→outline, recording→recorded, editing→edited, archived→published (no archived state in the new pipeline)
+- "Last edited note" is derived (max EpisodeNote.updated_at of the last opened episode); nothing extra stored
+- Hotkey registered on the main window HWND, caught with a native event filter; virtual-key codes so it works on the Persian layout. Only while the app is running (no tray yet)
+- Existing Episodes list page kept; it gains "ورود به فضای کار" (Ctrl+Enter / double-click)
+Gotchas:
+- Board columns: QListWidget's default sizeHint (256 px) forced horizontal scrolling; _Column overrides sizeHint/minimumSizeHint
+- Board cards paint with QApplication.palette(): the column's stylesheet makes its own palette transparent (cards rendered black)
+- Board drop: the status change is deferred with QTimer.singleShot(0) because the refresh clears the source list while its drag loop is still running
+- "·" next to Persian digits reads as ۰ (Persian zero is a dot); new strings use "،" or ":" instead
+- EpisodeWorkspacePage ignores its own data_changed emits (_own_change) to avoid refreshing links on every autosave
+- Inbox is a parentless Qt.Tool window: it does not keep the app alive and has no taskbar entry
+Next session needs:
+- Bale bot can create ideas through Workspace.ideas.create and emit AppEvents.data_changed on the GUI thread (use run_async / queued signals)
+- Transcription can hang off VoicesPage (voice id + file path) and store text as TimestampNotes (TimestampNoteService.add)
+- Export: EpisodeService.get + EpisodeNoteService.list_for_episode + linked voice/idea ids give everything an episode holds

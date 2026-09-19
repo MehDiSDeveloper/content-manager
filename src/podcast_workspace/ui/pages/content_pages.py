@@ -4,7 +4,7 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QHideEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -28,6 +28,7 @@ from podcast_workspace.services.content_services import ImportReport
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.pages.base import ListPage, Row
+from podcast_workspace.ui.pages.episode_workspace import stale_text
 from podcast_workspace.ui.player.player_widget import SKIP_MS, PlayerWidget
 from podcast_workspace.ui.player.timestamp_panel import TimestampPanel
 from podcast_workspace.ui.support import (
@@ -54,6 +55,8 @@ def _first_line(text: str, width: int = 70) -> str:
 
 
 class EpisodesPage(ListPage):
+    open_workspace = Signal(int)
+
     def __init__(self, workspace: Workspace, events: AppEvents) -> None:
         super().__init__(strings.EPISODES_TITLE, strings.EPISODE_NEW, strings.EPISODE_EMPTY)
         self._ws = workspace
@@ -87,15 +90,29 @@ class EpisodesPage(ListPage):
         col.addWidget(self.meta)
         col.addStretch(1)
         actions = QHBoxLayout()
+        enter = QPushButton(strings.EPISODE_OPEN_WORKSPACE)
+        enter.setToolTip("Ctrl+Enter")
+        enter.clicked.connect(self._open_current)
+        actions.addWidget(enter)
         actions.addStretch(1)
         delete = _danger_button(strings.DELETE)
         delete.clicked.connect(self._delete_current)
         actions.addWidget(delete)
         col.addLayout(actions)
+        self.list.itemDoubleClicked.connect(lambda _i: self._open_current())
+        QShortcut(QKeySequence("Ctrl+Return"), self, activated=self._open_current)
+
+    def _open_current(self) -> None:
+        item_id = self.current_id()
+        if item_id is not None:
+            self.open_workspace.emit(item_id)
 
     def _row(self, episode: Episode) -> Row:
         assert episode.id is not None
         subtitle = strings.STATUS_LABELS[episode.status]
+        badge = stale_text(episode)
+        if badge:
+            subtitle = badge + "  ·  " + subtitle
         if episode.next_action:
             subtitle += "  ·  " + episode.next_action
         return Row(episode.id, episode.title, subtitle)

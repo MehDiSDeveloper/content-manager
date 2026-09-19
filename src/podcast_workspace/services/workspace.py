@@ -15,6 +15,7 @@ from podcast_workspace.repositories.db import (
     migrate,
 )
 from podcast_workspace.services.content_services import (
+    EpisodeNoteService,
     EpisodeService,
     IdeaService,
     TimestampNoteService,
@@ -32,6 +33,7 @@ class Workspace:
         self.writes = WriteCounter(session_factory)
         self.settings = SettingsService(session_factory)
         self.episodes = EpisodeService(session_factory)
+        self.episode_notes = EpisodeNoteService(session_factory)
         self.ideas = IdeaService(session_factory)
         self.voices = VoiceService(session_factory)
         self.timestamp_notes = TimestampNoteService(session_factory)

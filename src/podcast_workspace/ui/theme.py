@@ -91,6 +91,9 @@ def _palette(c: Colors) -> QPalette:
     return p
 
 
+STALE = "#d97706"
+
+
 def _stylesheet(c: Colors) -> str:
     return f"""
     QMainWindow, #content {{ background: {c.window}; }}
@@ -101,7 +104,7 @@ def _stylesheet(c: Colors) -> str:
     #dialogTitle {{ font-size: 13pt; font-weight: 600; }}
     #emptyHint {{ font-size: 11pt; color: {c.muted}; padding: 32px; }}
     #muted {{ color: {c.muted}; }}
-    #warning {{ color: #d97706; }}
+    #warning {{ color: {STALE}; }}
 
     #navButton {{
         text-align: right; padding: 9px 14px; border: none; border-radius: 6px;
@@ -212,6 +215,57 @@ def _stylesheet(c: Colors) -> str:
     QToolButton#captureChip[captured="true"] {{
         background: {c.accent}; color: {c.accent_text}; border-color: {c.accent};
     }}
+
+    #fieldLabel {{ color: {c.muted}; font-size: 9.5pt; font-weight: 600; }}
+    QPushButton#flatButton {{
+        background: transparent; border: 1px solid transparent; color: {c.accent};
+        padding: 4px 10px;
+    }}
+    QPushButton#flatButton:hover {{ background: {c.hover}; }}
+    QPushButton#flatButton:focus {{ border: 2px solid {c.accent}; padding: 3px 9px; }}
+    QPushButton#recordButton {{ color: #dc2626; font-weight: 600; }}
+    QToolButton#backButton {{
+        background: transparent; color: {c.muted}; border: none; border-radius: 6px;
+        padding: 6px 10px;
+    }}
+    QToolButton#backButton:hover {{ background: {c.hover}; color: {c.text}; }}
+    QToolButton#backButton:focus {{ border: 2px solid {c.accent}; }}
+    #staleBadge {{
+        color: {STALE}; border: 1px solid {STALE}; border-radius: 10px; padding: 2px 10px;
+        font-size: 9pt; font-weight: 600;
+    }}
+    #sidePanel {{ background: {c.sidebar}; border: 1px solid {c.border}; border-radius: 10px; }}
+    #sidePanel QListWidget {{ background: {c.surface}; }}
+    QLineEdit#noteTitle {{ font-size: 12pt; font-weight: 600; }}
+    QPlainTextEdit#noteBody {{ font-size: 11.5pt; padding: 12px; }}
+    QTabBar#noteTabs::tab {{
+        background: transparent; color: {c.muted}; padding: 6px 14px; margin: 0 2px;
+        border: none; border-bottom: 2px solid transparent; max-width: 220px;
+    }}
+    QTabBar#noteTabs::tab:hover {{ color: {c.text}; }}
+    QTabBar#noteTabs::tab:selected {{
+        color: {c.text}; font-weight: 600; border-bottom: 2px solid {c.accent};
+    }}
+    QTabBar#noteTabs:focus {{ border: 1px dashed {c.accent}; }}
+
+    #boardFrame {{ background: {c.sidebar}; border-radius: 10px; }}
+    #columnTitle {{ font-weight: 600; color: {c.text}; }}
+    QListWidget#boardColumn {{ background: transparent; border: none; padding: 0; }}
+    QListWidget#boardColumn::item, QListWidget#boardColumn::item:selected,
+    QListWidget#boardColumn::item:hover {{ background: transparent; color: {c.text}; }}
+    QListWidget#boardColumn:focus {{ border: none; }}
+    #boardScroll, #boardHost {{ background: transparent; }}
+
+    #resumeCard {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 14px; }}
+    #eyebrow {{ color: {c.accent}; font-weight: 600; font-size: 10pt; }}
+    #resumeTitle {{ font-size: 20pt; font-weight: 600; color: {c.text}; }}
+    #resumeNext {{ font-size: 13pt; color: {c.text}; }}
+    #resumeNoteTitle {{ font-size: 11pt; font-weight: 600; color: {c.text}; }}
+
+    #inboxFrame {{
+        background: {c.surface}; border: 1px solid {c.accent}; border-radius: 12px;
+    }}
+    QPlainTextEdit#inboxText {{ font-size: 12pt; }}
 
     QToolTip {{
         background: {c.surface}; color: {c.text}; border: 1px solid {c.border}; padding: 4px;

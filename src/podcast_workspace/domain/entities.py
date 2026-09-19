@@ -24,12 +24,14 @@ def utcnow() -> datetime:
 
 
 class EpisodeStatus(StrEnum):
+    """The production pipeline, in order (Kanban columns follow this order)."""
+
     IDEA = "idea"
-    OUTLINING = "outlining"
-    RECORDING = "recording"
-    EDITING = "editing"
+    OUTLINE = "outline"
+    RECORDED = "recorded"
+    SCRIPT_READY = "script_ready"
+    EDITED = "edited"
     PUBLISHED = "published"
-    ARCHIVED = "archived"
 
 
 class Taggable:

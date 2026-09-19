@@ -34,11 +34,11 @@ UNTITLED_NOTE = "یادداشت بی‌عنوان"
 
 STATUS_LABELS = {
     EpisodeStatus.IDEA: "ایده",
-    EpisodeStatus.OUTLINING: "طرح‌ریزی",
-    EpisodeStatus.RECORDING: "ضبط",
-    EpisodeStatus.EDITING: "تدوین",
+    EpisodeStatus.OUTLINE: "طرح کلی",
+    EpisodeStatus.RECORDED: "ضبط‌شده",
+    EpisodeStatus.SCRIPT_READY: "متن آماده",
+    EpisodeStatus.EDITED: "تدوین‌شده",
     EpisodeStatus.PUBLISHED: "منتشرشده",
-    EpisodeStatus.ARCHIVED: "بایگانی",
 }
 
 EPISODES_TITLE = "اپیزودها"
@@ -143,3 +143,71 @@ TS_EMPTY = "هنوز یادداشتی برای این صدا نیست. هنگا�
 TS_EDIT = "ویرایش (F2)"
 TS_DELETE = "حذف (Delete)"
 TS_DELETE_CONFIRM = "یادداشت «{text}» حذف شود؟"
+
+NAV_BOARD = "تابلو"
+BOARD_TITLE = "تابلوی تولید"
+BOARD_COLUMN_COUNT = "{n}"
+BOARD_HINT = "کارت‌ها را بین ستون‌ها بکشید یا Ctrl+←/→ بزنید؛ Enter باز می‌کند"
+STALE_BADGE = "راکد: {days} روز"
+STALE_TOOLTIP = "بیش از ۱۰ روز است که این اپیزود دست نخورده"
+EPISODE_OPEN_WORKSPACE = "ورود به فضای کار"
+
+WS_BACK = "بازگشت"
+WS_BACK_TOOLTIP = "بازگشت (Alt+←)"
+WS_NOTES = "یادداشت‌ها"
+WS_NOTE_NEW = "یادداشت تازه"
+WS_NOTE_TITLE_PLACEHOLDER = "عنوان یادداشت (اختیاری)"
+WS_NOTE_BODY_PLACEHOLDER = "بنویسید… (خودکار ذخیره می‌شود)"
+WS_NOTES_EMPTY = "این اپیزود هنوز یادداشتی ندارد. با «یادداشت تازه» (Ctrl+N) شروع کنید."
+WS_NOTE_DELETE = "حذف یادداشت"
+WS_NOTE_DELETE_CONFIRM = "یادداشت «{title}» حذف شود؟"
+WS_LINKED_VOICES = "صداهای پیوندشده"
+WS_LINKED_IDEAS = "ایده‌های پیوندشده"
+WS_LINK_ADD = "افزودن…"
+WS_LINKED_EMPTY = "—"
+WS_UNLINK = "برداشتن پیوند (Delete)"
+WS_OPEN = "باز کردن (Enter)"
+WS_SMART = "پیشنهادهای هم‌برچسب"
+WS_SMART_NO_TAGS = "به اپیزود برچسب بدهید تا صداها و ایده‌های هم‌برچسب اینجا بیایند."
+WS_SMART_NONE = "صدا یا ایده‌ای با برچسب مشترک پیدا نشد."
+WS_SMART_SUBTITLE = "{kind}، {n} برچسب مشترک: {names}"
+WS_SMART_LINKED = "پیوندشده ✓"
+WS_LINK = "پیوند دادن"
+WS_UNLINK_SHORT = "برداشتن پیوند"
+WS_RECORD = "ضبط"
+WS_RECORD_TOOLTIP = "اجرای برنامهٔ ضبط شما (Ctrl+R)"
+WS_PICK_VOICE = "افزودن صدا به اپیزود"
+WS_PICK_IDEA = "افزودن ایده به اپیزود"
+WS_PICK_FILTER = "فیلتر…"
+WS_PICK_ADD = "افزودن"
+WS_PICK_EMPTY = "موردی برای افزودن نیست."
+KIND_VOICE = "صدا"
+KIND_IDEA = "ایده"
+
+RESUME_EYEBROW = "ادامهٔ کار"
+RESUME_NEXT_ACTION = "قدم بعدی"
+RESUME_NO_NEXT = "قدم بعدی هنوز تعیین نشده."
+RESUME_LAST_NOTE = "آخرین یادداشت"
+RESUME_NO_NOTE = "هنوز یادداشتی ندارد."
+RESUME_CONTINUE = "ادامه"
+RESUME_SKIP = "همهٔ اپیزودها (Esc)"
+
+INBOX_TITLE = "ایدهٔ تازه"
+INBOX_PLACEHOLDER = "ایده را بنویسید…"
+INBOX_HINT = "Enter ذخیره · Shift+Enter خط تازه · Esc بستن"
+
+SETTINGS = "تنظیمات"
+SETTINGS_TOOLTIP = "تنظیمات (Ctrl+,)"
+SETTINGS_RECORDER = "برنامهٔ ضبط"
+SETTINGS_RECORDER_HINT = (
+    "مسیر برنامه‌ای که با آن ضبط می‌کنید. دکمهٔ «ضبط» همان را اجرا می‌کند؛ "
+    "این اپلیکیشن خودش صدا ضبط نمی‌کند."
+)
+SETTINGS_BROWSE = "انتخاب…"
+SETTINGS_PROGRAM_DIALOG = "انتخاب برنامهٔ ضبط"
+SETTINGS_PROGRAM_FILTER = "برنامه‌ها (*.exe *.lnk *.bat *.cmd);;همهٔ فایل‌ها (*)"
+SETTINGS_HOTKEY = "میانبر سراسری ایده"
+SETTINGS_HOTKEY_OK = "{keys} — در هر برنامه‌ای یک پنجرهٔ کوچک برای ثبت ایده باز می‌کند."
+SETTINGS_HOTKEY_FAIL = "{keys} در دسترس نیست؛ برنامهٔ دیگری آن را گرفته است."
+SAVE = "ذخیره"
+RECORDER_MISSING = "برنامهٔ ضبط در این مسیر پیدا نشد:\n{path}"

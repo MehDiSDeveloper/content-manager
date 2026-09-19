@@ -8,12 +8,19 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from podcast_workspace.domain.entities import (
     Episode,
+    EpisodeNote,
     EpisodeStatus,
     IdeaNote,
     TimestampNote,
     Voice,
 )
 from podcast_workspace.domain.errors import DomainError
+from podcast_workspace.domain.smart_links import (
+    LinkCandidate,
+    LinkKind,
+    SmartLink,
+    rank_smart_links,
+)
 from podcast_workspace.repositories.unit_of_work import UnitOfWork
 from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS, probe
 
@@ -74,9 +81,105 @@ class EpisodeService:
             episode.touch()
             return uow.episodes.update(episode)
 
+    def set_status(self, episode_id: int, status: EpisodeStatus) -> Episode:
+        with UnitOfWork(self._sf) as uow:
+            episode = uow.episodes.get(episode_id)
+            if episode.status is status:
+                return episode
+            episode.status = status
+            episode.touch()
+            return uow.episodes.update(episode)
+
+    def link(self, episode_id: int, kind: LinkKind, item_id: int, linked: bool) -> Episode:
+        """Attach or detach a Voice / IdeaNote. Counts as touching the episode."""
+        with UnitOfWork(self._sf) as uow:
+            episode = uow.episodes.get(episode_id)
+            ids = episode.voice_ids if kind is LinkKind.VOICE else episode.idea_note_ids
+            if (item_id in ids) == linked:
+                return episode
+            if linked:
+                ids.add(item_id)
+            else:
+                ids.discard(item_id)
+            episode.touch()
+            return uow.episodes.update(episode)
+
+    def smart_links(self, episode_id: int) -> list[SmartLink]:
+        with UnitOfWork(self._sf) as uow:
+            episode = uow.episodes.get(episode_id)
+            candidates = [
+                LinkCandidate(LinkKind.VOICE, v.id, frozenset(v.tag_ids), v.imported_at)
+                for v in uow.voices.list_all()
+                if v.id is not None
+            ] + [
+                LinkCandidate(LinkKind.IDEA, i.id, frozenset(i.tag_ids), i.updated_at)
+                for i in uow.idea_notes.list_all()
+                if i.id is not None
+            ]
+        return rank_smart_links(episode.tag_ids, candidates)
+
+    def resume(self) -> "ResumeInfo | None":
+        """The last opened episode and its most recently edited note."""
+        with UnitOfWork(self._sf) as uow:
+            opened = [e for e in uow.episodes.list_all() if e.last_opened_at is not None]
+            if not opened:
+                return None
+            episode = max(opened, key=lambda e: e.last_opened_at or e.updated_at)
+            assert episode.id is not None
+            notes = uow.episode_notes.list_for_episode(episode.id)
+        note = max(notes, key=lambda n: n.updated_at) if notes else None
+        return ResumeInfo(episode, note)
+
     def delete(self, episode_id: int) -> None:
         with UnitOfWork(self._sf) as uow:
             uow.episodes.delete(episode_id)
+
+
+@dataclass(frozen=True)
+class ResumeInfo:
+    episode: Episode
+    note: EpisodeNote | None
+
+
+class EpisodeNoteService:
+    """Long-form notes inside an episode. Every change touches the episode (stale marker)."""
+
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._sf = session_factory
+
+    def list_for_episode(self, episode_id: int) -> list[EpisodeNote]:
+        with UnitOfWork(self._sf) as uow:
+            return uow.episode_notes.list_for_episode(episode_id)
+
+    def get(self, note_id: int) -> EpisodeNote:
+        with UnitOfWork(self._sf) as uow:
+            return uow.episode_notes.get(note_id)
+
+    def create(self, episode_id: int, title: str = "", body: str = "") -> EpisodeNote:
+        with UnitOfWork(self._sf) as uow:
+            self._touch(uow, episode_id)
+            return uow.episode_notes.add(EpisodeNote(episode_id=episode_id, title=title, body=body))
+
+    def update(self, note_id: int, title: str, body: str) -> EpisodeNote:
+        with UnitOfWork(self._sf) as uow:
+            note = uow.episode_notes.get(note_id)
+            if (note.title, note.body) == (title.strip(), body):
+                return note
+            note.edit(title, body)
+            self._touch(uow, note.episode_id)
+            return uow.episode_notes.update(note)
+
+    def delete(self, note_id: int) -> None:
+        with UnitOfWork(self._sf) as uow:
+            note = uow.episode_notes.get(note_id)
+            self._touch(uow, note.episode_id)
+            uow.episode_notes.delete(note_id)
+
+    @staticmethod
+    def _touch(uow: UnitOfWork, episode_id: int) -> None:
+        episode = uow.episodes.get(episode_id)
+        episode.touch()
+        uow.episodes.update(episode)
 
 
 class IdeaService:

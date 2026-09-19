@@ -15,6 +15,7 @@ class Theme(StrEnum):
 
 THEME_KEY = "ui.theme"
 GEOMETRY_KEY = "ui.window_geometry"
+RECORDER_KEY = "recording.program_path"
 
 
 class SettingsService:
@@ -39,3 +40,13 @@ class SettingsService:
     def set_window_geometry(self, geometry: bytes) -> None:
         with UnitOfWork(self._session_factory) as uow:
             uow.settings.set(GEOMETRY_KEY, base64.b64encode(geometry).decode("ascii"))
+
+    def recorder_path(self) -> str:
+        """Path of the user's external recording program ("" = not set)."""
+        with UnitOfWork(self._session_factory) as uow:
+            value = uow.settings.get(RECORDER_KEY)
+        return value if isinstance(value, str) else ""
+
+    def set_recorder_path(self, path: str) -> None:
+        with UnitOfWork(self._session_factory) as uow:
+            uow.settings.set(RECORDER_KEY, path.strip())
