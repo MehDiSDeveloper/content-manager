@@ -93,17 +93,79 @@ def _stylesheet(c: Colors) -> str:
     QMainWindow, #content {{ background: {c.window}; }}
     #sidebar {{ background: {c.sidebar}; border-left: 1px solid {c.border}; }}
     #appTitle {{ font-size: 13pt; font-weight: 600; color: {c.text}; }}
-    #emptyTitle {{ font-size: 20pt; font-weight: 600; color: {c.text}; }}
-    #emptyHint {{ font-size: 11pt; color: {c.muted}; }}
+    #pageTitle {{ font-size: 18pt; font-weight: 600; color: {c.text}; }}
+    #editorTitle {{ font-size: 15pt; font-weight: 600; color: {c.text}; }}
+    #dialogTitle {{ font-size: 13pt; font-weight: 600; }}
+    #emptyHint {{ font-size: 11pt; color: {c.muted}; padding: 32px; }}
+    #muted {{ color: {c.muted}; }}
+    #warning {{ color: #d97706; }}
+
+    #navButton {{
+        text-align: right; padding: 9px 14px; border: none; border-radius: 6px;
+        background: transparent; color: {c.text};
+    }}
+    #navButton:hover {{ background: {c.hover}; }}
+    #navButton:checked {{
+        background: {c.surface}; font-weight: 600; border-right: 3px solid {c.accent};
+    }}
+    #navButton:focus {{ border: 2px solid {c.accent}; }}
+
     QPushButton {{
         background: {c.surface}; color: {c.text};
-        border: 1px solid {c.border}; border-radius: 6px; padding: 7px 14px;
+        border: 1px solid {c.border}; border-radius: 6px; padding: 7px 16px;
     }}
     QPushButton:hover {{ background: {c.hover}; }}
-    QPushButton:focus {{ border: 2px solid {c.accent}; }}
+    QPushButton:focus {{ border: 2px solid {c.accent}; padding: 6px 15px; }}
+    QPushButton:disabled {{ color: {c.muted}; }}
     QPushButton#primary {{
-        background: {c.accent}; color: {c.accent_text}; border: none;
+        background: {c.accent}; color: {c.accent_text}; font-weight: 600;
+        border: 2px solid {c.accent}; padding: 6px 15px;
     }}
+    QPushButton#primary:focus {{ border: 2px solid {c.text}; }}
+    QPushButton#danger {{ color: #dc2626; }}
+
+    QLineEdit, QPlainTextEdit, QComboBox {{
+        background: {c.surface}; color: {c.text}; border: 1px solid {c.border};
+        border-radius: 6px; padding: 7px 10px; selection-background-color: {c.accent};
+        selection-color: {c.accent_text};
+    }}
+    QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus {{
+        border: 2px solid {c.accent}; padding: 6px 9px;
+    }}
+    QLineEdit#titleEdit {{ font-size: 16pt; font-weight: 600; padding: 8px 12px; }}
+    QLineEdit#searchBar {{ padding: 9px 14px; border-radius: 8px; font-size: 11pt; }}
+    QPlainTextEdit#ideaText {{ font-size: 12pt; padding: 12px; }}
+
+    QListWidget, QTreeWidget {{
+        background: {c.surface}; border: 1px solid {c.border}; border-radius: 8px;
+        outline: none; padding: 4px;
+    }}
+    QListWidget::item, QTreeWidget::item {{ border-radius: 6px; padding: 4px; }}
+    QListWidget::item:hover, QTreeWidget::item:hover {{ background: {c.hover}; }}
+    QListWidget::item:selected, QTreeWidget::item:selected {{
+        background: {c.accent}; color: {c.accent_text};
+    }}
+    QListWidget:focus, QTreeWidget:focus {{ border: 2px solid {c.accent}; }}
+    QListWidget#suggestions {{ padding: 2px; }}
+    QListWidget#suggestions::item {{ padding: 6px 8px; }}
+    QListWidget#results::item {{ margin: 1px 0; }}
+    QListWidget#results::item:selected {{
+        background: {c.hover}; color: {c.text}; border: 2px solid {c.accent};
+    }}
+    QHeaderView::section {{
+        background: {c.surface}; color: {c.muted}; border: none; padding: 6px 8px;
+        border-bottom: 1px solid {c.border};
+    }}
+
+    #kindBadge {{
+        background: {c.hover}; color: {c.muted}; border-radius: 4px; padding: 1px 8px;
+        font-size: 9pt;
+    }}
+    #hitTitle {{ font-size: 11pt; color: {c.text}; }}
+    #hitSnippet {{ color: {c.muted}; }}
+    #chipClose {{ border: none; background: transparent; color: {c.muted}; padding: 0 4px; }}
+    #chipClose:hover {{ color: {c.text}; }}
+
     QToolTip {{
         background: {c.surface}; color: {c.text}; border: 1px solid {c.border}; padding: 4px;
     }}

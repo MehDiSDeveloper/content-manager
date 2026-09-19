@@ -14,6 +14,7 @@ from podcast_workspace.repositories.repos import (
     TimestampNoteRepository,
     VoiceRepository,
 )
+from podcast_workspace.repositories.search_repo import SearchRepository
 
 
 class UnitOfWork:
@@ -25,6 +26,7 @@ class UnitOfWork:
     episode_notes: EpisodeNoteRepository
     tags: TagRepository
     settings: SettingsRepository
+    search: SearchRepository
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
@@ -38,6 +40,7 @@ class UnitOfWork:
         self.episode_notes = EpisodeNoteRepository(self.session)
         self.tags = TagRepository(self.session)
         self.settings = SettingsRepository(self.session)
+        self.search = SearchRepository(self.session)
         return self
 
     def __exit__(

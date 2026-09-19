@@ -44,3 +44,48 @@ Gotchas:
 Next session needs:
 - Workspace is the only thing the UI receives; add new services onto it
 - MainWindow.content is a QStackedWidget ready for screens; sidebar has a stretch placeholder for nav items
+
+## Session 2 — CRUD screens, tag system, search (v0.2-crud)
+Done:
+- Sidebar nav (Ctrl+1..4): Episodes, Voices, Ideas, Tags pages; global search bar (Ctrl+K / Ctrl+F) above the page stack
+- Episodes: create (Ctrl+N, focuses title), list, autosave edit (title/status/next_action), tags, delete (Del + confirm)
+- Voices: import via dialog (Ctrl+N/Ctrl+O) or drag-drop files/folders, off the UI thread; dedupe by path; tags (15 max); show in Explorer; delete = remove from workspace only, file untouched
+- Ideas: draft-until-first-text, debounced autosave (700 ms), flush on page hide/close, tags (15 max), delete
+- Tag manager: create (dialog lists similar tags, blocks exact dupes), rename (F2 inline), recolor, nest/unnest, merge, delete (children move up one level), fuzzy filter; usage counts
+- TagInput widget: the only place tags get attached; live fuzzy suggestions, Enter picks highlighted existing tag, "create" row is always last and warns when similar exists; Backspace removes last chip; counter + read-only at 15
+- Search: FTS5 over episode title/next_action, idea text, episode notes, timestamp notes, tag names, voice paths; tag hits also pull in items carrying that tag; typo correction; results page with kind badge + highlighted snippet, Enter opens item in its page
+- Dates in Jalali calendar with Persian digits
+- Tests: tests/test_tag_matching.py (fuzzy behaviour only)
+Key files:
+- src/podcast_workspace/domain/tag_matching.py — scoring, gate, rank_tags, find_exact, near_duplicates
+- src/podcast_workspace/domain/text.py — normalize_for_match / normalize_for_index, query_terms, find_spans, make_snippet
+- src/podcast_workspace/domain/search.py — SearchKind codes, rowid scheme, SearchHit/SearchResult
+- src/podcast_workspace/repositories/migrations/versions/20260919_a7f3c2d91e10_search_index.py — FTS tables + triggers
+- src/podcast_workspace/repositories/search_repo.py — raw FTS queries, vocabulary, rebuild
+- src/podcast_workspace/services/{tag_service,content_services,search_service,audio_probe}.py
+- src/podcast_workspace/ui/widgets/tag_input.py — TagInput; tag_widgets.py (chip, SuggestionList); tag_dialogs.py
+- src/podcast_workspace/ui/pages/base.py — ListPage master/detail + TwoLineDelegate; content_pages.py; tags_page.py; search_page.py
+- src/podcast_workspace/ui/support.py — Jalali/duration formatting, error text, confirm, AppEvents, run_async
+Decisions:
+- Tag score = max(token_set_ratio, partial_ratio, word_prefix); non-substring hits must pass a per-word OSA typo budget (1 edit ≤6 letters, 2 beyond), else token_set_ratio × matched-word fraction. Reason: partial_ratio alone scored روان vs ایران 86
+- "Exact" tag match compares with spaces/ZWNJ removed: روانشناسی == روان‌شناسی; create refuses exact dupes, near-dupes (≥88) need explicit consent
+- FTS rowid = source_id*8 + kind; triggers call pw_norm() (Python, registered per connection) so index text is normalized (Arabic ي/ك, diacritics, digits, ZWNJ removed)
+- Two FTS tables: search_word (unicode61, prefix queries, bm25 title weight 4) and search_sub (trigram, substrings ≥3 chars); typo pass only when <5 hits, corrects terms against fts5vocab
+- Vocabulary cached, invalidated by WriteCounter (SQLAlchemy after_flush); warmed in background 1.5 s after writes
+- Search runs synchronously on the UI thread (90 ms debounce): 1–40 ms on 3k notes / 30k-term vocab
+- Voices never copy audio; duration via ffprobe (resources/bin/ffprobe.exe or PATH), stdlib wave fallback, else 0
+- TagService caches all tags in memory for instant suggestions; invalidated on its own writes
+Gotchas:
+- Any connection writing to source tables needs pw_norm(); only engines from repositories/db.create_sqlite_engine have it. Batch-altering a source table drops its triggers — recreate with the helper in migration a7f3c2d91e10
+- env.py ignores tables named search_* in autogenerate; `alembic check` must stay clean
+- QTest.keyClicks with Persian text crashes the process (0xC0000409); send QKeyEvent(KeyPress, 0, NoModifier, ch) instead
+- QLocale.toString has no (QDateTime, str, QCalendar) overload in PySide6; Jalali built via QCalendar.partsFromDate + monthName
+- Mixed Persian/Latin/digit lines need RLM marks (see ui/pages/base.py _rtl) or digits jump to the wrong side
+- QListWidget item widgets report size before layout; search rows use explicit font-based heights
+- run_async callbacks arrive on the GUI thread (relay QObject); verified
+- Creating an Episode on "new" writes a placeholder title "اپیزود تازه" immediately (Ideas instead wait for text)
+Next session needs:
+- Voice page editor has room below tags for a player; VoiceService.get gives file_path/duration_ms
+- TimestampNote repository + FTS triggers already exist; search opens TIMESTAMP_NOTE hits on the owning voice (owner_id)
+- AppEvents.data_changed must be emitted after new writes so search vocabulary refreshes
+- ffmpeg/ffprobe still not bundled; drop binaries into src/podcast_workspace/resources/bin/

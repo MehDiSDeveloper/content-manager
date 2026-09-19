@@ -32,7 +32,7 @@ def main() -> int:
     try:
         theme = ThemeManager(app, workspace.settings)
         theme.apply()
-        window = MainWindow(workspace.settings, theme)
+        window = MainWindow(workspace, theme)
         window.show()
         return app.exec()
     finally:

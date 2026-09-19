@@ -3,7 +3,7 @@
 import json
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from podcast_workspace.domain.entities import (
     Episode,
@@ -58,6 +58,62 @@ class TagRepository(SqlRepository[Tag, TagRow]):
         condition = TagRow.parent_id.is_(None) if tag_id is None else TagRow.parent_id == tag_id
         rows = self.session.scalars(select(TagRow).where(condition).order_by(TagRow.name))
         return [self._to_domain(row) for row in rows]
+
+    def usage_counts(self) -> dict[int, int]:
+        """Tag id -> number of episodes, voices and ideas carrying it."""
+        rows = self.session.execute(
+            text(
+                "SELECT tag_id, COUNT(*) FROM ("
+                " SELECT tag_id FROM episode_tags UNION ALL"
+                " SELECT tag_id FROM voice_tags UNION ALL"
+                " SELECT tag_id FROM idea_note_tags) GROUP BY tag_id"
+            )
+        )
+        return {tag_id: count for tag_id, count in rows}
+
+    def delete_keeping_children(self, tag_id: int) -> None:
+        """Delete a tag; its children move up to its parent instead of becoming roots."""
+        parent_id = self._row(tag_id).parent_id
+        self.session.execute(
+            text("UPDATE tags SET parent_id = :parent WHERE parent_id = :tag"),
+            {"parent": parent_id, "tag": tag_id},
+        )
+        self.session.expire_all()
+        self.delete(tag_id)
+
+    def merge_into(self, source_id: int, target_id: int) -> None:
+        """Move every use of `source` onto `target`, then delete `source`.
+
+        Never grows an item's tag count (an item holding both ends with one), so the
+        15-tag limit cannot be violated by a merge.
+        """
+        if source_id == target_id:
+            return
+        source, target = self._row(source_id), self._row(target_id)
+        params = {"source": source_id, "target": target_id}
+        for table, column in (
+            ("episode_tags", "episode_id"),
+            ("voice_tags", "voice_id"),
+            ("idea_note_tags", "idea_note_id"),
+        ):
+            self.session.execute(
+                text(
+                    f"INSERT OR IGNORE INTO {table} ({column}, tag_id) "
+                    f"SELECT {column}, :target FROM {table} WHERE tag_id = :source"
+                ),
+                params,
+            )
+        self.session.execute(
+            text("UPDATE tags SET parent_id = :target WHERE parent_id = :source AND id != :target"),
+            params,
+        )
+        if target.parent_id == source_id:  # target nested under source: lift it one level
+            self.session.execute(
+                text("UPDATE tags SET parent_id = :parent WHERE id = :target"),
+                {"parent": source.parent_id, "target": target_id},
+            )
+        self.session.expire_all()
+        self.delete(source_id)
 
 
 class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):

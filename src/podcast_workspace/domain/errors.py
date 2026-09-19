@@ -25,3 +25,20 @@ class NotFoundError(DomainError):
         super().__init__(f"{entity} #{entity_id} does not exist.")
         self.entity = entity
         self.entity_id = entity_id
+
+
+class DuplicateTagError(DomainError):
+    """A tag with the same (normalized) name already exists."""
+
+    def __init__(self, existing_name: str, existing_id: int) -> None:
+        super().__init__(f"Tag {existing_name!r} already exists.")
+        self.existing_name = existing_name
+        self.existing_id = existing_id
+
+
+class NearDuplicateTagError(DomainError):
+    """Similar tags exist; the caller must confirm before creating another."""
+
+    def __init__(self, similar_names: list[str]) -> None:
+        super().__init__(f"Similar tags exist: {', '.join(similar_names)}")
+        self.similar_names = similar_names

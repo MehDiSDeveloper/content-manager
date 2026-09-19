@@ -1,5 +1,7 @@
 """Alembic environment. Used both by the CLI (alembic.ini) and by db.migrate() at app start."""
 
+from typing import Any
+
 from alembic import context
 from sqlalchemy import Connection
 
@@ -11,12 +13,20 @@ config = context.config
 target_metadata = Base.metadata
 
 
+def _include_object(
+    obj: Any, name: str | None, type_: str, reflected: bool, compare_to: Any
+) -> bool:
+    # FTS5 virtual tables and their shadow tables are managed by hand-written migrations.
+    return not (type_ == "table" and name is not None and name.startswith("search_"))
+
+
 def _run(connection: Connection) -> None:
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
         render_as_batch=True,  # SQLite cannot ALTER most things; batch mode rebuilds tables
         compare_type=True,
+        include_object=_include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
