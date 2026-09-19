@@ -9,6 +9,8 @@ dependencies = [
     "alembic>=1.13",
     "rapidfuzz>=3.9",
     "requests>=2.32",
+    "numpy>=2.0",
+    "imageio-ffmpeg>=0.5",  # ships the ffmpeg binary used for all decoding
 ]
 
 [project.optional-dependencies]

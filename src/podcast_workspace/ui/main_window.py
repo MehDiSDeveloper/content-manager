@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from podcast_workspace.audio.engine import Player
 from podcast_workspace.domain.search import SearchHit, SearchKind
 from podcast_workspace.services.settings_service import Theme
 from podcast_workspace.services.workspace import Workspace
@@ -42,7 +43,8 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1000, 640)
 
         self.episodes_page = EpisodesPage(workspace, self.events)
-        self.voices_page = VoicesPage(workspace, self.events)
+        self.player = Player(self)
+        self.voices_page = VoicesPage(workspace, self.events, self.player)
         self.ideas_page = IdeasPage(workspace, self.events)
         self.tags_page = TagsPage(workspace, self.events)
         self.search_page = SearchPage()
@@ -208,7 +210,9 @@ class MainWindow(QMainWindow):
         self.search.clear()
         self.search.blockSignals(False)
         self.navigate(index)
-        if item_id is not None:
+        if hit.kind is SearchKind.TIMESTAMP_NOTE and item_id is not None:
+            self.voices_page.open_note(item_id, hit.source_id)
+        elif item_id is not None:
             self._pages[index].select(item_id)
 
     def _warm_up_search(self) -> None:
@@ -245,4 +249,5 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         self.ideas_page.flush()  # a pending idea autosave must not be lost
         self._ws.settings.set_window_geometry(bytes(self.saveGeometry().data()))
+        self.player.shutdown()
         super().closeEvent(event)

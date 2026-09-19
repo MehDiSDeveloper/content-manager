@@ -145,6 +145,12 @@ class TimestampNote:
         self.position_ms = ensure_non_negative(self.position_ms, "position_ms")
         self.text = normalize_persian(ensure_non_empty(self.text, "Timestamp note text"))
 
+    def edit(self, text: str) -> None:
+        self.text = normalize_persian(ensure_non_empty(text, "Timestamp note text"))
+
+    def move_to(self, position_ms: int) -> None:
+        self.position_ms = ensure_non_negative(position_ms, "position_ms")
+
 
 @dataclass(eq=False)
 class EpisodeNote:

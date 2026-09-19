@@ -1,11 +1,14 @@
 """Episodes, Voices and Ideas pages: create, list, edit (autosave), delete."""
 
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QHideEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QAbstractButton,
+    QApplication,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -17,6 +20,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from podcast_workspace.audio.engine import Player
 from podcast_workspace.domain.entities import Episode, EpisodeStatus, IdeaNote, Voice
 from podcast_workspace.domain.rules import MAX_TAGS_PER_ITEM
 from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS
@@ -24,6 +28,8 @@ from podcast_workspace.services.content_services import ImportReport
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.pages.base import ListPage, Row
+from podcast_workspace.ui.player.player_widget import SKIP_MS, PlayerWidget
+from podcast_workspace.ui.player.timestamp_panel import TimestampPanel
 from podcast_workspace.ui.support import (
     AppEvents,
     confirm,
@@ -179,11 +185,12 @@ class EpisodesPage(ListPage):
 
 
 class VoicesPage(ListPage):
-    def __init__(self, workspace: Workspace, events: AppEvents) -> None:
+    def __init__(self, workspace: Workspace, events: AppEvents, player: Player) -> None:
         super().__init__(strings.VOICES_TITLE, strings.VOICE_IMPORT, strings.VOICE_EMPTY)
         self._ws = workspace
         self._events = events
         self._voice: Voice | None = None
+        self._pending_note: int | None = None
         self.setAcceptDrops(True)
         self.primary.setToolTip("Ctrl+N / Ctrl+O")
 
@@ -199,7 +206,7 @@ class VoicesPage(ListPage):
         col.addWidget(self.path)
         self.missing = QLabel(strings.VOICE_MISSING, objectName="warning")
         col.addWidget(self.missing)
-        self.meta = QLabel()
+        self.meta = QLabel(objectName="muted")
         col.addWidget(self.meta)
 
         form = QFormLayout()
@@ -207,7 +214,13 @@ class VoicesPage(ListPage):
         self.tag_input.tags_changed.connect(self._save_tags)
         form.addRow(strings.TAG_LABEL, self.tag_input)
         col.addLayout(form)
-        col.addStretch(1)
+
+        self.player = PlayerWidget(player)
+        self.player.exact_duration.connect(self._store_exact_duration)
+        col.addSpacing(6)
+        col.addWidget(self.player)
+        self.notes = TimestampPanel(workspace, events, self.player)
+        col.addWidget(self.notes, 1)
 
         actions = QHBoxLayout()
         show = QPushButton(strings.VOICE_SHOW_IN_FOLDER)
@@ -220,6 +233,33 @@ class VoicesPage(ListPage):
         col.addLayout(actions)
 
         QShortcut(QKeySequence.StandardKey.Open, self, activated=self.primary_action)
+        self._install_player_keys()
+
+    def _install_player_keys(self) -> None:
+        """Player keys work anywhere on this page. A focused line edit keeps Space, arrows and
+        printable keys for itself (Qt gives it first claim through ShortcutOverride)."""
+        context = Qt.ShortcutContext.WidgetWithChildrenShortcut
+        player = self.player.player
+        bindings: list[tuple[str, Callable[[], None]]] = [
+            ("Space", self._space),
+            ("Ctrl+Space", player.toggle),
+            ("Right", lambda: player.skip(SKIP_MS)),
+            ("Left", lambda: player.skip(-SKIP_MS)),
+            ("-", lambda: player.step_speed(-1)),
+            ("=", lambda: player.step_speed(1)),
+            ("+", lambda: player.step_speed(1)),
+            ("Insert", self.notes.begin_note),
+            ("Ctrl+Return", self.notes.begin_note),
+        ]
+        for keys, handler in bindings:
+            QShortcut(QKeySequence(keys), self, activated=handler, context=context)
+
+    def _space(self) -> None:
+        focus = QApplication.focusWidget()
+        if isinstance(focus, QAbstractButton):
+            focus.animateClick()  # Space still presses a focused button
+        else:
+            self.player.player.toggle()
 
     def _row(self, voice: Voice) -> Row:
         assert voice.id is not None
@@ -241,14 +281,46 @@ class VoicesPage(ListPage):
         self.name.setText(Path(voice.file_path).name)
         self.path.setText(voice.file_path)
         self.missing.setVisible(not Path(voice.file_path).exists())
-        self.meta.setText(
+        self.meta.setText(self._meta_text(voice))
+        self.tag_input.set_tag_ids(voice.tag_ids)
+        assert voice.id is not None
+        self.player.open_voice(voice.id, Path(voice.file_path), voice.duration_ms)
+        self.notes.set_voice(voice.id)
+        if self._pending_note is not None:
+            self.notes.focus_note(self._pending_note)
+            self._pending_note = None
+
+    def clear_editor(self) -> None:
+        self._voice = None
+        self.player.close_voice()
+        self.notes.set_voice(None)
+
+    def open_note(self, voice_id: int, note_id: int) -> None:
+        """Search hit on a timestamp note: open its voice with that note focused."""
+        self._pending_note = note_id
+        self.select(voice_id)
+        if self._pending_note is not None:
+            self.notes.focus_note(note_id)
+            self._pending_note = None
+
+    def focus_editor(self) -> None:
+        self.player.waveform.setFocus()
+
+    def _meta_text(self, voice: Voice) -> str:
+        return (
             f"{format_duration(voice.duration_ms)}  ·  {voice.format.upper()}  ·  "
             + strings.IMPORTED_AT.format(when=format_datetime(voice.imported_at))
         )
-        self.tag_input.set_tag_ids(voice.tag_ids)
 
-    def focus_editor(self) -> None:
-        self.tag_input.edit.setFocus()
+    def _store_exact_duration(self, voice_id: int, duration_ms: int) -> None:
+        try:
+            voice = self._ws.voices.set_duration(voice_id, duration_ms)
+        except Exception:
+            return  # informational only; the voice may have been removed meanwhile
+        if self._voice is not None and self._voice.id == voice_id:
+            self._voice = voice
+            self.meta.setText(self._meta_text(voice))
+        self.update_row(self._row(voice))
 
     def _save_tags(self, tag_ids: list[int]) -> None:
         voice = self._voice

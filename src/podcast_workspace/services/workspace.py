@@ -14,7 +14,12 @@ from podcast_workspace.repositories.db import (
     make_session_factory,
     migrate,
 )
-from podcast_workspace.services.content_services import EpisodeService, IdeaService, VoiceService
+from podcast_workspace.services.content_services import (
+    EpisodeService,
+    IdeaService,
+    TimestampNoteService,
+    VoiceService,
+)
 from podcast_workspace.services.search_service import SearchService
 from podcast_workspace.services.settings_service import SettingsService
 from podcast_workspace.services.tag_service import TagService
@@ -29,6 +34,7 @@ class Workspace:
         self.episodes = EpisodeService(session_factory)
         self.ideas = IdeaService(session_factory)
         self.voices = VoiceService(session_factory)
+        self.timestamp_notes = TimestampNoteService(session_factory)
         self.tags = TagService(session_factory)
         self.search = SearchService(session_factory, self.writes)
 

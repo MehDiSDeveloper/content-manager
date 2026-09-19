@@ -46,6 +46,14 @@ def format_duration(ms: int) -> str:
     return fa_digits(text)
 
 
+def format_clock(ms: int) -> str:
+    """Playback clock: m:ss, or h:mm:ss past an hour. Persian digits."""
+    seconds = max(0, ms) // 1000
+    hours, rest = divmod(seconds, 3600)
+    minutes, secs = divmod(rest, 60)
+    return fa_digits(f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}")
+
+
 def describe_error(exc: BaseException) -> str:
     match exc:
         case TagLimitExceededError():

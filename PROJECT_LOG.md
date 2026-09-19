@@ -89,3 +89,39 @@ Next session needs:
 - TimestampNote repository + FTS triggers already exist; search opens TIMESTAMP_NOTE hits on the owning voice (owner_id)
 - AppEvents.data_changed must be emitted after new writes so search vocabulary refreshes
 - ffmpeg/ffprobe still not bundled; drop binaries into src/podcast_workspace/resources/bin/
+
+## Session 3 — audio player, timestamp notes (v0.3-player)
+Done:
+- Playback-only player on the Voices page: waveform (peaks, played part in accent, note markers, hover time, click/drag seek), −10/+10 s, play/pause, speed 0.5–2× (atempo, pitch kept), clock
+- All decoding through ffmpeg (mp3, wav, m4a/aac, flac, ogg, opus, wma verified); nothing uses Windows codecs
+- Engine on its own QThread; ffmpeg stdout read on a reader thread; UI thread only gets queued position/state signals
+- Exact seeking verified sample-accurate for all formats (see seek cache)
+- TimestampNote panel under the player: composer, notes in time order, go-to button per row, inline edit (F2/double-click), delete, context menu
+- Activation window [pos−5 s, pos+10 s]: row highlight + accent, waveform marker accent, auto-scroll; several active at once
+- Waveform pass stores the exact duration back to the Voice; search hits on timestamp notes open the voice with the note focused
+- Keys (Voices page): Space / Ctrl+Space play-pause, ←/→ ∓10 s, - / = speed, Insert or Ctrl+Enter new note at playhead; note rows: Enter go-to, F2, Del, ↑/↓
+- Tests: tests/test_activation_window.py
+Key files:
+- src/podcast_workspace/audio/ffmpeg.py — binary lookup (resources/bin → imageio-ffmpeg → PATH), probe via ffmpeg stderr
+- src/podcast_workspace/audio/engine.py — _Decoder, _Engine (QAudioSink push mode), Player facade
+- src/podcast_workspace/audio/waveform.py — peak/RMS extraction, npz cache, FLAC seek cache
+- src/podcast_workspace/domain/activation.py — LEAD_MS/TRAIL_MS, ActivationTracker (bisect, entered/left diff)
+- src/podcast_workspace/services/content_services.py — TimestampNoteService, VoiceService.set_duration
+- src/podcast_workspace/ui/player/{player_widget,waveform_view,timestamp_panel,icons}.py
+Decisions:
+- ffmpeg comes from the imageio-ffmpeg wheel (gyan.dev 7.1 essentials, has rubberband, no soxr); a resources/bin/ffmpeg.exe overrides it for packaging
+- Output runs at the device mix rate as float32; if the file differs, ffmpeg resamples once (swr filter_size=64; soxr if the build has it) instead of leaving it to the shared-mode mixer
+- Position = segment start + QAudioSink.processedUSecs × speed; every seek/speed change restarts ffmpeg with -ss before -i. Seek generation numbers drop stale position reports
+- VBR mp3 and wma seek up to ~70 ms off in ffmpeg. The waveform pass writes a 16-bit dithered FLAC copy for those (data_dir/cache/waveforms, LRU 4 GB) and the engine decodes from it once ready
+- Note position is captured at the first keystroke / Insert, not at Enter, so typing time does not shift it
+- Media timeline and transport are always LTR (not mirrored) inside the RTL UI
+- One Player for the whole app (MainWindow.player); PlayerWidget.is_current() tells whether it holds this voice
+Gotchas:
+- PySide 6.11: compare sink states with QtAudio.State, not QAudio.State (different enums, == is always False)
+- Letter shortcuts don't fire with the Persian keyboard layout; player keys are layout-free (Space, arrows, -, =, Insert)
+- Notes panel uses QScrollArea + VBox rows (not QListWidget item widgets) because word-wrapped rows need heightForWidth
+- Waveform/npz and FLAC caches key on path+size+mtime; editing the file invalidates them automatically
+- First engine use costs ~1 s (WASAPI init + ffmpeg -buildconf); Player warms up on construction
+Next session needs:
+- MainWindow.player is the shared engine; VoicesPage.select(voice_id) opens a voice in the player, open_note(voice_id, note_id) also focuses a note
+- Player API: load/play/pause/toggle/seek/skip/set_speed, signals position_changed/state_changed

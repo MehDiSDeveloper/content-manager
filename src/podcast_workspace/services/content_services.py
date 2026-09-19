@@ -6,7 +6,13 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from podcast_workspace.domain.entities import Episode, EpisodeStatus, IdeaNote, Voice
+from podcast_workspace.domain.entities import (
+    Episode,
+    EpisodeStatus,
+    IdeaNote,
+    TimestampNote,
+    Voice,
+)
 from podcast_workspace.domain.errors import DomainError
 from podcast_workspace.repositories.unit_of_work import UnitOfWork
 from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS, probe
@@ -157,7 +163,48 @@ class VoiceService:
             voice.set_tags(set(tag_ids))
             return uow.voices.update(voice)
 
+    def set_duration(self, voice_id: int, duration_ms: int) -> Voice:
+        """Store the exact duration measured by a full decode (import-time probes can be off)."""
+        with UnitOfWork(self._sf) as uow:
+            voice = uow.voices.get(voice_id)
+            if abs(voice.duration_ms - duration_ms) < 50:
+                return voice
+            voice.duration_ms = duration_ms
+            return uow.voices.update(voice)
+
     def delete(self, voice_id: int) -> None:
         """Removes the voice from the workspace only. The audio file stays on disk."""
         with UnitOfWork(self._sf) as uow:
             uow.voices.delete(voice_id)
+
+
+class TimestampNoteService:
+    """Notes pinned to a position inside one Voice. Separate from IdeaNote by design."""
+
+    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+        self._sf = session_factory
+
+    def list_for_voice(self, voice_id: int) -> list[TimestampNote]:
+        """Sorted by position_ms (then id)."""
+        with UnitOfWork(self._sf) as uow:
+            notes = uow.timestamp_notes.list_for_voice(voice_id)
+        return sorted(notes, key=lambda n: (n.position_ms, n.id or 0))
+
+    def add(self, voice_id: int, position_ms: int, text: str) -> TimestampNote:
+        with UnitOfWork(self._sf) as uow:
+            uow.voices.get(voice_id)  # NotFoundError if the voice is gone
+            return uow.timestamp_notes.add(
+                TimestampNote(voice_id=voice_id, position_ms=position_ms, text=text)
+            )
+
+    def edit(self, note_id: int, text: str) -> TimestampNote:
+        with UnitOfWork(self._sf) as uow:
+            note = uow.timestamp_notes.get(note_id)
+            if note.text == text.strip():
+                return note
+            note.edit(text)
+            return uow.timestamp_notes.update(note)
+
+    def delete(self, note_id: int) -> None:
+        with UnitOfWork(self._sf) as uow:
+            uow.timestamp_notes.delete(note_id)

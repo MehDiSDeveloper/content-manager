@@ -27,6 +27,7 @@ class Colors:
     accent: str
     accent_text: str
     hover: str
+    accent_soft: str
 
 
 LIGHT = Colors(
@@ -39,6 +40,7 @@ LIGHT = Colors(
     accent="#005fb8",
     accent_text="#ffffff",
     hover="#e8e8e8",
+    accent_soft="#e3eefa",
 )
 DARK = Colors(
     window="#202020",
@@ -50,6 +52,7 @@ DARK = Colors(
     accent="#60cdff",
     accent_text="#000000",
     hover="#2f2f2f",
+    accent_soft="#1d3848",
 )
 
 
@@ -165,6 +168,50 @@ def _stylesheet(c: Colors) -> str:
     #hitSnippet {{ color: {c.muted}; }}
     #chipClose {{ border: none; background: transparent; color: {c.muted}; padding: 0 4px; }}
     #chipClose:hover {{ color: {c.text}; }}
+
+    #sectionTitle {{ font-size: 12pt; font-weight: 600; color: {c.text}; }}
+    #clock {{ font-size: 12pt; font-weight: 600; color: {c.text}; min-width: 64px; }}
+    QPushButton#playButton {{
+        background: {c.accent}; border: 2px solid {c.accent}; border-radius: 24px; padding: 0;
+    }}
+    QPushButton#playButton:hover {{ background: {c.accent}; border-color: {c.text}; }}
+    QPushButton#playButton:focus {{ border: 2px solid {c.text}; padding: 0; }}
+    QPushButton#playButton:disabled {{ background: {c.hover}; border-color: {c.hover}; }}
+    QPushButton#transportButton {{
+        background: transparent; border: 1px solid transparent; border-radius: 20px; padding: 0;
+    }}
+    QPushButton#transportButton:hover {{ background: {c.hover}; }}
+    QPushButton#transportButton:focus {{ border: 2px solid {c.accent}; padding: 0; }}
+    QToolButton#speedButton {{
+        background: transparent; color: {c.text}; border: 1px solid {c.border};
+        border-radius: 6px; padding: 4px 10px; min-width: 44px;
+    }}
+    QToolButton#speedButton:hover {{ background: {c.hover}; }}
+    QToolButton#speedButton::menu-indicator {{ image: none; width: 0; }}
+
+    #noteScroll, #noteHost {{ background: transparent; }}
+    #noteRow {{ background: transparent; border-radius: 6px; border: 2px solid transparent; }}
+    #noteRow:hover {{ background: {c.hover}; }}
+    #noteRow[active="true"] {{
+        background: {c.accent_soft}; border-right: 3px solid {c.accent};
+    }}
+    #noteRow:focus {{ border: 2px solid {c.accent}; }}
+    #noteText {{ color: {c.text}; font-size: 10.5pt; }}
+    QToolButton#gotoButton {{
+        background: {c.hover}; color: {c.muted}; border: none; border-radius: 5px;
+        padding: 3px 8px; font-weight: 600;
+    }}
+    QToolButton#gotoButton:hover {{ color: {c.text}; }}
+    #noteRow[active="true"] QToolButton#gotoButton {{
+        background: {c.accent}; color: {c.accent_text};
+    }}
+    QToolButton#captureChip {{
+        background: {c.hover}; color: {c.muted}; border: 1px solid {c.border};
+        border-radius: 6px; padding: 6px 10px; min-width: 52px;
+    }}
+    QToolButton#captureChip[captured="true"] {{
+        background: {c.accent}; color: {c.accent_text}; border-color: {c.accent};
+    }}
 
     QToolTip {{
         background: {c.surface}; color: {c.text}; border: 1px solid {c.border}; padding: 4px;
