@@ -16,6 +16,15 @@ _SOURCE_SQL: dict[SearchKind, str] = {
     SearchKind.TIMESTAMP_NOTE: "SELECT id, '' AS t, text AS b, voice_id AS o FROM timestamp_notes",
     SearchKind.TAG: "SELECT id, name AS t, '' AS b, NULL AS o FROM tags",
     SearchKind.VOICE: "SELECT id, file_path AS t, '' AS b, NULL AS o FROM voices",
+    SearchKind.TRANSCRIPT: "SELECT id, '' AS t, text AS b, voice_id AS o FROM transcripts",
+}
+
+# Display text differs from indexed text: a transcript hit is titled by its voice's file.
+_DISPLAY_SQL: dict[SearchKind, str] = {
+    SearchKind.TRANSCRIPT: (
+        "SELECT tr.id AS id, v.file_path AS t, tr.text AS b, tr.voice_id AS o "
+        "FROM transcripts tr JOIN voices v ON v.id = tr.voice_id"
+    ),
 }
 
 _TAG_LINKS: dict[SearchKind, tuple[str, str]] = {
@@ -66,8 +75,9 @@ class SearchRepository:
         result: dict[tuple[SearchKind, int], SourceText] = {}
         for kind, ids in by_kind.items():
             placeholders = ", ".join(str(int(i)) for i in ids)
+            sql = _DISPLAY_SQL.get(kind, _SOURCE_SQL[kind])
             rows = self.session.execute(
-                text(f"SELECT id, t, b, o FROM ({_SOURCE_SQL[kind]}) WHERE id IN ({placeholders})")
+                text(f"SELECT id, t, b, o FROM ({sql}) WHERE id IN ({placeholders})")
             )
             for source_id, title, body, owner in rows:
                 result[(kind, source_id)] = (title or "", body or "", owner)

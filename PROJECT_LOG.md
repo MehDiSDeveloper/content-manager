@@ -1,168 +1,100 @@
-# PROJECT_LOG
+# Podcast Workspace — architecture (v1.0)
 
-## Session 1 — foundation (v0.1-foundation)
-Done:
-- src layout, four layers (domain/repositories/services/ui), pyproject (hatchling), Ruff config, .venv on Python 3.12
-- Domain entities: Episode, Voice, IdeaNote, TimestampNote, EpisodeNote, Tag (+ EpisodeStatus enum); rules module
-- 15-tag limit enforced in domain (Taggable mixin, TAG_LIMIT) and re-checked in Voice/IdeaNote repositories
-- ORM rows + 5 link tables + settings table; Alembic initial migration; app migrates to head on every start
-- Repositories with get/find/list_all/add/update/delete for every entity; UnitOfWork (commit on clean exit, rollback on error)
-- SettingsService (theme, window geometry) stored as JSON in `settings` table
-- App shell: RTL main window, empty sidebar (right), empty content stack, light/dark toggle (button + Ctrl+T), dark native title bar, geometry persisted, clean close
-- Tests: tests/test_tag_limit.py (domain + repository boundary)
-Key files:
-- src/podcast_workspace/domain/entities.py — entities, Taggable mixin
-- src/podcast_workspace/domain/rules.py — tag limit, name/color normalization, parent-cycle check, normalize_persian
-- src/podcast_workspace/repositories/models.py — ORM rows, UTCDateTime type, link tables
-- src/podcast_workspace/repositories/repos.py — all repositories + SettingsRepository
-- src/podcast_workspace/repositories/unit_of_work.py — UnitOfWork
-- src/podcast_workspace/repositories/db.py — engine, pragmas, migrate()
-- src/podcast_workspace/repositories/migrations/ — Alembic env + versions
-- src/podcast_workspace/services/workspace.py — composition root (Workspace.open/close)
-- src/podcast_workspace/ui/{app,main_window,theme,strings}.py — shell, theming, Persian strings
-- src/podcast_workspace/paths.py — %APPDATA%\PodcastWorkspace, PODCAST_WORKSPACE_HOME override
-Decisions:
-- Separate ORM rows and domain dataclasses (not imperative mapping): UI gets detached plain objects, no lazy-load surprises across threads
-- Entities hold relations as id sets (tag_ids, voice_ids, idea_note_ids); repos resolve them to rows and raise NotFoundError for unknown ids
-- Settings in SQLite (one file to back up), not JSON
-- Datetimes: aware UTC in domain, naive UTC in SQLite via UTCDateTime; naive input raises
-- Arabic ي/ك/ى normalized to Persian at entity construction so equality/search work
-- Tag.name unique with NOCASE collation
-- Fusion style + palette + QSS instead of the "windows11" style: the latter ignores custom palettes, breaking dark mode
-- Font: loads any .ttf/.otf in resources/fonts (intended: Vazirmatn, OFL, not bundled yet — no downloads this session); falls back to Segoe UI
-- Python 3.12 obtained via uv (machine only had 3.14); uv installed with `python -m pip install --user uv`
-Gotchas:
-- Run the app: `.venv\Scripts\python -m podcast_workspace`; tests: `.venv\Scripts\python -m pytest`
-- New migration: `set PODCAST_WORKSPACE_HOME=<tmpdir>` then `.venv\Scripts\alembic revision --autogenerate -m "..."` — otherwise it autogenerates against your real DB
-- SQLite ALTER limits: env.py uses render_as_batch=True; keep it
-- Autogenerate emits `podcast_workspace...UTCDateTime()` in migrations; replace with sa.DateTime() (migrations must not import app code)
-- Repositories re-check the tag limit because callers can mutate `entity.tag_ids` in place
-- Ruff ignores RUF001-003 (Persian letters flagged as ambiguous unicode)
-- ffmpeg not bundled yet
-- Printing Persian to the console needs PYTHONIOENCODING=utf-8 (cp1252 default crashes)
-- QTimer.singleShot before QApplication exists never fires (bit the smoke script)
-Next session needs:
-- Workspace is the only thing the UI receives; add new services onto it
-- MainWindow.content is a QStackedWidget ready for screens; sidebar has a stretch placeholder for nav items
+Local-first Windows desktop workspace for a solo Persian podcaster: episodes, voices, ideas,
+tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3.12, PySide6.
 
-## Session 2 — CRUD screens, tag system, search (v0.2-crud)
-Done:
-- Sidebar nav (Ctrl+1..4): Episodes, Voices, Ideas, Tags pages; global search bar (Ctrl+K / Ctrl+F) above the page stack
-- Episodes: create (Ctrl+N, focuses title), list, autosave edit (title/status/next_action), tags, delete (Del + confirm)
-- Voices: import via dialog (Ctrl+N/Ctrl+O) or drag-drop files/folders, off the UI thread; dedupe by path; tags (15 max); show in Explorer; delete = remove from workspace only, file untouched
-- Ideas: draft-until-first-text, debounced autosave (700 ms), flush on page hide/close, tags (15 max), delete
-- Tag manager: create (dialog lists similar tags, blocks exact dupes), rename (F2 inline), recolor, nest/unnest, merge, delete (children move up one level), fuzzy filter; usage counts
-- TagInput widget: the only place tags get attached; live fuzzy suggestions, Enter picks highlighted existing tag, "create" row is always last and warns when similar exists; Backspace removes last chip; counter + read-only at 15
-- Search: FTS5 over episode title/next_action, idea text, episode notes, timestamp notes, tag names, voice paths; tag hits also pull in items carrying that tag; typo correction; results page with kind badge + highlighted snippet, Enter opens item in its page
-- Dates in Jalali calendar with Persian digits
-- Tests: tests/test_tag_matching.py (fuzzy behaviour only)
-Key files:
-- src/podcast_workspace/domain/tag_matching.py — scoring, gate, rank_tags, find_exact, near_duplicates
-- src/podcast_workspace/domain/text.py — normalize_for_match / normalize_for_index, query_terms, find_spans, make_snippet
-- src/podcast_workspace/domain/search.py — SearchKind codes, rowid scheme, SearchHit/SearchResult
-- src/podcast_workspace/repositories/migrations/versions/20260919_a7f3c2d91e10_search_index.py — FTS tables + triggers
-- src/podcast_workspace/repositories/search_repo.py — raw FTS queries, vocabulary, rebuild
-- src/podcast_workspace/services/{tag_service,content_services,search_service,audio_probe}.py
-- src/podcast_workspace/ui/widgets/tag_input.py — TagInput; tag_widgets.py (chip, SuggestionList); tag_dialogs.py
-- src/podcast_workspace/ui/pages/base.py — ListPage master/detail + TwoLineDelegate; content_pages.py; tags_page.py; search_page.py
-- src/podcast_workspace/ui/support.py — Jalali/duration formatting, error text, confirm, AppEvents, run_async
-Decisions:
-- Tag score = max(token_set_ratio, partial_ratio, word_prefix); non-substring hits must pass a per-word OSA typo budget (1 edit ≤6 letters, 2 beyond), else token_set_ratio × matched-word fraction. Reason: partial_ratio alone scored روان vs ایران 86
-- "Exact" tag match compares with spaces/ZWNJ removed: روانشناسی == روان‌شناسی; create refuses exact dupes, near-dupes (≥88) need explicit consent
-- FTS rowid = source_id*8 + kind; triggers call pw_norm() (Python, registered per connection) so index text is normalized (Arabic ي/ك, diacritics, digits, ZWNJ removed)
-- Two FTS tables: search_word (unicode61, prefix queries, bm25 title weight 4) and search_sub (trigram, substrings ≥3 chars); typo pass only when <5 hits, corrects terms against fts5vocab
-- Vocabulary cached, invalidated by WriteCounter (SQLAlchemy after_flush); warmed in background 1.5 s after writes
-- Search runs synchronously on the UI thread (90 ms debounce): 1–40 ms on 3k notes / 30k-term vocab
-- Voices never copy audio; duration via ffprobe (resources/bin/ffprobe.exe or PATH), stdlib wave fallback, else 0
-- TagService caches all tags in memory for instant suggestions; invalidated on its own writes
-Gotchas:
-- Any connection writing to source tables needs pw_norm(); only engines from repositories/db.create_sqlite_engine have it. Batch-altering a source table drops its triggers — recreate with the helper in migration a7f3c2d91e10
-- env.py ignores tables named search_* in autogenerate; `alembic check` must stay clean
-- QTest.keyClicks with Persian text crashes the process (0xC0000409); send QKeyEvent(KeyPress, 0, NoModifier, ch) instead
-- QLocale.toString has no (QDateTime, str, QCalendar) overload in PySide6; Jalali built via QCalendar.partsFromDate + monthName
-- Mixed Persian/Latin/digit lines need RLM marks (see ui/pages/base.py _rtl) or digits jump to the wrong side
-- QListWidget item widgets report size before layout; search rows use explicit font-based heights
-- run_async callbacks arrive on the GUI thread (relay QObject); verified
-- Creating an Episode on "new" writes a placeholder title "اپیزود تازه" immediately (Ideas instead wait for text)
-Next session needs:
-- Voice page editor has room below tags for a player; VoiceService.get gives file_path/duration_ms
-- TimestampNote repository + FTS triggers already exist; search opens TIMESTAMP_NOTE hits on the owning voice (owner_id)
-- AppEvents.data_changed must be emitted after new writes so search vocabulary refreshes
-- ffmpeg/ffprobe still not bundled; drop binaries into src/podcast_workspace/resources/bin/
+## Run
+- App: `.venv\Scripts\python -m podcast_workspace` · tests: `.venv\Scripts\python -m pytest` · lint: `ruff check src tests`, `ruff format src`
+- Data dir: `%APPDATA%\PodcastWorkspace` (override: `PODCAST_WORKSPACE_HOME`). Holds `workspace.db`, `cache/waveforms`, `bale_voices/`, `library/`, `backups/`, `models/`
+- Transcription is an optional extra: `pip install .[transcription]` (faster-whisper; installed in .venv)
+- Python 3.12 came from uv (`python -m uv ...`); the machine's default python is 3.14
 
-## Session 3 — audio player, timestamp notes (v0.3-player)
-Done:
-- Playback-only player on the Voices page: waveform (peaks, played part in accent, note markers, hover time, click/drag seek), −10/+10 s, play/pause, speed 0.5–2× (atempo, pitch kept), clock
-- All decoding through ffmpeg (mp3, wav, m4a/aac, flac, ogg, opus, wma verified); nothing uses Windows codecs
-- Engine on its own QThread; ffmpeg stdout read on a reader thread; UI thread only gets queued position/state signals
-- Exact seeking verified sample-accurate for all formats (see seek cache)
-- TimestampNote panel under the player: composer, notes in time order, go-to button per row, inline edit (F2/double-click), delete, context menu
-- Activation window [pos−5 s, pos+10 s]: row highlight + accent, waveform marker accent, auto-scroll; several active at once
-- Waveform pass stores the exact duration back to the Voice; search hits on timestamp notes open the voice with the note focused
-- Keys (Voices page): Space / Ctrl+Space play-pause, ←/→ ∓10 s, - / = speed, Insert or Ctrl+Enter new note at playhead; note rows: Enter go-to, F2, Del, ↑/↓
-- Tests: tests/test_activation_window.py
-Key files:
-- src/podcast_workspace/audio/ffmpeg.py — binary lookup (resources/bin → imageio-ffmpeg → PATH), probe via ffmpeg stderr
-- src/podcast_workspace/audio/engine.py — _Decoder, _Engine (QAudioSink push mode), Player facade
-- src/podcast_workspace/audio/waveform.py — peak/RMS extraction, npz cache, FLAC seek cache
-- src/podcast_workspace/domain/activation.py — LEAD_MS/TRAIL_MS, ActivationTracker (bisect, entered/left diff)
-- src/podcast_workspace/services/content_services.py — TimestampNoteService, VoiceService.set_duration
-- src/podcast_workspace/ui/player/{player_widget,waveform_view,timestamp_panel,icons}.py
-Decisions:
-- ffmpeg comes from the imageio-ffmpeg wheel (gyan.dev 7.1 essentials, has rubberband, no soxr); a resources/bin/ffmpeg.exe overrides it for packaging
-- Output runs at the device mix rate as float32; if the file differs, ffmpeg resamples once (swr filter_size=64; soxr if the build has it) instead of leaving it to the shared-mode mixer
-- Position = segment start + QAudioSink.processedUSecs × speed; every seek/speed change restarts ffmpeg with -ss before -i. Seek generation numbers drop stale position reports
-- VBR mp3 and wma seek up to ~70 ms off in ffmpeg. The waveform pass writes a 16-bit dithered FLAC copy for those (data_dir/cache/waveforms, LRU 4 GB) and the engine decodes from it once ready
-- Note position is captured at the first keystroke / Insert, not at Enter, so typing time does not shift it
-- Media timeline and transport are always LTR (not mirrored) inside the RTL UI
-- One Player for the whole app (MainWindow.player); PlayerWidget.is_current() tells whether it holds this voice
-Gotchas:
-- PySide 6.11: compare sink states with QtAudio.State, not QAudio.State (different enums, == is always False)
-- Letter shortcuts don't fire with the Persian keyboard layout; player keys are layout-free (Space, arrows, -, =, Insert)
-- Notes panel uses QScrollArea + VBox rows (not QListWidget item widgets) because word-wrapped rows need heightForWidth
-- Waveform/npz and FLAC caches key on path+size+mtime; editing the file invalidates them automatically
-- First engine use costs ~1 s (WASAPI init + ffmpeg -buildconf); Player warms up on construction
-Next session needs:
-- MainWindow.player is the shared engine; VoicesPage.select(voice_id) opens a voice in the player, open_note(voice_id, note_id) also focuses a note
-- Player API: load/play/pause/toggle/seek/skip/set_speed, signals position_changed/state_changed
+## Layers (never violate)
+- `domain/` — dataclass entities + pure rules. No I/O, no Qt, no SQLAlchemy
+- `repositories/` — SQLAlchemy rows, mapping to/from entities, Alembic, FTS SQL. `UnitOfWork` = one session + all repos, commit on clean exit
+- `services/` — use cases; the only thing the UI calls. `services/workspace.py` is the composition root (`Workspace.open()`)
+- `ui/` — PySide6. Receives a `Workspace`; never touches ORM/DB
+- Infrastructure beside the layers: `audio/` (ffmpeg, waveform, playback engine), `integrations/` (Bale HTTP client). Used by services (and the player UI for audio) only
+- Off the UI thread: voice import, search warm-up, waveform, playback engine (own QThread), transcription (thread pool), export/import (thread pool), model download (daemon thread), Bale polling (daemon thread)
 
-## Session 4 — episode workspace, pipeline, inbox (v0.4-workspace)
-Done:
-- Episode workspace page (off-nav): title, status, next_action, tags, EpisodeNotes as tabs + autosaving editor (Ctrl+N new, Ctrl+Tab cycle), linked voices / ideas lists (click/Enter opens, Del unlinks, "افزودن…" picker with filter), Record button (Ctrl+R)
-- Clicking a linked voice opens it on the Voices page in the player; Alt+← (or the back button) returns
-- Smart-link side panel: voices + ideas sharing ≥1 tag with the episode, ranked; Enter/double-click or button links/unlinks, "باز کردن" opens
-- Resume screen at startup (last opened episode, its most recently edited note, next_action, one "ادامه" button; Esc → episodes). Continue opens the workspace with the cursor in that note
-- Status pipeline idea → outline → recorded → script_ready → edited → published; Kanban page (nav "تابلو"): drag & drop between columns, ←/→ between columns, Ctrl+←/→ moves the card, Enter opens
-- Stale marker (>10 days since updated_at, never for published) on board cards, Episodes list rows, workspace header, resume card
-- Idea Inbox: global Ctrl+Alt+I (RegisterHotKey) opens a small always-on-top window; Enter saves an IdeaNote and closes, Shift+Enter newline, Esc closes
-- Settings dialog (sidebar, Ctrl+,): recorder program path (+browse), hotkey status. Record launches it via os.startfile; the app never records
-- Nav is now Episodes, Board, Voices, Ideas, Tags = Ctrl+1..5; search hits on episode notes open the workspace at that note
-- Tests: tests/test_smart_link_ranking.py
-Key files:
-- src/podcast_workspace/domain/smart_links.py — LinkKind, LinkCandidate, rank_smart_links
-- src/podcast_workspace/domain/pipeline.py — PIPELINE order, STALE_AFTER, is_stale, days_untouched
-- src/podcast_workspace/repositories/migrations/versions/20260919_c41e8b7d2f05_status_pipeline.py — status value remap
-- src/podcast_workspace/services/content_services.py — EpisodeService.set_status/link/smart_links/resume, ResumeInfo, EpisodeNoteService
-- src/podcast_workspace/services/recording.py — launch_recorder
-- src/podcast_workspace/ui/pages/{episode_workspace,board_page,resume_page}.py
-- src/podcast_workspace/ui/{hotkey,idea_inbox,settings_dialog}.py
-- src/podcast_workspace/ui/main_window.py — show_page/go_back history, open_episode/open_voice/open_idea
-Decisions:
-- Ranking: shared-tag count, then recency (voice imported_at / idea updated_at), then id. Exact tag ids only; parent/child tags do not count as shared
-- Smart panel lists linked items too (marked "پیوندشده ✓") so it doubles as a link/unlink surface
-- Stale = updated_at older than 10 days; note edits, link changes and status moves touch the episode, just opening it does not
-- Migration maps outlining→outline, recording→recorded, editing→edited, archived→published (no archived state in the new pipeline)
-- "Last edited note" is derived (max EpisodeNote.updated_at of the last opened episode); nothing extra stored
-- Hotkey registered on the main window HWND, caught with a native event filter; virtual-key codes so it works on the Persian layout. Only while the app is running (no tray yet)
-- Existing Episodes list page kept; it gains "ورود به فضای کار" (Ctrl+Enter / double-click)
-Gotchas:
-- Board columns: QListWidget's default sizeHint (256 px) forced horizontal scrolling; _Column overrides sizeHint/minimumSizeHint
-- Board cards paint with QApplication.palette(): the column's stylesheet makes its own palette transparent (cards rendered black)
-- Board drop: the status change is deferred with QTimer.singleShot(0) because the refresh clears the source list while its drag loop is still running
-- "·" next to Persian digits reads as ۰ (Persian zero is a dot); new strings use "،" or ":" instead
-- EpisodeWorkspacePage ignores its own data_changed emits (_own_change) to avoid refreshing links on every autosave
-- Inbox is a parentless Qt.Tool window: it does not keep the app alive and has no taskbar entry
-Next session needs:
-- Bale bot can create ideas through Workspace.ideas.create and emit AppEvents.data_changed on the GUI thread (use run_async / queued signals)
-- Transcription can hang off VoicesPage (voice id + file path) and store text as TimestampNotes (TimestampNoteService.add)
-- Export: EpisodeService.get + EpisodeNoteService.list_for_episode + linked voice/idea ids give everything an episode holds
+## Data model
+- Episode: title, status, next_action, created_at, updated_at, last_opened_at; tags; linked voices + ideas
+- Voice: file_path (referenced in place, never copied/moved/deleted), duration_ms, format, imported_at; ≤15 tags
+- IdeaNote: free text, created/updated; ≤15 tags. Raw material, no timestamp
+- TimestampNote: voice_id, position_ms, text. Separate entity from IdeaNote, never merge
+- EpisodeNote: episode_id, title, body (unlimited per episode)
+- Transcript: voice_id (unique: one per voice, re-run replaces), segments [(start_ms, end_ms, text)] as JSON, joined text column for FTS, model, language
+- Tag: name (unique, NOCASE), color, parent_id (hierarchy)
+- Link tables: episode_tags, voice_tags, idea_note_tags, episode_voices, episode_idea_notes. `settings` = key → JSON
+- Status pipeline: idea → outline → recorded → script_ready → edited → published
+- Migrations: 5c0bcd4c8144 schema · a7f3c2d91e10 FTS · c41e8b7d2f05 status remap · e5a91d3c7b28 transcripts
+
+## Where things live
+- Rules: `domain/rules.py` (15-tag limit, names, colors, hierarchy), `entities.py` (Taggable mixin enforces limit)
+- Tag matching: `domain/tag_matching.py`; UI entry point `ui/widgets/tag_input.py` (only place tags get attached in the app)
+- Search: `domain/search.py` (kinds, rowid scheme), `repositories/search_repo.py`, `services/search_service.py`, `ui/pages/search_page.py`
+- Player: `audio/engine.py`, `audio/waveform.py`, `ui/player/{player_widget,waveform_view,timestamp_panel,transcript_panel}.py`; activation window `domain/activation.py`
+- Workspace/board/resume: `ui/pages/{episode_workspace,board_page,resume_page}.py`; smart links `domain/smart_links.py`; stale `domain/pipeline.py`
+- Idea inbox hotkey: `ui/hotkey.py` (RegisterHotKey, Ctrl+Alt+I), `ui/idea_inbox.py`
+- Recorder handoff: `services/recording.py` (os.startfile of the configured program)
+- Bale bot: `integrations/bale_api.py` (HTTP), `domain/bot_input.py` (hashtag/tag-list parsing), `services/bale_bot.py` (worker + conversation), `ui/bot_controller.py` (Qt relay)
+- Transcription: `services/transcription.py`, `ui/player/transcript_panel.py` (`TranscriptionJobs` + panel)
+- Export/import: `services/backup.py`, `repositories/maintenance.py` (snapshot, wipe)
+- Settings: `services/settings_service.py`, `ui/settings_dialog.py` (tabs: general, bot, transcription, data)
+- All Persian UI text: `ui/strings.py`; bot-facing text: top of `services/bale_bot.py`
+- Tests (essential only): tag_matching, tag_limit, activation_window, smart_link_ranking
+
+## Key decisions (why)
+- Entities are plain dataclasses, separate from ORM rows: UI gets detached objects, no lazy loads across threads
+- Relations held as id sets on entities; repos resolve ids and raise NotFoundError on unknown ids
+- 15-tag limit checked in the entity AND again in the repository (callers can mutate `tag_ids` in place)
+- Datetimes: aware UTC in domain, naive UTC in SQLite (UTCDateTime); naive input raises
+- Arabic ي/ك/ى normalized to Persian at entity construction so equality and search work
+- Tag "exact" = equal after removing spaces/ZWNJ/case/Arabic forms; near-duplicate = rank score ≥ 88
+- Tag score = max(token_set_ratio, partial_ratio, word_prefix) + per-word OSA typo gate (partial_ratio alone scored روان vs ایران 86)
+- FTS5: two tables (unicode61 words with prefixes, trigram substrings), rowid = source_id*8 + kind, maintained by triggers calling Python `pw_norm()`; typo pass against fts5vocab only when < 5 hits. Search is synchronous on the UI thread (1–40 ms)
+- All decoding via ffmpeg (imageio-ffmpeg wheel; `resources/bin/ffmpeg.exe` overrides); never Windows codecs. Output at device mix rate, float32
+- Seeking restarts ffmpeg with -ss; VBR mp3/wma get a FLAC seek copy (LRU 4 GB cache) because ffmpeg seeks them ~70 ms off
+- One Player for the whole app; media timeline/transport always LTR inside the RTL UI
+- Smart links: rank by shared-tag count, then recency, then id; exact tag ids only (parent/child do not count)
+- Stale = updated_at older than 10 days, never for published; note edits, links and status moves touch the episode, opening does not
+- Fusion style + palette + QSS (the windows11 style ignores palettes → broken dark mode)
+- Bale bot:
+  - Everything is saved on arrival; tag buttons are optional follow-up
+  - Text → IdeaNote (hashtags become tags); a hashtag-only message tags the last item; voice/audio/audio-document → file into `bale_voices/`, then a normal voice import. Caption hashtags → tags, rest of caption → TimestampNote at 0:00
+  - Free-text tags go through `TagService.resolve_or_create`: exact reuse, near-duplicate reuse (reported to the user as a correction), otherwise create. No tag is created that would then be dropped by the limit
+  - Keyboard = 20 most-used tags, frozen per prompt message so buttons do not reorder while tapping; toggles; callback_data self-contained (`t|kind|item|tag`), so old prompts still work
+  - First private chat becomes owner (shown/resettable in settings); others get "private" and nothing is saved; groups ignored
+  - Offset stored in settings after each update (at-least-once). Updates sent while the app was closed arrive on next start
+  - Errors: 401/403 → UNAUTHORIZED, stop until token changes; network/5xx/other → OFFLINE, exponential backoff 3 s → 120 s; per-update exceptions logged, never raised
+- Transcription: faster-whisper, CPU int8, language fa, VAD on, condition_on_previous_text off (repetition loops), Persian initial prompt. Audio decoded by our ffmpeg to 16 kHz float32. Model is a local folder: managed download (`models/faster-whisper-<name>`, explicit button, one-time network) or a user folder; loaded with local_files_only. Default model large-v3-turbo. One job at a time; cancel checked per segment
+- Transcripts are their own entity (not TimestampNotes): the user's notes stay the user's words
+- Export = one zip: `data.json` (all entities, ids kept) + `audio/<id>_<name>` stored uncompressed. Settings not exported (per machine, bot token is a secret)
+- Import = full restore, not merge: validate every entity first, extract audio, snapshot DB to `backups/before-import_*.db`, then wipe + insert in one transaction. Voice keeps its original path if a same-size file is still there, else points into `library/`
+
+## Gotchas
+- New migration: set `PODCAST_WORKSPACE_HOME=<tmp>` before `alembic revision --autogenerate`, else it diffs your real DB. Replace autogenerated `UTCDateTime()` with `sa.DateTime()`; keep `render_as_batch=True`; `alembic check` must stay clean (env.py ignores `search_*`)
+- Every connection that writes needs `pw_norm()` (only engines from `repositories/db.create_sqlite_engine`). Batch-altering an indexed table drops its FTS triggers: recreate them in the same migration. A new FTS kind needs: SearchKind value, trigger migration, `_SOURCE_SQL` entry, `KIND_LABELS`, MainWindow `_open_hit`
+- `SqlRepository.add` keeps a preset id (restore relies on it); new entities must have `id=None`
+- TagService cache is shared with the bot thread; guarded by an RLock. After raw writes call `tags.invalidate()` / `writes.bump()`
+- Bot callbacks fire on the worker thread; BotController re-emits them as Qt signals (queued). Never touch widgets from the worker
+- Thread pool threads block app exit; anything uncancellable (model download) uses `run_detached` (daemon thread)
+- HF hub draws tqdm bars on stderr, which is None under pythonw: `HF_HUB_DISABLE_PROGRESS_BARS=1` is set in transcription.py before import
+- Model download is slow on this connection (~115 KB/s measured: tiny 75 MB ≈ 11 min; large-v3-turbo ≈ 1.6 GB). Settings shows MB so far; HF resumes partial downloads
+- Printing Persian to the console needs `PYTHONIOENCODING=utf-8`
+- QTest.keyClicks with Persian text crashes the process; send QKeyEvent(KeyPress, 0, NoModifier, ch)
+- Letter shortcuts don't fire on the Persian keyboard layout; use layout-free keys (Space, arrows, Insert, -, =) and virtual-key codes for the global hotkey
+- Mixed Persian/Latin/digit text: use RLM around separators (`ui/pages/base.py _rtl`) and U+2066/U+2069 isolates for Latin commands; "·" next to Persian digits reads as ۰, use "،"
+- Heredoc-generated Python with `"\n"` literals got real newlines on this machine; check syntax after scripted edits
+- PySide 6.11: compare sink states with QtAudio.State, not QAudio.State
+- QTimer.singleShot before QApplication exists never fires
+- Board: columns override sizeHint (default 256 px forces scrolling); cards paint with QApplication.palette(); drops defer the status change with singleShot(0)
+- Notes/transcript rows are QScrollArea + VBox rows, not QListWidget item widgets (word-wrap needs heightForWidth)
+- EpisodeWorkspacePage ignores its own data_changed emits (_own_change); IdeasPage.external_change never refreshes over a draft or pending autosave
+- Inbox is a parentless Qt.Tool window: no taskbar entry, does not keep the app alive; hotkey only while the app runs (no tray)
+- ffmpeg first use costs ~1 s (WASAPI init + -buildconf); Player warms up on construction
+
+## Status
+- v1.0: CRUD, tags, FTS search, player + timestamp notes, episode workspace, smart links, resume, Kanban + stale, idea inbox hotkey, recorder handoff, Bale bot, offline transcription, export/import
+- Not bundled: Vazirmatn font (drop .ttf into `resources/fonts`), ffmpeg exe (comes from imageio-ffmpeg), whisper models (downloaded on demand)
+- Possible next steps: tray icon (hotkey + bot while window closed), packaging (PyInstaller), transcript editing, merge-mode import

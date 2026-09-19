@@ -1,57 +1,101 @@
-"""Settings: path of the external recording program; status of the global idea hotkey."""
+"""Settings, in four tabs: general (recorder, hotkey), Bale bot, transcription, data.
 
+One instance lives for the whole session (MainWindow keeps it), so a model download or an
+export started here can finish safely after the dialog is closed.
+"""
+
+import os
+from datetime import datetime
+from pathlib import Path
+
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
+    QProgressDialog,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from podcast_workspace.services.settings_service import SettingsService
+from podcast_workspace.integrations.bale_api import BaleNetworkError, BaleUnauthorizedError
+from podcast_workspace.paths import data_dir
+from podcast_workspace.services.backup import ExportFormatError, ExportReport, RestoreReport
+from podcast_workspace.services.bale_bot import BaleBotService, BotStatus
+from podcast_workspace.services.transcription import WHISPER_MODELS, whisper_installed
+from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
+from podcast_workspace.ui.bot_controller import BotController
+from podcast_workspace.ui.support import (
+    confirm,
+    describe_error,
+    fa_digits,
+    run_async,
+    run_detached,
+    show_error,
+)
+
+TAB_GENERAL, TAB_BOT, TAB_TRANSCRIPTION, TAB_DATA = range(4)
+DOWNLOAD_POLL_MS = 1000
+
+
+def _muted(text: str = "") -> QLabel:
+    label = QLabel(text, objectName="muted")
+    label.setWordWrap(True)
+    return label
+
+
+def _folder_size(path: Path) -> int:
+    total = 0
+    if path.exists():
+        for entry in path.rglob("*"):
+            try:
+                if entry.is_file():
+                    total += entry.stat().st_size
+            except OSError:
+                continue
+    return total
 
 
 class SettingsDialog(QDialog):
+    data_replaced = Signal(object)  # RestoreReport
+    _task_progress = Signal(float)
+
     def __init__(
-        self, parent: QWidget, settings: SettingsService, hotkey_label: str, hotkey_ok: bool
+        self,
+        parent: QWidget,
+        workspace: Workspace,
+        bot: BotController,
+        hotkey_label: str,
     ) -> None:
         super().__init__(parent)
-        self._settings = settings
+        self._ws = workspace
+        self._bot = bot
+        self._hotkey_label = hotkey_label
+        self._downloading: str | None = None
+        self._progress_dialog: QProgressDialog | None = None
         self.setWindowTitle(strings.SETTINGS)
-        self.setMinimumWidth(560)
+        self.setMinimumWidth(620)
+
         col = QVBoxLayout(self)
         col.setContentsMargins(24, 22, 24, 20)
-        col.setSpacing(10)
+        col.setSpacing(12)
         col.addWidget(QLabel(strings.SETTINGS, objectName="dialogTitle"))
-        col.addSpacing(6)
-
-        col.addWidget(QLabel(strings.SETTINGS_RECORDER, objectName="fieldLabel"))
-        row = QHBoxLayout()
-        self.recorder = QLineEdit(settings.recorder_path())
-        self.recorder.setPlaceholderText(r"C:\Program Files\Audacity\Audacity.exe")
-        row.addWidget(self.recorder, 1)
-        browse = QPushButton(strings.SETTINGS_BROWSE)
-        browse.clicked.connect(self._browse)
-        row.addWidget(browse)
-        col.addLayout(row)
-        hint = QLabel(strings.SETTINGS_RECORDER_HINT, objectName="muted")
-        hint.setWordWrap(True)
-        col.addWidget(hint)
-        col.addSpacing(10)
-
-        col.addWidget(QLabel(strings.SETTINGS_HOTKEY, objectName="fieldLabel"))
-        template = strings.SETTINGS_HOTKEY_OK if hotkey_ok else strings.SETTINGS_HOTKEY_FAIL
-        status = QLabel(
-            template.format(keys=hotkey_label), objectName="muted" if hotkey_ok else "warning"
-        )
-        status.setWordWrap(True)
-        col.addWidget(status)
-        col.addSpacing(8)
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.addTab(self._general_tab(), strings.SETTINGS_TAB_GENERAL)
+        self.tabs.addTab(self._bot_tab(), strings.SETTINGS_TAB_BOT)
+        self.tabs.addTab(self._transcription_tab(), strings.SETTINGS_TAB_TRANSCRIPTION)
+        self.tabs.addTab(self._data_tab(), strings.SETTINGS_TAB_DATA)
+        col.addWidget(self.tabs, 1)
 
         buttons = QDialogButtonBox()
         save = buttons.addButton(strings.SAVE, QDialogButtonBox.ButtonRole.AcceptRole)
@@ -61,9 +105,183 @@ class SettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         col.addWidget(buttons)
-        self.recorder.setFocus()
 
-    def _browse(self) -> None:
+        bot.status_changed.connect(self._show_bot_status)
+        self._task_progress.connect(self._on_task_progress)
+        self._download_timer = QTimer(self, interval=DOWNLOAD_POLL_MS)
+        self._download_timer.timeout.connect(self._poll_download)
+
+    # tabs ------------------------------------------------------------------------------
+    @staticmethod
+    def _page() -> tuple[QWidget, QVBoxLayout]:
+        page = QWidget()
+        col = QVBoxLayout(page)
+        col.setContentsMargins(4, 16, 4, 8)
+        col.setSpacing(8)
+        return page, col
+
+    def _general_tab(self) -> QWidget:
+        page, col = self._page()
+        col.addWidget(QLabel(strings.SETTINGS_RECORDER, objectName="fieldLabel"))
+        row = QHBoxLayout()
+        self.recorder = QLineEdit()
+        self.recorder.setPlaceholderText(r"C:\Program Files\Audacity\Audacity.exe")
+        row.addWidget(self.recorder, 1)
+        browse = QPushButton(strings.SETTINGS_BROWSE)
+        browse.clicked.connect(self._browse_recorder)
+        row.addWidget(browse)
+        col.addLayout(row)
+        col.addWidget(_muted(strings.SETTINGS_RECORDER_HINT))
+        col.addSpacing(12)
+        col.addWidget(QLabel(strings.SETTINGS_HOTKEY, objectName="fieldLabel"))
+        self.hotkey_status = _muted()
+        col.addWidget(self.hotkey_status)
+        col.addStretch(1)
+        return page
+
+    def _bot_tab(self) -> QWidget:
+        page, col = self._page()
+        self.bot_enabled = QCheckBox(strings.BOT_ENABLE)
+        col.addWidget(self.bot_enabled)
+        col.addSpacing(6)
+        col.addWidget(QLabel(strings.BOT_TOKEN, objectName="fieldLabel"))
+        row = QHBoxLayout()
+        self.token = QLineEdit()
+        self.token.setPlaceholderText(strings.BOT_TOKEN_PLACEHOLDER)
+        self.token.setEchoMode(QLineEdit.EchoMode.Password)
+        self.token.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+        row.addWidget(self.token, 1)
+        show = QPushButton(strings.BOT_TOKEN_SHOW)
+        show.setCheckable(True)
+        show.toggled.connect(
+            lambda on: self.token.setEchoMode(
+                QLineEdit.EchoMode.Normal if on else QLineEdit.EchoMode.Password
+            )
+        )
+        row.addWidget(show)
+        self.check_button = QPushButton(strings.BOT_TOKEN_CHECK)
+        self.check_button.clicked.connect(self._check_token)
+        row.addWidget(self.check_button)
+        col.addLayout(row)
+        self.token_result = _muted()
+        col.addWidget(self.token_result)
+        self.bot_status = _muted()
+        col.addWidget(self.bot_status)
+        owner_row = QHBoxLayout()
+        self.owner = _muted()
+        owner_row.addWidget(self.owner, 1)
+        self.owner_reset = QPushButton(strings.BOT_OWNER_RESET, objectName="flatButton")
+        self.owner_reset.clicked.connect(self._reset_owner)
+        owner_row.addWidget(self.owner_reset)
+        col.addLayout(owner_row)
+        col.addSpacing(8)
+        col.addWidget(_muted(strings.BOT_HELP))
+        col.addStretch(1)
+        return page
+
+    def _transcription_tab(self) -> QWidget:
+        page, col = self._page()
+        self.whisper_missing = QLabel(strings.TR_NOT_INSTALLED, objectName="warning")
+        self.whisper_missing.setWordWrap(True)
+        col.addWidget(self.whisper_missing)
+        col.addWidget(QLabel(strings.TR_MODEL, objectName="fieldLabel"))
+        row = QHBoxLayout()
+        self.model_box = QComboBox()
+        for name in WHISPER_MODELS:
+            self.model_box.addItem(strings.TR_MODELS.get(name, name), name)
+        self.model_box.currentIndexChanged.connect(lambda _i: self._show_model_state())
+        row.addWidget(self.model_box, 1)
+        self.download_button = QPushButton(strings.TR_MODEL_DOWNLOAD)
+        self.download_button.clicked.connect(self._download_model)
+        row.addWidget(self.download_button)
+        col.addLayout(row)
+        self.model_state = _muted()
+        self.model_state.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        col.addWidget(self.model_state)
+        col.addSpacing(8)
+        col.addWidget(QLabel(strings.TR_MODEL_DIR, objectName="fieldLabel"))
+        dir_row = QHBoxLayout()
+        self.model_dir = QLineEdit()
+        self.model_dir.setPlaceholderText(strings.TR_MODEL_DIR_PLACEHOLDER)
+        self.model_dir.textChanged.connect(lambda _t: self._show_model_state())
+        dir_row.addWidget(self.model_dir, 1)
+        browse = QPushButton(strings.SETTINGS_BROWSE)
+        browse.clicked.connect(self._browse_model_dir)
+        dir_row.addWidget(browse)
+        col.addLayout(dir_row)
+        col.addSpacing(8)
+        col.addWidget(_muted(strings.TR_MODEL_HELP))
+        col.addStretch(1)
+        return page
+
+    def _data_tab(self) -> QWidget:
+        page, col = self._page()
+        export = QPushButton(strings.DATA_EXPORT)
+        export.clicked.connect(self._export)
+        col.addWidget(export, 0, Qt.AlignmentFlag.AlignLeading)
+        col.addWidget(_muted(strings.DATA_EXPORT_HELP))
+        col.addSpacing(12)
+        restore = QPushButton(strings.DATA_IMPORT)
+        restore.clicked.connect(self._import)
+        col.addWidget(restore, 0, Qt.AlignmentFlag.AlignLeading)
+        col.addWidget(_muted(strings.DATA_IMPORT_HELP))
+        col.addSpacing(12)
+        col.addWidget(QLabel(strings.DATA_FOLDER, objectName="fieldLabel"))
+        row = QHBoxLayout()
+        path = _muted(str(data_dir()))
+        path.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        path.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+        row.addWidget(path, 1)
+        open_folder = QPushButton(strings.DATA_OPEN_FOLDER)
+        open_folder.clicked.connect(lambda: os.startfile(data_dir()))
+        row.addWidget(open_folder)
+        col.addLayout(row)
+        self.data_status = _muted()
+        self.data_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        col.addWidget(self.data_status)
+        col.addStretch(1)
+        return page
+
+    # open ------------------------------------------------------------------------------
+    def open_at(self, tab: int, hotkey_ok: bool) -> bool:
+        """Reload every field from settings, show the tab, run modally."""
+        settings = self._ws.settings
+        self.recorder.setText(settings.recorder_path())
+        template = strings.SETTINGS_HOTKEY_OK if hotkey_ok else strings.SETTINGS_HOTKEY_FAIL
+        self.hotkey_status.setText(template.format(keys=self._hotkey_label))
+        self.hotkey_status.setObjectName("muted" if hotkey_ok else "warning")
+        self.hotkey_status.style().polish(self.hotkey_status)
+        self.bot_enabled.setChecked(settings.bale_enabled())
+        self.token.setText(settings.bale_token())
+        self.token_result.setText("")
+        self._show_owner()
+        self._show_bot_status(self._bot.status, "")
+        self.whisper_missing.setVisible(not whisper_installed())
+        index = self.model_box.findData(settings.whisper_model())
+        self.model_box.setCurrentIndex(max(0, index))
+        self.model_dir.setText(settings.whisper_model_dir())
+        self._show_model_state()
+        self.data_status.setText("")
+        self.tabs.setCurrentIndex(tab)
+        return self.exec() == QDialog.DialogCode.Accepted
+
+    def accept(self) -> None:
+        settings = self._ws.settings
+        settings.set_recorder_path(self.recorder.text())
+        settings.set_whisper_model(str(self.model_box.currentData()))
+        settings.set_whisper_model_dir(self.model_dir.text())
+        bot_changed = (
+            self.token.text().strip() != settings.bale_token()
+            or self.bot_enabled.isChecked() != settings.bale_enabled()
+        )
+        settings.set_bale_token(self.token.text())
+        settings.set_bale_enabled(self.bot_enabled.isChecked())
+        if bot_changed or self._bot.status in (BotStatus.STOPPED, BotStatus.UNAUTHORIZED):
+            self._bot.restart()
+        super().accept()
+
+    # general ---------------------------------------------------------------------------
+    def _browse_recorder(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
             strings.SETTINGS_PROGRAM_DIALOG,
@@ -73,6 +291,199 @@ class SettingsDialog(QDialog):
         if path:
             self.recorder.setText(path.replace("/", "\\"))
 
-    def accept(self) -> None:
-        self._settings.set_recorder_path(self.recorder.text())
-        super().accept()
+    # bot -------------------------------------------------------------------------------
+    def _show_bot_status(self, status: BotStatus, _detail: str) -> None:
+        text = strings.BOT_STATUS.get(status.value, status.value)
+        self.bot_status.setText(strings.BOT_SIDEBAR.format(status=text))
+
+    def _show_owner(self) -> None:
+        owner = self._ws.settings.bale_owner()
+        self.owner.setText(
+            strings.BOT_OWNER.format(name=owner.name) if owner else strings.BOT_OWNER_NONE
+        )
+        self.owner_reset.setVisible(owner is not None)
+
+    def _reset_owner(self) -> None:
+        self._ws.settings.set_bale_owner(None)
+        self._show_owner()
+
+    def _check_token(self) -> None:
+        token = self.token.text().strip()
+        if not token:
+            return
+        self.check_button.setEnabled(False)
+        self.token_result.setText(strings.BOT_TOKEN_CHECKING)
+        run_async(
+            lambda: BaleBotService.check_token(token),
+            self._on_token_ok,
+            self._on_token_failed,
+        )
+
+    def _on_token_ok(self, name: str) -> None:
+        self.check_button.setEnabled(True)
+        self.token_result.setText(strings.BOT_TOKEN_OK.format(name=name))
+
+    def _on_token_failed(self, exc: BaseException) -> None:
+        self.check_button.setEnabled(True)
+        if isinstance(exc, BaleUnauthorizedError):
+            self.token_result.setText(strings.BOT_TOKEN_BAD)
+        elif isinstance(exc, BaleNetworkError):
+            self.token_result.setText(strings.BOT_TOKEN_OFFLINE)
+        else:
+            self.token_result.setText(describe_error(exc))
+
+    # transcription ---------------------------------------------------------------------
+    def _show_model_state(self) -> None:
+        name = str(self.model_box.currentData())
+        custom = self.model_dir.text().strip()
+        transcripts = self._ws.transcripts
+        if self._downloading is not None:
+            self.download_button.setEnabled(False)
+            return
+        downloaded = transcripts.is_downloaded(name)
+        self.download_button.setVisible(not custom)
+        self.download_button.setEnabled(whisper_installed() and not downloaded)
+        if custom:
+            ready = (Path(custom) / "model.bin").is_file()
+            self.model_state.setText(
+                strings.TR_MODEL_READY.format(path=custom) if ready else strings.TR_MODEL_NOT_READY
+            )
+        elif downloaded:
+            path = transcripts.managed_model_dir(name)
+            self.model_state.setText(strings.TR_MODEL_READY.format(path=path))
+        else:
+            self.model_state.setText(strings.TR_MODEL_NOT_READY)
+
+    def _browse_model_dir(self) -> None:
+        path = QFileDialog.getExistingDirectory(
+            self, strings.TR_MODEL_DIR_DIALOG, self.model_dir.text()
+        )
+        if path:
+            self.model_dir.setText(path.replace("/", "\\"))
+
+    def _download_model(self) -> None:
+        name = str(self.model_box.currentData())
+        self._downloading = name
+        self.download_button.setEnabled(False)
+        self.model_box.setEnabled(False)
+        self.model_state.setText(strings.TR_MODEL_DOWNLOADING)
+        self._download_timer.start()
+        run_detached(
+            lambda: self._ws.transcripts.download_model(name),
+            lambda _path: self._download_finished(None),
+            self._download_finished,
+        )
+
+    def _poll_download(self) -> None:
+        if self._downloading is None:
+            return
+        size = _folder_size(self._ws.transcripts.managed_model_dir(self._downloading))
+        mb = fa_digits(size // (1024 * 1024))
+        self.model_state.setText(f"{strings.TR_MODEL_DOWNLOADING}  {mb} MB")
+
+    def _download_finished(self, exc: BaseException | None) -> None:
+        self._downloading = None
+        self._download_timer.stop()
+        self.model_box.setEnabled(True)
+        self._show_model_state()
+        if exc is not None:
+            self.model_state.setText(
+                strings.TR_MODEL_DOWNLOAD_FAILED.format(error=describe_error(exc))
+            )
+
+    # data ------------------------------------------------------------------------------
+    def _start_task(self, label: str) -> None:
+        dialog = QProgressDialog(label.format(percent=fa_digits(0)), "", 0, 1000, self)
+        dialog.setWindowTitle(strings.SETTINGS_TAB_DATA)
+        dialog.setCancelButton(None)  # type: ignore[arg-type]
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        dialog.setMinimumDuration(0)
+        dialog.setProperty("template", label)
+        dialog.setValue(0)
+        self._progress_dialog = dialog
+
+    def _on_task_progress(self, fraction: float) -> None:
+        dialog = self._progress_dialog
+        if dialog is not None:
+            dialog.setValue(int(fraction * 1000))
+            dialog.setLabelText(
+                str(dialog.property("template")).format(percent=fa_digits(int(fraction * 100)))
+            )
+
+    def _end_task(self) -> None:
+        if self._progress_dialog is not None:
+            self._progress_dialog.close()
+            self._progress_dialog.deleteLater()
+            self._progress_dialog = None
+
+    def _export(self) -> None:
+        stamp = datetime.now().strftime("%Y-%m-%d")
+        suggested = Path.home() / "Documents" / f"podcast-workspace_{stamp}.zip"
+        path, _ = QFileDialog.getSaveFileName(
+            self, strings.DATA_EXPORT_DIALOG, str(suggested), strings.DATA_EXPORT_FILTER
+        )
+        if not path:
+            return
+        target = Path(path)
+        if target.suffix.lower() != ".zip":
+            target = target.with_suffix(".zip")
+        self._flush_pages()
+        self._start_task(strings.DATA_EXPORTING)
+        emit = self._task_progress.emit
+        run_async(
+            lambda: self._ws.backup.export(target, emit),
+            self._export_done,
+            self._task_failed,
+        )
+
+    def _export_done(self, report: ExportReport) -> None:
+        self._end_task()
+        lines = [strings.DATA_EXPORT_DONE.format(path=report.path)]
+        if report.missing_audio:
+            lines.append(strings.DATA_EXPORT_MISSING.format(n=fa_digits(len(report.missing_audio))))
+        self.data_status.setText("\n".join(lines))
+
+    def _import(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, strings.DATA_IMPORT_DIALOG, str(Path.home()), strings.DATA_EXPORT_FILTER
+        )
+        if not path or not confirm(self, strings.DATA_IMPORT_CONFIRM, strings.DATA_IMPORT_ACTION):
+            return
+        self._flush_pages()
+        self._start_task(strings.DATA_IMPORTING)
+        emit = self._task_progress.emit
+        source = Path(path)
+        run_async(
+            lambda: self._ws.backup.restore(source, emit),
+            self._import_done,
+            self._task_failed,
+        )
+
+    def _import_done(self, report: RestoreReport) -> None:
+        self._end_task()
+        counts = {k: fa_digits(v) for k, v in report.counts.items()}
+        lines = [
+            strings.DATA_IMPORT_DONE.format(
+                episodes=counts["episodes"],
+                voices=counts["voices"],
+                ideas=counts["ideas"],
+                tags=counts["tags"],
+            )
+        ]
+        if report.missing_audio:
+            lines.append(strings.DATA_EXPORT_MISSING.format(n=fa_digits(len(report.missing_audio))))
+        self.data_status.setText("\n".join(lines))
+        self.data_replaced.emit(report)
+
+    def _task_failed(self, exc: BaseException) -> None:
+        self._end_task()
+        if isinstance(exc, ExportFormatError):
+            QMessageBox.warning(self, strings.ERROR_TITLE, strings.DATA_IMPORT_BAD_FILE)
+        else:
+            show_error(self, exc)
+
+    def _flush_pages(self) -> None:
+        parent = self.parent()
+        flush = getattr(parent, "flush_pages", None)
+        if callable(flush):
+            flush()

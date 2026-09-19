@@ -161,3 +161,33 @@ def _probe_with_ffmpeg(ffmpeg: Path, path: Path) -> StreamInfo:
         h, m, s = found.groups()
         duration_ms = int((int(h) * 3600 + int(m) * 60 + float(s)) * 1000)
     return StreamInfo(rate, channels, duration_ms, codec)
+
+
+def decode_mono_f32(path: Path, sample_rate: int = 16000) -> bytes:
+    """Whole file as mono float32 PCM at `sample_rate` (raw little-endian bytes).
+
+    Used by transcription; an hour of 16 kHz audio is ~230 MB.
+    """
+    args = [
+        str(require_ffmpeg()),
+        "-hide_banner",
+        "-nostdin",
+        "-v",
+        "error",
+        "-i",
+        str(path),
+        "-map",
+        "0:a:0",
+        "-ac",
+        "1",
+        "-ar",
+        str(sample_rate),
+        "-f",
+        "f32le",
+        "-",
+    ]
+    out = subprocess.run(args, capture_output=True, check=False, creationflags=NO_WINDOW)
+    if out.returncode != 0 or not out.stdout:
+        message = out.stderr.decode("utf-8", "replace").strip().splitlines()
+        raise ValueError(message[-1] if message else f"ffmpeg exited with {out.returncode}")
+    return out.stdout

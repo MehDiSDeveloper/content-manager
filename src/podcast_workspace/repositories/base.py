@@ -48,6 +48,8 @@ class SqlRepository[E: HasId, R: Base](ABC):
 
     def add(self, entity: E) -> E:
         row = self.row_type()
+        if entity.id is not None:  # restoring an export keeps the original ids
+            row.id = entity.id  # type: ignore[attr-defined]
         self._apply(entity, row)
         self.session.add(row)
         self.session.flush()

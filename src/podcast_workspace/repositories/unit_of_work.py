@@ -5,6 +5,7 @@ from typing import Self
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from podcast_workspace.repositories.maintenance import MaintenanceRepository
 from podcast_workspace.repositories.repos import (
     EpisodeNoteRepository,
     EpisodeRepository,
@@ -12,6 +13,7 @@ from podcast_workspace.repositories.repos import (
     SettingsRepository,
     TagRepository,
     TimestampNoteRepository,
+    TranscriptRepository,
     VoiceRepository,
 )
 from podcast_workspace.repositories.search_repo import SearchRepository
@@ -27,6 +29,8 @@ class UnitOfWork:
     tags: TagRepository
     settings: SettingsRepository
     search: SearchRepository
+    transcripts: TranscriptRepository
+    maintenance: MaintenanceRepository
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
@@ -41,6 +45,8 @@ class UnitOfWork:
         self.tags = TagRepository(self.session)
         self.settings = SettingsRepository(self.session)
         self.search = SearchRepository(self.session)
+        self.transcripts = TranscriptRepository(self.session)
+        self.maintenance = MaintenanceRepository(self.session)
         return self
 
     def __exit__(

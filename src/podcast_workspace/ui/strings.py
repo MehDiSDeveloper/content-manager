@@ -29,6 +29,7 @@ KIND_LABELS = {
     SearchKind.TIMESTAMP_NOTE: "یادداشت زمان‌دار",
     SearchKind.TAG: "برچسب",
     SearchKind.VOICE: "صدا",
+    SearchKind.TRANSCRIPT: "رونوشت",
 }
 UNTITLED_NOTE = "یادداشت بی‌عنوان"
 
@@ -211,3 +212,106 @@ SETTINGS_HOTKEY_OK = "{keys} — در هر برنامه‌ای یک پنجرهٔ
 SETTINGS_HOTKEY_FAIL = "{keys} در دسترس نیست؛ برنامهٔ دیگری آن را گرفته است."
 SAVE = "ذخیره"
 RECORDER_MISSING = "برنامهٔ ضبط در این مسیر پیدا نشد:\n{path}"
+
+SETTINGS_TAB_GENERAL = "عمومی"
+SETTINGS_TAB_BOT = "بازوی بله"
+SETTINGS_TAB_TRANSCRIPTION = "رونویسی"
+SETTINGS_TAB_DATA = "داده‌ها"
+
+BOT_ENABLE = "دریافت ایده و صدا از بازوی بله"
+BOT_TOKEN = "توکن بازو"
+BOT_TOKEN_PLACEHOLDER = "توکنی که @botfather در بله داده است"
+BOT_TOKEN_SHOW = "نمایش"
+BOT_TOKEN_CHECK = "آزمایش توکن"
+BOT_TOKEN_CHECKING = "در حال بررسی…"
+BOT_TOKEN_OK = "توکن معتبر است: {name}"
+BOT_TOKEN_BAD = "توکن پذیرفته نشد."
+BOT_TOKEN_OFFLINE = "اتصال به بله ممکن نشد؛ اینترنت را بررسی کنید."
+BOT_HELP = (
+    "در بله به ‎@botfather‎ پیام دهید، یک بازو بسازید و توکنش را اینجا بگذارید. "
+    "هر پیام متنی به بازو یک ایده و هر پیام صوتی یک صدا در این فضای کاری می‌شود؛ "
+    "پیام‌هایی که وقتی برنامه بسته است می‌فرستید، با باز شدن برنامه دریافت می‌شوند."
+)
+BOT_OWNER = "صاحب بازو: {name}"
+BOT_OWNER_NONE = "هنوز کسی به بازو پیام نداده؛ اولین گفت‌وگوی خصوصی صاحب آن می‌شود."
+BOT_OWNER_RESET = "آزاد کردن"
+BOT_STATUS = {
+    "stopped": "خاموش",
+    "connecting": "در حال اتصال…",
+    "online": "متصل",
+    "offline": "بدون اتصال؛ دوباره تلاش می‌کند",
+    "unauthorized": "توکن پذیرفته نشد",
+}
+BOT_SIDEBAR = "بله: {status}"
+BOT_RECEIVED_IDEA = "ایدهٔ تازه از بله رسید"
+BOT_RECEIVED_VOICE = "صدای تازه از بله رسید"
+
+TR_TAB_NOTES = "یادداشت‌ها"
+TR_TAB_TRANSCRIPT = "رونوشت"
+TR_RUN = "رونویسی"
+TR_RERUN = "رونویسی دوباره"
+TR_RUN_TOOLTIP = "تبدیل گفتار این صدا به متن فارسی، بدون اینترنت"
+TR_CANCEL = "لغو"
+TR_COPY = "کپی متن"
+TR_COPIED = "متن کپی شد"
+TR_EMPTY = "هنوز رونوشتی نیست. «رونویسی» گفتار این صدا را روی همین رایانه به متن تبدیل می‌کند."
+TR_NO_SPEECH = "گفتاری در این صدا پیدا نشد."
+TR_RUNNING = "در حال رونویسی… {percent}٪"
+TR_LOADING_MODEL = "در حال آماده‌سازی مدل…"
+TR_BUSY_ELSEWHERE = "رونویسی صدای دیگری در جریان است."
+TR_META = "{n} بخش، {model}، {when}"
+TR_NOT_INSTALLED = "بستهٔ faster-whisper نصب نیست؛ نصب با: ⁦pip install .[transcription]⁩"
+TR_MODEL_MISSING = "مدل رونویسی هنوز روی این رایانه نیست. از تنظیمات ← رونویسی دریافتش کنید."
+TR_OPEN_SETTINGS = "تنظیمات رونویسی"
+TR_FAILED = "رونویسی ممکن نشد: {error}"
+TR_FILE_MISSING = "فایل صوتی پیدا نشد."
+TR_REPLACE_CONFIRM = "رونوشت فعلی با نتیجهٔ تازه جایگزین شود؟"
+TR_REPLACE = "جایگزین کن"
+TR_GOTO_TOOLTIP = "رفتن به این لحظه (Enter)"
+VOICE_HAS_TRANSCRIPT = "رونوشت"
+
+TR_MODEL = "مدل"
+TR_MODELS = {
+    "small": "small — سریع، دقت کم (حدود ۵۰۰ مگابایت)",
+    "medium": "medium — متوسط (حدود ۱٫۵ گیگابایت)",
+    "large-v3-turbo": "large-v3-turbo — پیشنهادی (حدود ۱٫۶ گیگابایت)",
+    "large-v3": "large-v3 — دقیق‌ترین و کندترین (حدود ۳ گیگابایت)",
+}
+TR_MODEL_READY = "مدل آماده است: {path}"
+TR_MODEL_NOT_READY = "این مدل هنوز دریافت نشده."
+TR_MODEL_DOWNLOAD = "دریافت مدل"
+TR_MODEL_DOWNLOADING = "در حال دریافت مدل… (یک بار؛ ممکن است طول بکشد)"
+TR_MODEL_DOWNLOAD_FAILED = "دریافت مدل ممکن نشد: {error}"
+TR_MODEL_DIR = "پوشهٔ مدل دلخواه (اختیاری)"
+TR_MODEL_DIR_PLACEHOLDER = "پوشه‌ای که model.bin دارد؛ خالی = مدل دریافت‌شده"
+TR_MODEL_DIR_DIALOG = "انتخاب پوشهٔ مدل faster-whisper"
+TR_MODEL_HELP = (
+    "رونویسی کاملاً روی همین رایانه انجام می‌شود. فقط دریافت مدل، یک بار، به اینترنت نیاز دارد."
+)
+
+DATA_EXPORT = "خروجی گرفتن…"
+DATA_EXPORT_HELP = (
+    "همهٔ اپیزودها، ایده‌ها، یادداشت‌ها، برچسب‌ها، رونوشت‌ها و فایل‌های صوتی در یک فایل zip. "
+    "تنظیمات (از جمله توکن بازو) در خروجی نیست."
+)
+DATA_EXPORT_DIALOG = "ذخیرهٔ خروجی"
+DATA_EXPORT_FILTER = "خروجی فضای کاری (*.zip)"
+DATA_EXPORTING = "در حال خروجی گرفتن… {percent}٪"
+DATA_EXPORT_DONE = "خروجی ذخیره شد: {path}"
+DATA_EXPORT_MISSING = "{n} فایل صوتی پیدا نشد و در خروجی نیست."
+DATA_IMPORT = "بازگردانی از خروجی…"
+DATA_IMPORT_HELP = (
+    "همهٔ داده‌های فعلی با محتوای فایل جایگزین می‌شود. پیش از آن، یک نسخهٔ پشتیبان "
+    "از وضعیت فعلی در پوشهٔ backups ذخیره می‌شود."
+)
+DATA_IMPORT_DIALOG = "انتخاب فایل خروجی"
+DATA_IMPORT_CONFIRM = (
+    "همهٔ اپیزودها، صداها، ایده‌ها و برچسب‌های فعلی با محتوای این فایل جایگزین شود؟\n"
+    "نسخهٔ پشتیبانی از وضعیت فعلی در پوشهٔ backups ذخیره می‌شود."
+)
+DATA_IMPORT_ACTION = "جایگزین کن"
+DATA_IMPORTING = "در حال بازگردانی… {percent}٪"
+DATA_IMPORT_DONE = "بازگردانی شد: {episodes} اپیزود، {voices} صدا، {ideas} ایده، {tags} برچسب."
+DATA_IMPORT_BAD_FILE = "این فایل خروجیِ این برنامه نیست یا خراب است."
+DATA_FOLDER = "پوشهٔ داده‌ها"
+DATA_OPEN_FOLDER = "باز کردن پوشه"

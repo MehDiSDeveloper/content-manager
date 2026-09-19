@@ -32,3 +32,29 @@ def package_dir() -> Path:
 
 def resources_dir() -> Path:
     return package_dir() / "resources"
+
+
+def _subdir(name: str) -> Path:
+    path = data_dir() / name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def bale_voices_dir() -> Path:
+    """Voice messages received through the Bale bot."""
+    return _subdir("bale_voices")
+
+
+def library_dir() -> Path:
+    """Audio files restored from an export whose original path no longer exists."""
+    return _subdir("library")
+
+
+def backups_dir() -> Path:
+    """Automatic database snapshots taken before an import replaces everything."""
+    return _subdir("backups")
+
+
+def models_dir() -> Path:
+    """Downloaded faster-whisper models."""
+    return _subdir("models")

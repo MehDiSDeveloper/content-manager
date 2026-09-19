@@ -14,6 +14,8 @@ from podcast_workspace.repositories.db import (
     make_session_factory,
     migrate,
 )
+from podcast_workspace.services.backup import BackupService
+from podcast_workspace.services.bale_bot import BaleBotService
 from podcast_workspace.services.content_services import (
     EpisodeNoteService,
     EpisodeService,
@@ -24,6 +26,7 @@ from podcast_workspace.services.content_services import (
 from podcast_workspace.services.search_service import SearchService
 from podcast_workspace.services.settings_service import SettingsService
 from podcast_workspace.services.tag_service import TagService
+from podcast_workspace.services.transcription import TranscriptionService
 
 
 class Workspace:
@@ -39,6 +42,11 @@ class Workspace:
         self.timestamp_notes = TimestampNoteService(session_factory)
         self.tags = TagService(session_factory)
         self.search = SearchService(session_factory, self.writes)
+        self.transcripts = TranscriptionService(session_factory, self.settings)
+        self.backup = BackupService(session_factory, self.tags, self.writes)
+        self.bot = BaleBotService(
+            self.settings, self.ideas, self.voices, self.tags, self.timestamp_notes
+        )
 
     @classmethod
     def open(cls, db_path: Path | None = None) -> "Workspace":
@@ -47,4 +55,5 @@ class Workspace:
         return cls(engine)
 
     def close(self) -> None:
+        self.bot.stop()
         self._engine.dispose()

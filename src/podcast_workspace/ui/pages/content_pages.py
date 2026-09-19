@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QStackedWidget,
+    QTabBar,
     QVBoxLayout,
 )
 
@@ -31,6 +33,7 @@ from podcast_workspace.ui.pages.base import ListPage, Row
 from podcast_workspace.ui.pages.episode_workspace import stale_text
 from podcast_workspace.ui.player.player_widget import SKIP_MS, PlayerWidget
 from podcast_workspace.ui.player.timestamp_panel import TimestampPanel
+from podcast_workspace.ui.player.transcript_panel import TranscriptionJobs, TranscriptPanel
 from podcast_workspace.ui.support import (
     AppEvents,
     confirm,
@@ -202,12 +205,18 @@ class EpisodesPage(ListPage):
 
 
 class VoicesPage(ListPage):
-    def __init__(self, workspace: Workspace, events: AppEvents, player: Player) -> None:
+    TAB_NOTES, TAB_TRANSCRIPT = 0, 1
+    settings_requested = Signal()
+
+    def __init__(
+        self, workspace: Workspace, events: AppEvents, player: Player, jobs: TranscriptionJobs
+    ) -> None:
         super().__init__(strings.VOICES_TITLE, strings.VOICE_IMPORT, strings.VOICE_EMPTY)
         self._ws = workspace
         self._events = events
         self._voice: Voice | None = None
         self._pending_note: int | None = None
+        self._transcribed: set[int] = set()
         self.setAcceptDrops(True)
         self.primary.setToolTip("Ctrl+N / Ctrl+O")
 
@@ -236,8 +245,23 @@ class VoicesPage(ListPage):
         self.player.exact_duration.connect(self._store_exact_duration)
         col.addSpacing(6)
         col.addWidget(self.player)
+        self.tabs = QTabBar(objectName="noteTabs")
+        self.tabs.setExpanding(False)
+        self.tabs.setDocumentMode(True)
+        self.tabs.addTab(strings.TR_TAB_NOTES)
+        self.tabs.addTab(strings.TR_TAB_TRANSCRIPT)
+        self.tabs.setToolTip("Ctrl+Tab")
+        col.addWidget(self.tabs)
+        self.panels = QStackedWidget()
         self.notes = TimestampPanel(workspace, events, self.player)
-        col.addWidget(self.notes, 1)
+        self.notes.title.hide()  # the tab names it
+        self.panels.addWidget(self.notes)
+        self.transcript = TranscriptPanel(workspace, events, self.player, jobs)
+        self.transcript.settings_requested.connect(self.settings_requested)
+        self.transcript.changed.connect(self._on_transcript_changed)
+        self.panels.addWidget(self.transcript)
+        self.tabs.currentChanged.connect(self.panels.setCurrentIndex)
+        col.addWidget(self.panels, 1)
 
         actions = QHBoxLayout()
         show = QPushButton(strings.VOICE_SHOW_IN_FOLDER)
@@ -250,6 +274,12 @@ class VoicesPage(ListPage):
         col.addLayout(actions)
 
         QShortcut(QKeySequence.StandardKey.Open, self, activated=self.primary_action)
+        QShortcut(
+            QKeySequence("Ctrl+Tab"),
+            self,
+            activated=lambda: self.tabs.setCurrentIndex(1 - self.tabs.currentIndex()),
+            context=Qt.ShortcutContext.WidgetWithChildrenShortcut,
+        )
         self._install_player_keys()
 
     def _install_player_keys(self) -> None:
@@ -283,10 +313,31 @@ class VoicesPage(ListPage):
         name = Path(voice.file_path).name
         parts = [format_duration(voice.duration_ms), voice.format.upper()]
         parts.append(format_datetime(voice.imported_at))
+        if voice.id in self._transcribed:
+            parts.append(strings.VOICE_HAS_TRANSCRIPT)
         return Row(voice.id, name, "  ·  ".join(p for p in parts if p))
 
     def rows(self) -> list[Row]:
+        self._transcribed = self._ws.transcripts.voice_ids()
         return [self._row(v) for v in self._ws.voices.list_all()]
+
+    def _on_transcript_changed(self, voice_id: int) -> None:
+        self._transcribed.add(voice_id)
+        try:
+            self.update_row(self._row(self._ws.voices.get(voice_id)))
+        except Exception:
+            return  # removed meanwhile
+
+    def open_transcript(self, voice_id: int, query: str) -> None:
+        """Search hit on a transcript: open the voice on its transcript tab."""
+        self.select(voice_id)
+        self.tabs.setCurrentIndex(self.TAB_TRANSCRIPT)
+        self.transcript.highlight_query(query)
+
+    def external_change(self) -> None:
+        """Items arrived from outside (Bale bot): refresh the list, keep the editor as is."""
+        if self.isVisible():
+            self.refresh(load=False)
 
     def show_item(self, item_id: int) -> None:
         try:
@@ -303,7 +354,9 @@ class VoicesPage(ListPage):
         assert voice.id is not None
         self.player.open_voice(voice.id, Path(voice.file_path), voice.duration_ms)
         self.notes.set_voice(voice.id)
+        self.transcript.set_voice(voice.id)
         if self._pending_note is not None:
+            self.tabs.setCurrentIndex(self.TAB_NOTES)
             self.notes.focus_note(self._pending_note)
             self._pending_note = None
 
@@ -311,12 +364,14 @@ class VoicesPage(ListPage):
         self._voice = None
         self.player.close_voice()
         self.notes.set_voice(None)
+        self.transcript.set_voice(None)
 
     def open_note(self, voice_id: int, note_id: int) -> None:
         """Search hit on a timestamp note: open its voice with that note focused."""
         self._pending_note = note_id
         self.select(voice_id)
         if self._pending_note is not None:
+            self.tabs.setCurrentIndex(self.TAB_NOTES)
             self.notes.focus_note(note_id)
             self._pending_note = None
 
@@ -522,6 +577,12 @@ class IdeasPage(ListPage):
         if self._timer.isActive():
             self._timer.stop()
             self._save_text()
+
+    def external_change(self) -> None:
+        """Ideas arrived from outside (Bale bot). Never disturb a draft or pending autosave;
+        the list reloads on the next show anyway."""
+        if self.isVisible() and not self._drafting and not self._timer.isActive():
+            self.refresh(load=False)
 
     def _save_text(self) -> None:
         text = self.text.toPlainText()

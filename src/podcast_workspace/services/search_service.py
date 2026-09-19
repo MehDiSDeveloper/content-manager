@@ -145,7 +145,7 @@ class SearchService:
             if (kind, source_id) not in texts:
                 continue
             title, body, owner = texts[(kind, source_id)]
-            if kind is SearchKind.VOICE:
+            if kind in (SearchKind.VOICE, SearchKind.TRANSCRIPT):
                 title = PureWindowsPath(title).name
             elif not title.strip() and body.strip():  # ideas/notes: first line as title
                 first = body.strip().splitlines()[0]

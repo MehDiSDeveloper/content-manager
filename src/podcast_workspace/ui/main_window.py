@@ -2,6 +2,7 @@
 
 Nav pages: Episodes, Board, Voices, Ideas, Tags (Ctrl+1..5). Off-nav pages: the episode
 workspace, the startup resume screen and search results. Alt+← goes back.
+Also owns the app-wide background pieces: Bale bot, transcription jobs, settings dialog.
 """
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer
@@ -23,10 +24,12 @@ from PySide6.QtWidgets import (
 
 from podcast_workspace.audio.engine import Player
 from podcast_workspace.domain.search import SearchHit, SearchKind
+from podcast_workspace.services.bale_bot import BotStatus, ItemKind, ItemRef
 from podcast_workspace.services.recording import RecorderNotConfiguredError, launch_recorder
 from podcast_workspace.services.settings_service import Theme
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
+from podcast_workspace.ui.bot_controller import BotController
 from podcast_workspace.ui.hotkey import IDEA_HOTKEY, IDEA_HOTKEY_LABEL, GlobalHotkey
 from podcast_workspace.ui.idea_inbox import IdeaInbox
 from podcast_workspace.ui.pages.board_page import BoardPage
@@ -35,7 +38,8 @@ from podcast_workspace.ui.pages.episode_workspace import EpisodeWorkspacePage
 from podcast_workspace.ui.pages.resume_page import ResumePage
 from podcast_workspace.ui.pages.search_page import SearchPage
 from podcast_workspace.ui.pages.tags_page import TagsPage
-from podcast_workspace.ui.settings_dialog import SettingsDialog
+from podcast_workspace.ui.player.transcript_panel import TranscriptionJobs
+from podcast_workspace.ui.settings_dialog import TAB_GENERAL, TAB_TRANSCRIPTION, SettingsDialog
 from podcast_workspace.ui.support import AppEvents, run_async, show_error
 from podcast_workspace.ui.theme import ThemeManager, set_native_dark_title_bar
 
@@ -59,9 +63,12 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1100, 680)
 
         self.player = Player(self)
+        self.transcription_jobs = TranscriptionJobs(workspace, self)
+        self.bot = BotController(workspace.bot, self)
+        self._settings_dialog: SettingsDialog | None = None
         self.episodes_page = EpisodesPage(workspace, self.events)
         self.board_page = BoardPage(workspace, self.events)
-        self.voices_page = VoicesPage(workspace, self.events, self.player)
+        self.voices_page = VoicesPage(workspace, self.events, self.player, self.transcription_jobs)
         self.ideas_page = IdeasPage(workspace, self.events)
         self.tags_page = TagsPage(workspace, self.events)
         self.workspace_page = EpisodeWorkspacePage(workspace, self.events)
@@ -82,6 +89,9 @@ class MainWindow(QMainWindow):
         self.workspace_page.open_voice.connect(self.open_voice)
         self.workspace_page.open_idea.connect(self.open_idea)
         self.workspace_page.record_requested.connect(self._record)
+        self.voices_page.settings_requested.connect(lambda: self.open_settings(TAB_TRANSCRIPTION))
+        self.bot.status_changed.connect(self._on_bot_status)
+        self.bot.item_received.connect(self._on_bot_item)
         self.resume_page.continue_requested.connect(self.open_episode)
         self.resume_page.skip_requested.connect(lambda: self.navigate(0, focus=True))
 
@@ -146,8 +156,12 @@ class MainWindow(QMainWindow):
         settings = QPushButton(strings.SETTINGS, objectName="navButton")
         settings.setToolTip(strings.SETTINGS_TOOLTIP)
         settings.setCursor(Qt.CursorShape.PointingHandCursor)
-        settings.clicked.connect(self.open_settings)
+        settings.clicked.connect(lambda: self.open_settings())
         col.addWidget(settings)
+        self.bot_label = QLabel(objectName="muted")
+        self.bot_label.setContentsMargins(14, 0, 14, 4)
+        self.bot_label.hide()
+        col.addWidget(self.bot_label)
         self.theme_button = QPushButton(objectName="navButton")
         self.theme_button.setToolTip(strings.THEME_TOOLTIP)
         self.theme_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -181,7 +195,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+W"), self, activated=self.close)
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.focus_search)
         QShortcut(QKeySequence.StandardKey.Find, self, activated=self.focus_search)
-        QShortcut(QKeySequence("Ctrl+,"), self, activated=self.open_settings)
+        QShortcut(QKeySequence("Ctrl+,"), self, activated=lambda: self.open_settings())
         QShortcut(QKeySequence("Alt+Left"), self, activated=self.go_back)
         QShortcut(QKeySequence.StandardKey.Back, self, activated=self.go_back)
         for index in range(len(self._pages)):
@@ -290,6 +304,7 @@ class MainWindow(QMainWindow):
             self.show_page(self.search_page, remember=False)
 
     def _open_hit(self, hit: SearchHit) -> None:
+        query = self.search.text()
         self.search.blockSignals(True)
         self.search.clear()
         self.search.blockSignals(False)
@@ -302,6 +317,9 @@ class MainWindow(QMainWindow):
             case SearchKind.VOICE:
                 self.show_page(self.voices_page, remember=False)
                 self.voices_page.select(hit.source_id)
+            case SearchKind.TRANSCRIPT if hit.owner_id is not None:
+                self.show_page(self.voices_page, remember=False)
+                self.voices_page.open_transcript(hit.owner_id, query)
             case SearchKind.TIMESTAMP_NOTE if hit.owner_id is not None:
                 self.show_page(self.voices_page, remember=False)
                 self.voices_page.open_note(hit.owner_id, hit.source_id)
@@ -335,10 +353,43 @@ class MainWindow(QMainWindow):
                 return True
         return super().eventFilter(watched, event)
 
-    # settings, recorder, inbox ----------------------------------------------------------
-    def open_settings(self) -> bool:
-        dialog = SettingsDialog(self, self._ws.settings, IDEA_HOTKEY_LABEL, self.hotkey.registered)
-        return dialog.exec() == SettingsDialog.DialogCode.Accepted
+    # settings, recorder, inbox, bot ------------------------------------------------------
+    def open_settings(self, tab: int = TAB_GENERAL) -> bool:
+        if self._settings_dialog is None:
+            self._settings_dialog = SettingsDialog(self, self._ws, self.bot, IDEA_HOTKEY_LABEL)
+            self._settings_dialog.data_replaced.connect(self._on_data_replaced)
+        return self._settings_dialog.open_at(tab, self.hotkey.registered)
+
+    def flush_pages(self) -> None:
+        """Write pending autosaves (before export/import)."""
+        self.ideas_page.flush()
+        self.workspace_page.flush()
+
+    def _on_data_replaced(self, _report: object) -> None:
+        """An import replaced every row: drop anything that points at old data."""
+        self.voices_page.clear_editor()  # stops the player on a file that may be gone
+        self._history.clear()
+        self._before_search = None
+        self.events.tags_changed.emit()
+        self.events.data_changed.emit()
+        self.navigate(0)
+
+    def _on_bot_status(self, status: BotStatus, _detail: str) -> None:
+        self.bot_label.setVisible(status is not BotStatus.STOPPED)
+        text = strings.BOT_STATUS.get(status.value, status.value)
+        self.bot_label.setText(strings.BOT_SIDEBAR.format(status=text))
+
+    def _on_bot_item(self, ref: ItemRef) -> None:
+        self.events.tags_changed.emit()  # the bot may have created tags
+        self.events.data_changed.emit()
+        if ref.kind is ItemKind.IDEA:
+            self.ideas_page.external_change()
+            self.ideas_page.status.setText(strings.BOT_RECEIVED_IDEA)
+            QTimer.singleShot(6000, lambda: self.ideas_page.status.setText(""))
+        else:
+            self.voices_page.external_change()
+            self.voices_page.status.setText(strings.BOT_RECEIVED_VOICE)
+            QTimer.singleShot(6000, lambda: self.voices_page.status.setText(""))
 
     def _record(self) -> None:
         path = self._ws.settings.recorder_path()
@@ -374,6 +425,7 @@ class MainWindow(QMainWindow):
         if self._first_show:
             self._first_show = False
             self.hotkey.register(int(self.winId()), *IDEA_HOTKEY)
+            self.bot.restart()  # quietly does nothing unless enabled with a token
             if self.stack.currentWidget() is self.resume_page:
                 QTimer.singleShot(0, self.resume_page.focus_main)
 
@@ -382,6 +434,8 @@ class MainWindow(QMainWindow):
         self.workspace_page.flush()
         self._ws.settings.set_window_geometry(bytes(self.saveGeometry().data()))
         self.hotkey.unregister()
+        self.bot.stop()
+        self.transcription_jobs.cancel()
         self.inbox.close()
         self.player.shutdown()
         super().closeEvent(event)

@@ -15,6 +15,7 @@ class SearchKind(IntEnum):
     TIMESTAMP_NOTE = 4
     TAG = 5
     VOICE = 6
+    TRANSCRIPT = 7
 
 
 ROWID_STRIDE = 8
@@ -45,7 +46,7 @@ class SearchHit:
     snippet: str
     quality: MatchQuality
     rank: float  # bm25 within a quality tier; lower is better
-    owner_id: int | None = None  # episode of an EpisodeNote, voice of a TimestampNote
+    owner_id: int | None = None  # episode of an EpisodeNote; voice of a TimestampNote/Transcript
     via_tag: str | None = None  # tag name, for MatchQuality.TAGGED
 
 

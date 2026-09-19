@@ -171,3 +171,46 @@ class EpisodeNote:
         self.title = normalize_persian(title.strip())
         self.body = normalize_persian(body)
         self.updated_at = utcnow()
+
+
+@dataclass(frozen=True)
+class TranscriptSegment:
+    start_ms: int
+    end_ms: int
+    text: str
+
+
+@dataclass(eq=False)
+class Transcript:
+    """Machine transcript of one Voice (at most one per voice; re-running replaces it).
+
+    Kept apart from TimestampNote: notes are the user's words, this is the recording's.
+    """
+
+    voice_id: int
+    segments: list[TranscriptSegment]
+    language: str = "fa"
+    model: str = ""
+    created_at: datetime = field(default_factory=utcnow)
+    id: int | None = None
+
+    def __post_init__(self) -> None:
+        cleaned: list[TranscriptSegment] = []
+        for seg in self.segments:
+            text = normalize_persian(" ".join(seg.text.split()))
+            if not text:
+                continue
+            start = ensure_non_negative(seg.start_ms, "start_ms")
+            cleaned.append(TranscriptSegment(start, max(start, seg.end_ms), text))
+        self.segments = sorted(cleaned, key=lambda s: s.start_ms)
+
+    @property
+    def text(self) -> str:
+        return "\n".join(seg.text for seg in self.segments)
+
+    def segment_at(self, position_ms: int) -> int | None:
+        """Index of the segment playing at `position_ms`, if any."""
+        for index, seg in enumerate(self.segments):
+            if seg.start_ms <= position_ms < max(seg.end_ms, seg.start_ms + 1):
+                return index
+        return None

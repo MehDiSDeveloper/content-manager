@@ -12,6 +12,8 @@ from podcast_workspace.domain.entities import (
     IdeaNote,
     Tag,
     TimestampNote,
+    Transcript,
+    TranscriptSegment,
     Voice,
 )
 from podcast_workspace.domain.errors import NotFoundError
@@ -24,6 +26,7 @@ from podcast_workspace.repositories.models import (
     SettingRow,
     TagRow,
     TimestampNoteRow,
+    TranscriptRow,
     VoiceRow,
 )
 
@@ -274,6 +277,49 @@ class EpisodeNoteRepository(SqlRepository[EpisodeNote, EpisodeNoteRow]):
             .order_by(EpisodeNoteRow.created_at)
         )
         return [self._to_domain(row) for row in rows]
+
+
+class TranscriptRepository(SqlRepository[Transcript, TranscriptRow]):
+    row_type = TranscriptRow
+    entity_name = "Transcript"
+
+    def _to_domain(self, row: TranscriptRow) -> Transcript:
+        return Transcript(
+            id=row.id,
+            voice_id=row.voice_id,
+            language=row.language,
+            model=row.model,
+            created_at=row.created_at,
+            segments=[TranscriptSegment(a, b, t) for a, b, t in json.loads(row.segments)],
+        )
+
+    def _apply(self, entity: Transcript, row: TranscriptRow) -> None:
+        row.voice_id = entity.voice_id
+        row.language = entity.language
+        row.model = entity.model
+        row.created_at = entity.created_at
+        row.text = entity.text
+        row.segments = json.dumps(
+            [[s.start_ms, s.end_ms, s.text] for s in entity.segments], ensure_ascii=False
+        )
+
+    def for_voice(self, voice_id: int) -> Transcript | None:
+        row = self.session.scalar(select(TranscriptRow).where(TranscriptRow.voice_id == voice_id))
+        return None if row is None else self._to_domain(row)
+
+    def voice_ids(self) -> set[int]:
+        return set(self.session.scalars(select(TranscriptRow.voice_id)))
+
+    def replace(self, transcript: Transcript) -> Transcript:
+        """Store as the voice's only transcript (the old one, if any, is dropped)."""
+        row = self.session.scalar(
+            select(TranscriptRow).where(TranscriptRow.voice_id == transcript.voice_id)
+        )
+        if row is not None:
+            self.session.delete(row)
+            self.session.flush()
+        transcript.id = None
+        return self.add(transcript)
 
 
 class SettingsRepository:

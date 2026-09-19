@@ -146,6 +146,18 @@ class EpisodeNoteRow(Base):
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime)
 
 
+class TranscriptRow(Base):
+    __tablename__ = "transcripts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    voice_id: Mapped[int] = mapped_column(ForeignKey("voices.id", ondelete="CASCADE"), unique=True)
+    language: Mapped[str] = mapped_column(String(8), default="fa")
+    model: Mapped[str] = mapped_column(String(64), default="")
+    text: Mapped[str] = mapped_column(Text, default="")  # joined segments; what FTS indexes
+    segments: Mapped[str] = mapped_column(Text, default="[]")  # JSON [[start, end, text], ...]
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
 class SettingRow(Base):
     __tablename__ = "settings"
 

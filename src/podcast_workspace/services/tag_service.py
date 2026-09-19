@@ -1,6 +1,8 @@
 """Tag use cases: CRUD, hierarchy, merge, and forgiving suggestions."""
 
+import threading
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -24,21 +26,55 @@ TAG_PALETTE = (
 )
 
 
+@dataclass(frozen=True)
+class TagResolution:
+    requested: str
+    tag: Tag
+    created: bool  # a new tag was made
+    corrected: bool  # an existing tag with a different (near-duplicate) name was used
+
+
 class TagService:
-    """Keeps an in-memory copy of all tags so suggestions never wait on the database."""
+    """Keeps an in-memory copy of all tags so suggestions never wait on the database.
+
+    Thread-safe: the Bale bot creates tags from its own thread.
+    """
 
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
         self._cache: list[Tag] | None = None
+        self._lock = threading.RLock()
 
     def _tags(self) -> list[Tag]:
-        if self._cache is None:
-            with UnitOfWork(self._session_factory) as uow:
-                self._cache = uow.tags.list_all()
-        return self._cache
+        with self._lock:
+            if self._cache is None:
+                with UnitOfWork(self._session_factory) as uow:
+                    self._cache = uow.tags.list_all()
+            return self._cache
 
     def _invalidate(self) -> None:
-        self._cache = None
+        with self._lock:
+            self._cache = None
+
+    def most_used(self, limit: int) -> list[Tag]:
+        """Tags by usage count (desc), then name; unused tags fill any remaining places."""
+        counts = self.usage_counts()
+        ranked = sorted(self._tags(), key=lambda t: (-counts.get(t.id or 0, 0), t.name))
+        return ranked[:limit]
+
+    def resolve_or_create(self, name: str) -> TagResolution:
+        """Free-text tag entry with no UI to ask the user: an exact match is reused, a
+        near-duplicate (the same fuzzy gate as TagInput) is reused instead of creating a
+        look-alike, anything else becomes a new tag."""
+        with self._lock:
+            tags = self._tags()
+            exact = find_exact(name, tags)
+            if exact is not None:
+                return TagResolution(name, exact, created=False, corrected=False)
+            similar = near_duplicates(name, tags)
+            if similar:
+                return TagResolution(name, similar[0].tag, created=False, corrected=True)
+            return TagResolution(name, self.create(name), created=True, corrected=False)
 
     def list_all(self) -> list[Tag]:
         return list(self._tags())
@@ -73,18 +109,23 @@ class TagService:
         allow_similar: bool = False,
     ) -> Tag:
         """Create a tag. Exact duplicates are always refused; near-duplicates need consent."""
-        tag = Tag(name=name, color=color or self._next_color(), parent_id=parent_id)
-        existing = self.find_exact(tag.name)
-        if existing is not None and existing.id is not None:
-            raise DuplicateTagError(existing.name, existing.id)
-        if not allow_similar:
-            similar = self.similar_to(tag.name)
-            if similar:
-                raise NearDuplicateTagError([t.name for t in similar])
-        with UnitOfWork(self._session_factory) as uow:
-            uow.tags.add(tag)
+        with self._lock:
+            tag = Tag(name=name, color=color or self._next_color(), parent_id=parent_id)
+            existing = self.find_exact(tag.name)
+            if existing is not None and existing.id is not None:
+                raise DuplicateTagError(existing.name, existing.id)
+            if not allow_similar:
+                similar = self.similar_to(tag.name)
+                if similar:
+                    raise NearDuplicateTagError([t.name for t in similar])
+            with UnitOfWork(self._session_factory) as uow:
+                uow.tags.add(tag)
+            self._invalidate()
+            return tag
+
+    def invalidate(self) -> None:
+        """Drop the cache after tags changed behind the service's back (data import)."""
         self._invalidate()
-        return tag
 
     def rename(self, tag_id: int, name: str) -> Tag:
         with UnitOfWork(self._session_factory) as uow:

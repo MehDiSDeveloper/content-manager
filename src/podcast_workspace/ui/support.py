@@ -1,5 +1,6 @@
 """Small UI helpers: Persian formatting, error dialogs, background tasks, app-wide events."""
 
+import threading
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -136,3 +137,22 @@ def run_async(
     relay.done.connect(lambda value: finish(on_done, value))
     relay.failed.connect(lambda exc: finish(on_failed, exc))
     QThreadPool.globalInstance().start(_Task(fn, relay))
+
+
+def run_detached(
+    fn: Callable[[], Any],
+    on_done: Callable[[Any], None],
+    on_failed: Callable[[BaseException], None],
+) -> None:
+    """Like run_async, but on a daemon thread: for work that cannot be cancelled (a model
+    download) and must not keep the app from exiting, as the thread pool would."""
+    relay = _Relay()
+    _live_relays.add(relay)
+
+    def finish(callback: Callable[[Any], None], value: Any) -> None:
+        _live_relays.discard(relay)
+        callback(value)
+
+    relay.done.connect(lambda value: finish(on_done, value))
+    relay.failed.connect(lambda exc: finish(on_failed, exc))
+    threading.Thread(target=_Task(fn, relay).run, daemon=True).start()
