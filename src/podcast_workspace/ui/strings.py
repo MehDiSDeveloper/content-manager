@@ -1,0 +1,10 @@
+"""All user-visible Persian text, in one place."""
+
+APP_NAME = "فضای کاری پادکست"
+EMPTY_TITLE = "خوش آمدید"
+EMPTY_HINT = "هنوز صفحه‌ای ساخته نشده است. به‌زودی اپیزودها، صداها و ایده‌ها اینجا می‌آیند."
+THEME_TO_DARK = "پوستهٔ تیره"
+THEME_TO_LIGHT = "پوستهٔ روشن"
+THEME_TOOLTIP = "تغییر پوسته (Ctrl+T)"
+STARTUP_ERROR_TITLE = "خطا در راه‌اندازی"
+STARTUP_ERROR_BODY = "پایگاه داده باز نشد:\n{error}"

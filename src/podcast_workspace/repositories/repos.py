@@ -1,0 +1,244 @@
+"""Concrete repositories, one per aggregate. They accept and return domain entities only."""
+
+import json
+from typing import Any
+
+from sqlalchemy import select
+
+from podcast_workspace.domain.entities import (
+    Episode,
+    EpisodeNote,
+    EpisodeStatus,
+    IdeaNote,
+    Tag,
+    TimestampNote,
+    Voice,
+)
+from podcast_workspace.domain.errors import NotFoundError
+from podcast_workspace.domain.rules import ensure_tag_limit, ensure_valid_parent
+from podcast_workspace.repositories.base import SqlRepository
+from podcast_workspace.repositories.models import (
+    EpisodeNoteRow,
+    EpisodeRow,
+    IdeaNoteRow,
+    SettingRow,
+    TagRow,
+    TimestampNoteRow,
+    VoiceRow,
+)
+
+
+class TagRepository(SqlRepository[Tag, TagRow]):
+    row_type = TagRow
+    entity_name = "Tag"
+
+    def _to_domain(self, row: TagRow) -> Tag:
+        return Tag(name=row.name, color=row.color, parent_id=row.parent_id, id=row.id)
+
+    def _apply(self, entity: Tag, row: TagRow) -> None:
+        if entity.parent_id is not None:
+            self._row(entity.parent_id)
+        ensure_valid_parent(entity.id, entity.parent_id, self._parent_of)
+        row.name = entity.name
+        row.color = entity.color
+        row.parent_id = entity.parent_id
+
+    def _parent_of(self, tag_id: int) -> int | None:
+        return self.session.scalar(select(TagRow.parent_id).where(TagRow.id == tag_id))
+
+    def list_all(self) -> list[Tag]:
+        rows = self.session.scalars(select(TagRow).order_by(TagRow.name))
+        return [self._to_domain(row) for row in rows]
+
+    def find_by_name(self, name: str) -> Tag | None:
+        row = self.session.scalar(select(TagRow).where(TagRow.name == name))
+        return None if row is None else self._to_domain(row)
+
+    def children_of(self, tag_id: int | None) -> list[Tag]:
+        condition = TagRow.parent_id.is_(None) if tag_id is None else TagRow.parent_id == tag_id
+        rows = self.session.scalars(select(TagRow).where(condition).order_by(TagRow.name))
+        return [self._to_domain(row) for row in rows]
+
+
+class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
+    row_type = EpisodeRow
+    entity_name = "Episode"
+
+    def _to_domain(self, row: EpisodeRow) -> Episode:
+        return Episode(
+            id=row.id,
+            title=row.title,
+            status=EpisodeStatus(row.status),
+            next_action=row.next_action,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+            last_opened_at=row.last_opened_at,
+            tag_ids={tag.id for tag in row.tags},
+            voice_ids={voice.id for voice in row.voices},
+            idea_note_ids={idea.id for idea in row.idea_notes},
+        )
+
+    def _apply(self, entity: Episode, row: EpisodeRow) -> None:
+        row.title = entity.title
+        row.status = entity.status.value
+        row.next_action = entity.next_action
+        row.created_at = entity.created_at
+        row.updated_at = entity.updated_at
+        row.last_opened_at = entity.last_opened_at
+        row.tags = self._tag_rows(entity.tag_ids)
+        row.voices = self._rows(VoiceRow, "Voice", entity.voice_ids)
+        row.idea_notes = self._rows(IdeaNoteRow, "IdeaNote", entity.idea_note_ids)
+
+    def _rows[T: (VoiceRow, IdeaNoteRow)](
+        self, row_type: type[T], name: str, ids: set[int]
+    ) -> list[T]:
+        if not ids:
+            return []
+        rows = list(self.session.scalars(select(row_type).where(row_type.id.in_(ids))))
+        missing = ids - {row.id for row in rows}
+        if missing:
+            raise NotFoundError(name, min(missing))
+        return rows
+
+    def list_all(self) -> list[Episode]:
+        rows = self.session.scalars(select(EpisodeRow).order_by(EpisodeRow.updated_at.desc()))
+        return [self._to_domain(row) for row in rows]
+
+
+class VoiceRepository(SqlRepository[Voice, VoiceRow]):
+    row_type = VoiceRow
+    entity_name = "Voice"
+
+    def _to_domain(self, row: VoiceRow) -> Voice:
+        return Voice(
+            id=row.id,
+            file_path=row.file_path,
+            duration_ms=row.duration_ms,
+            format=row.format,
+            imported_at=row.imported_at,
+            tag_ids={tag.id for tag in row.tags},
+        )
+
+    def _apply(self, entity: Voice, row: VoiceRow) -> None:
+        # Re-check at the persistence boundary: tag_ids may have been mutated in place.
+        ensure_tag_limit(entity.tag_ids, Voice.TAG_LIMIT or 0)
+        row.file_path = entity.file_path
+        row.duration_ms = entity.duration_ms
+        row.format = entity.format
+        row.imported_at = entity.imported_at
+        row.tags = self._tag_rows(entity.tag_ids)
+
+    def find_by_path(self, file_path: str) -> Voice | None:
+        row = self.session.scalar(select(VoiceRow).where(VoiceRow.file_path == file_path))
+        return None if row is None else self._to_domain(row)
+
+    def list_all(self) -> list[Voice]:
+        rows = self.session.scalars(select(VoiceRow).order_by(VoiceRow.imported_at.desc()))
+        return [self._to_domain(row) for row in rows]
+
+
+class IdeaNoteRepository(SqlRepository[IdeaNote, IdeaNoteRow]):
+    row_type = IdeaNoteRow
+    entity_name = "IdeaNote"
+
+    def _to_domain(self, row: IdeaNoteRow) -> IdeaNote:
+        return IdeaNote(
+            id=row.id,
+            text=row.text,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+            tag_ids={tag.id for tag in row.tags},
+        )
+
+    def _apply(self, entity: IdeaNote, row: IdeaNoteRow) -> None:
+        ensure_tag_limit(entity.tag_ids, IdeaNote.TAG_LIMIT or 0)
+        row.text = entity.text
+        row.created_at = entity.created_at
+        row.updated_at = entity.updated_at
+        row.tags = self._tag_rows(entity.tag_ids)
+
+    def list_all(self) -> list[IdeaNote]:
+        rows = self.session.scalars(select(IdeaNoteRow).order_by(IdeaNoteRow.updated_at.desc()))
+        return [self._to_domain(row) for row in rows]
+
+
+class TimestampNoteRepository(SqlRepository[TimestampNote, TimestampNoteRow]):
+    row_type = TimestampNoteRow
+    entity_name = "TimestampNote"
+
+    def _to_domain(self, row: TimestampNoteRow) -> TimestampNote:
+        return TimestampNote(
+            id=row.id,
+            voice_id=row.voice_id,
+            position_ms=row.position_ms,
+            text=row.text,
+            created_at=row.created_at,
+        )
+
+    def _apply(self, entity: TimestampNote, row: TimestampNoteRow) -> None:
+        row.voice_id = entity.voice_id
+        row.position_ms = entity.position_ms
+        row.text = entity.text
+        row.created_at = entity.created_at
+
+    def list_for_voice(self, voice_id: int) -> list[TimestampNote]:
+        rows = self.session.scalars(
+            select(TimestampNoteRow)
+            .where(TimestampNoteRow.voice_id == voice_id)
+            .order_by(TimestampNoteRow.position_ms)
+        )
+        return [self._to_domain(row) for row in rows]
+
+
+class EpisodeNoteRepository(SqlRepository[EpisodeNote, EpisodeNoteRow]):
+    row_type = EpisodeNoteRow
+    entity_name = "EpisodeNote"
+
+    def _to_domain(self, row: EpisodeNoteRow) -> EpisodeNote:
+        return EpisodeNote(
+            id=row.id,
+            episode_id=row.episode_id,
+            title=row.title,
+            body=row.body,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
+    def _apply(self, entity: EpisodeNote, row: EpisodeNoteRow) -> None:
+        row.episode_id = entity.episode_id
+        row.title = entity.title
+        row.body = entity.body
+        row.created_at = entity.created_at
+        row.updated_at = entity.updated_at
+
+    def list_for_episode(self, episode_id: int) -> list[EpisodeNote]:
+        rows = self.session.scalars(
+            select(EpisodeNoteRow)
+            .where(EpisodeNoteRow.episode_id == episode_id)
+            .order_by(EpisodeNoteRow.created_at)
+        )
+        return [self._to_domain(row) for row in rows]
+
+
+class SettingsRepository:
+    """Key/value store; values are JSON-encoded."""
+
+    def __init__(self, session: Any) -> None:
+        self.session = session
+
+    def get(self, key: str, default: Any = None) -> Any:
+        row = self.session.get(SettingRow, key)
+        return default if row is None else json.loads(row.value)
+
+    def set(self, key: str, value: Any) -> None:
+        encoded = json.dumps(value, ensure_ascii=False)
+        row = self.session.get(SettingRow, key)
+        if row is None:
+            self.session.add(SettingRow(key=key, value=encoded))
+        else:
+            row.value = encoded
+        self.session.flush()
+
+    def all(self) -> dict[str, Any]:
+        rows = self.session.scalars(select(SettingRow))
+        return {row.key: json.loads(row.value) for row in rows}
