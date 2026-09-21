@@ -1,12 +1,15 @@
 """Transcript tab under the player: run/cancel transcription, read the segments, click to seek.
 
 Transcription runs on the thread pool; TranscriptionJobs relays progress to the GUI thread.
-One job at a time (the service serializes anyway; faster-whisper saturates the CPU).
+One job at a time (the service serializes anyway; faster-whisper saturates the CPU), with
+a queue behind it for transcribing every voice that has no transcript yet.
 """
 
 import bisect
 import threading
 import time
+from collections import deque
+from collections.abc import Iterable
 
 from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtGui import QGuiApplication, QKeyEvent, QMouseEvent
@@ -47,11 +50,19 @@ USER_SCROLL_GRACE_S = 4.0
 
 
 class TranscriptionJobs(QObject):
-    """App-wide runner. Signals carry the voice id so any panel can filter."""
+    """App-wide runner. Signals carry the voice id so any panel can filter.
+
+    Behind the running job there can be a queue («transcribe all»): each voice starts when
+    the one before it ends, however it ended. Cancelling the running job skips just that
+    voice; `stop()` drops the rest too. A missing model or library stops the queue, since
+    every voice after it would fail the same way.
+    """
 
     progress = Signal(int, float)
     finished = Signal(int)
     failed = Signal(int, str)  # voice id, message ("" = cancelled)
+    queue_changed = Signal()
+    batch_ended = Signal(str)  # what to tell the user: done, stopped, or why it could not go on
     _relay_progress = Signal(int, float)
 
     def __init__(self, workspace: Workspace, parent: QObject | None = None) -> None:
@@ -59,11 +70,45 @@ class TranscriptionJobs(QObject):
         self._ws = workspace
         self._cancel: threading.Event | None = None
         self.running: int | None = None
+        self.fraction = -1.0  # of the running job; -1 while it is preparing
+        self._queue: deque[int] = deque()
+        self._from_queue = False  # the running job is part of the batch
+        self.batch_total = 0  # voices queued since the queue was last empty
+        self.batch_done = 0  # of those, ended one way or another
+        self.batch_ok = 0  # of those, transcribed
         self._relay_progress.connect(self.progress)  # queued: emitted on a worker thread
+        self.progress.connect(self._track)
+
+    @property
+    def batching(self) -> bool:
+        return self.batch_total > 0
+
+    def is_queued(self, voice_id: int) -> bool:
+        return voice_id in self._queue
+
+    def enqueue(self, voice_ids: Iterable[int]) -> int:
+        """Add voices to the queue, skipping ones already in it; returns how many."""
+        added = [v for v in dict.fromkeys(voice_ids) if v != self.running and v not in self._queue]
+        self._queue.extend(added)
+        self.batch_total += len(added)
+        if added:
+            self.queue_changed.emit()
+            self._next()
+        return len(added)
+
+    def stop(self) -> None:
+        """Drop the queue and cancel the running job."""
+        self.cancel()
+        if self.batching:
+            self._end_batch(stopped=True)
 
     def start(self, voice_id: int) -> bool:
         if self.running is not None:
             return False
+        self._run(voice_id)
+        return True
+
+    def _run(self, voice_id: int) -> None:
         self.running = voice_id
         cancel = self._cancel = threading.Event()
         emit = self._relay_progress.emit
@@ -73,29 +118,66 @@ class TranscriptionJobs(QObject):
 
         run_async(work, lambda _r: self._done(voice_id), lambda e: self._fail(voice_id, e))
         self.progress.emit(voice_id, -1.0)  # -1: preparing (model load, decode)
-        return True
 
     def cancel(self) -> None:
         if self._cancel is not None:
             self._cancel.set()
 
-    def _done(self, voice_id: int) -> None:
+    def _track(self, _voice_id: int, fraction: float) -> None:
+        self.fraction = fraction
+
+    def _next(self) -> None:
+        if self.running is not None:
+            return
+        if self._queue:
+            self._from_queue = True
+            self._run(self._queue.popleft())
+            self.queue_changed.emit()
+        elif self.batching:
+            self._end_batch()
+
+    def _end_batch(self, fatal: str = "", stopped: bool = False) -> None:
+        template = strings.TR_ALL_STOPPED if stopped else strings.TR_ALL_DONE
+        message = fatal or template.format(
+            ok=local_digits(self.batch_ok), total=local_digits(self.batch_total)
+        )
+        self._queue.clear()
+        self._from_queue = False  # a job still winding down no longer counts
+        self.batch_total = self.batch_done = self.batch_ok = 0
+        self.queue_changed.emit()
+        self.batch_ended.emit(message)
+
+    def _ended(self, ok: bool, fatal: str = "") -> None:
+        """Book-keeping after any job; then the next voice in the queue, if any."""
         self.running = None
+        self.fraction = -1.0
+        if self._from_queue:
+            self._from_queue = False
+            self.batch_done += 1
+            self.batch_ok += ok
+        if fatal and self.batching:
+            self._end_batch(fatal)
+        else:
+            self._next()
+
+    def _done(self, voice_id: int) -> None:
+        self._ended(True)
         self.finished.emit(voice_id)
 
     def _fail(self, voice_id: int, exc: BaseException) -> None:
-        self.running = None
+        fatal = ""
         match exc:
             case TranscriptionCancelledError():
                 message = ""
             case TranscriptionUnavailableError():
-                message = strings.TR_NOT_INSTALLED
+                message = fatal = strings.TR_NOT_INSTALLED
             case ModelMissingError():
-                message = strings.TR_MODEL_MISSING
+                message = fatal = strings.TR_MODEL_MISSING
             case FileNotFoundError():
                 message = strings.TR_FILE_MISSING
             case _:
                 message = strings.TR_FAILED.format(error=describe_error(exc))
+        self._ended(False, fatal)
         self.failed.emit(voice_id, message)
 
 
@@ -222,6 +304,7 @@ class TranscriptPanel(QFrame):
         jobs.progress.connect(self._on_progress)
         jobs.finished.connect(self._on_finished)
         jobs.failed.connect(self._on_failed)
+        jobs.queue_changed.connect(self._sync_controls)
         player.player.position_changed.connect(self._on_position)
         self._sync_controls()
 
@@ -298,9 +381,15 @@ class TranscriptPanel(QFrame):
         self.run_button.setText(strings.TR_RERUN if self._transcript else strings.TR_RUN)
         self.run_button.setVisible(not mine)
         self.run_button.setEnabled(self._voice_id is not None and running is None)
-        self.run_button.setToolTip(
-            strings.TR_BUSY_ELSEWHERE if running is not None else strings.TR_RUN_TOOLTIP
-        )
+        queued = self._voice_id is not None and self._jobs.is_queued(self._voice_id)
+        self.run_button.setEnabled(self.run_button.isEnabled() and not queued)
+        if queued:
+            tip = strings.TR_QUEUED
+        elif running is not None:
+            tip = strings.TR_BUSY_ELSEWHERE
+        else:
+            tip = strings.TR_RUN_TOOLTIP
+        self.run_button.setToolTip(tip)
         self.cancel_button.setVisible(mine)
         self.progress.setVisible(mine)
         self.copy_button.setVisible(bool(self._transcript and self._transcript.segments))

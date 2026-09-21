@@ -41,6 +41,7 @@ from podcast_workspace.domain.lifecycle import TRASH_DAYS, ArchiveScope
 from podcast_workspace.domain.rules import MAX_TAGS_PER_ITEM
 from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS
 from podcast_workspace.services.content_services import ImportReport
+from podcast_workspace.services.transcription import whisper_installed
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.icons import NAV_ICON_SIZE, list_pane_icon, more_icon
@@ -656,6 +657,16 @@ class VoicesPage(ShelfListPage):
         self._note_counts: dict[int, int] = {}
         self.setAcceptDrops(True)
         self.primary.setToolTip("Ctrl+N / Ctrl+O")
+        self._jobs = jobs
+        self.transcribe_all = QPushButton(strings.TR_ALL, objectName="flatButton")
+        self.transcribe_all.clicked.connect(self._transcribe_all)
+        # Under the list it acts on: the header and the switch's row have no room left.
+        side = self.list_side.layout()
+        assert isinstance(side, QVBoxLayout)
+        side.addWidget(self.transcribe_all, 0, Qt.AlignmentFlag.AlignLeading)
+        jobs.queue_changed.connect(self._sync_transcribe_all)
+        jobs.batch_ended.connect(self.status.setText)
+        self._sync_transcribe_all()
 
         col = QVBoxLayout(self.editor)
         col.setContentsMargins(0, 0, 0, 0)
@@ -775,6 +786,40 @@ class VoicesPage(ShelfListPage):
 
     def store_trashed(self, item_id: int) -> None:
         self._ws.voices.delete(item_id)
+
+    def _sync_transcribe_all(self) -> None:
+        batching = self._jobs.batching
+        self.transcribe_all.setText(strings.TR_ALL_STOP if batching else strings.TR_ALL)
+        self.transcribe_all.setToolTip("" if batching else strings.TR_ALL_TOOLTIP)
+
+    def _transcribe_all(self) -> None:
+        """Queue every voice the switch shows that has no transcript and whose file is there."""
+        if self._jobs.batching:
+            self._jobs.stop()
+            return
+        if not whisper_installed():
+            self.status.setText(strings.TR_NOT_INSTALLED)
+            return
+        if self._ws.transcripts.model_path() is None:
+            self.status.setText(strings.TR_MODEL_MISSING)
+            return
+        done = self._ws.transcripts.voice_ids()
+        todo = [
+            v.id
+            for v in self._ws.voices.list_all(self.scope)
+            if v.id is not None
+            and v.id not in done
+            and v.id != self._jobs.running
+            and Path(v.file_path).is_file()
+        ]
+        if not todo:
+            self.status.setText(strings.TR_ALL_NONE)
+            return
+        if confirm(
+            self, strings.TR_ALL_CONFIRM.format(n=local_digits(len(todo))), strings.TR_ALL_START
+        ):
+            self.status.setText("")
+            self._jobs.enqueue(todo)
 
     def _on_transcript_changed(self, voice_id: int) -> None:
         self._transcribed.add(voice_id)

@@ -150,7 +150,7 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
   - First private chat becomes owner (shown/resettable in settings); others get "private" and nothing is saved; groups ignored
   - Offset stored in settings after each update (at-least-once). Updates sent while the app was closed arrive on next start
   - Errors: 401/403 → UNAUTHORIZED, stop until token changes; network/5xx/other → OFFLINE, exponential backoff 3 s → 120 s; per-update exceptions logged, never raised
-- Transcription: faster-whisper, CPU int8, language fa, VAD on, condition_on_previous_text off (repetition loops), Persian initial prompt. Audio decoded by our ffmpeg to 16 kHz float32. Model is a local folder: managed download (`models/faster-whisper-<name>`, explicit button, one-time network) or a user folder; loaded with local_files_only. Default model large-v3-turbo. One job at a time; cancel checked per segment
+- Transcription: faster-whisper, CPU int8, language fa, VAD on, condition_on_previous_text off (repetition loops), Persian initial prompt. Audio decoded by our ffmpeg to 16 kHz float32. Model is a local folder: managed download (`models/faster-whisper-<name>`, explicit button, one-time network) or a user folder; loaded with local_files_only. Default model large-v3-turbo. One job at a time; cancel checked per segment. «Transcribe all» (under the Voices list) queues what the switch shows with no transcript and a file on disk; `TranscriptionJobs` runs the queue one by one, cancel skips one voice, a missing model/library ends the batch; progress in the sidebar. 0% is reported only after the model is loaded
 - Transcripts are their own entity (not TimestampNotes): the user's notes stay the user's words
 - Export = one zip: `data.json` (all entities, ids kept) + `audio/<id>_<name>` stored uncompressed. Settings not exported (per machine, bot token is a secret)
 - Import = full restore, not merge: validate every entity first, extract audio, snapshot DB to `backups/before-import_*.db`, then wipe + insert in one transaction. Voice keeps its original path if a same-size file is still there, else points into `library/`
@@ -223,6 +223,7 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
   HighlightedText (unreadable in dark). Lines/focus/markers use the Link role (accent_strong)
 
 ## Status
+- v1.7: «Transcribe all» queue on the Voices page, progress in the sidebar
 - v1.6: archive (active/all/archived switch on Voices, Ideas and search) and a 30-day trash
   page (select, restore, delete forever, restore all, empty, search inside the trash)
 - v1.5: Ctrl+R opens the recorder from anywhere. Audio folder page: the recording folder read

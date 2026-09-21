@@ -329,6 +329,8 @@ class MainWindow(QMainWindow):
         self.source_page.record_requested.connect(self._record)
         self.voices_page.settings_requested.connect(lambda: self.open_settings(TAB_TRANSCRIPTION))
         self.bot.status_changed.connect(self._on_bot_status)
+        self.transcription_jobs.queue_changed.connect(self._show_transcribe_progress)
+        self.transcription_jobs.progress.connect(lambda *_: self._show_transcribe_progress())
         self.bot.item_received.connect(self._on_bot_item)
         self.resume_page.continue_requested.connect(self.open_episode)
         self.resume_page.skip_requested.connect(lambda: self.navigate(0, focus=True))
@@ -480,6 +482,12 @@ class MainWindow(QMainWindow):
         self.bot_label.setWordWrap(True)
         self.bot_label.hide()
         col.addWidget(self.bot_label)
+        # «Transcribe all» runs for a long time, so its progress shows from every page.
+        self.transcribe_label = QLabel(objectName="muted")
+        self.transcribe_label.setContentsMargins(12, 0, 12, 6)
+        self.transcribe_label.setWordWrap(True)
+        self.transcribe_label.hide()
+        col.addWidget(self.transcribe_label)
         divider = QFrame(objectName="divider")
         col.addWidget(divider)
         col.addSpacing(6)
@@ -541,6 +549,7 @@ class MainWindow(QMainWindow):
         ):
             row.setAlignment(widget, centre)
         self.bot_label.setVisible(self._bot_active and not compact)
+        self._show_transcribe_progress()
         self.fold_button.setToolTip(strings.SIDEBAR_EXPAND if compact else strings.SIDEBAR_COLLAPSE)
         self._sync_back()
         self._sync_history()
@@ -1061,6 +1070,20 @@ class MainWindow(QMainWindow):
         text = strings.BOT_STATUS.get(status.value, status.value)
         self.bot_label.setText(strings.BOT_SIDEBAR.format(status=text))
 
+    def _show_transcribe_progress(self) -> None:
+        jobs = self.transcription_jobs
+        self.transcribe_label.setVisible(jobs.batching and not self._compact)
+        if not jobs.batching:
+            return
+        n = local_digits(min(jobs.batch_done + 1, jobs.batch_total))
+        total = local_digits(jobs.batch_total)
+        if jobs.fraction >= 0:
+            percent = local_digits(int(jobs.fraction * 100))
+            text = strings.TR_ALL_SIDEBAR_PERCENT.format(n=n, total=total, percent=percent)
+        else:
+            text = strings.TR_ALL_SIDEBAR.format(n=n, total=total)
+        self.transcribe_label.setText(text)
+
     def _on_bot_item(self, ref: ItemRef) -> None:
         self.events.tags_changed.emit()  # the bot may have created tags
         self.events.data_changed.emit()
@@ -1124,7 +1147,7 @@ class MainWindow(QMainWindow):
         self._ws.settings.set_window_geometry(bytes(self.saveGeometry().data()))
         self.hotkey.unregister()
         self.bot.stop()
-        self.transcription_jobs.cancel()
+        self.transcription_jobs.stop()
         self.inbox.close()
         self.player.shutdown()
         super().closeEvent(event)

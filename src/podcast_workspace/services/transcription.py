@@ -148,12 +148,13 @@ class TranscriptionService:
             raise FileNotFoundError(audio_file)
 
         with self._lock:
-            on_progress(0.0)
             model = self._load(path)
             if cancel.is_set():
                 raise TranscriptionCancelledError
             audio = np.frombuffer(decode_mono_f32(audio_file, SAMPLE_RATE), dtype=np.float32)
             total_s = max(len(audio) / SAMPLE_RATE, 0.001)
+            # Only now: until the model is loaded the panel shows "preparing", not 0%.
+            on_progress(0.0)
             segments, _info = model.transcribe(
                 audio,
                 language=LANGUAGE,
