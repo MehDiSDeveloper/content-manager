@@ -62,6 +62,16 @@ def voices_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+def text_icon(color: QColor) -> QIcon:
+    """Lines of writing: a text idea, beside the waveform of an audio one."""
+    pixmap, p = _canvas()
+    _stroke(p, color, 1.6)
+    for y, end in ((4.5, 15.0), (8.0, 15.0), (11.5, 15.0), (15.0, 10.0)):
+        p.drawLine(QPointF(3.0, y), QPointF(end, y))
+    p.end()
+    return QIcon(pixmap)
+
+
 def folder_icon(color: QColor) -> QIcon:
     """A folder with a small waveform inside: the audio source folder."""
     pixmap, p = _canvas()

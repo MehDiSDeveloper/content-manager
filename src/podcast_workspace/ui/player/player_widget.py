@@ -39,17 +39,25 @@ SKIP_MS = 10_000
 
 
 def install_player_keys(
-    page: QWidget, player: Player, extra: tuple[tuple[str, Callable[[], None]], ...] = ()
+    page: QWidget,
+    player: Player,
+    extra: tuple[tuple[str, Callable[[], None]], ...] = (),
+    enabled: Callable[[], bool] = lambda: True,
 ) -> None:
     """Player keys that work anywhere on `page`. A focused line edit keeps Space, arrows
-    and printable keys for itself (Qt gives it first claim through ShortcutOverride)."""
+    and printable keys for itself (Qt gives it first claim through ShortcutOverride).
+    `enabled` says whether the player is what the page shows right now; while it is not,
+    the keys do nothing (Space still presses a focused button)."""
 
     def space() -> None:
         focus = QApplication.focusWidget()
         if isinstance(focus, QAbstractButton):
             focus.animateClick()  # Space still presses a focused button
-        else:
+        elif enabled():
             player.toggle()
+
+    def only_when_enabled(handler: Callable[[], None]) -> Callable[[], None]:
+        return lambda: handler() if enabled() else None
 
     bindings: tuple[tuple[str, Callable[[], None]], ...] = (
         ("Space", space),
@@ -63,7 +71,8 @@ def install_player_keys(
     )
     context = Qt.ShortcutContext.WidgetWithChildrenShortcut
     for keys, handler in bindings:
-        QShortcut(QKeySequence(keys), page, activated=handler, context=context)
+        guarded = handler if keys == "Space" else only_when_enabled(handler)
+        QShortcut(QKeySequence(keys), page, activated=guarded, context=context)
 
 
 def speed_label(speed: float) -> str:

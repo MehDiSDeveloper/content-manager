@@ -9,10 +9,14 @@ to the list.
 The filter box narrows this page's own list by title and tag (`domain/list_filter.py`),
 which is a different job from the sidebar's global search: it takes rows away from what
 is already in front of you instead of opening a page of hits from everywhere. A page
-asks for one by passing `filter_placeholder`.
+asks for one by passing `filter_placeholder`, or brings a search of its own and overrides
+the filtering hooks (`row_matches`, `filter_active`, `clear_filter`).
+
+A row's id is whatever the page keys its items by — an int, or a small frozen dataclass
+when one list holds two kinds of item. Qt hands a dataclass back as the same object.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Hashable
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import (
@@ -25,7 +29,7 @@ from PySide6.QtCore import (
     QSize,
     Qt,
 )
-from PySide6.QtGui import QKeyEvent, QKeySequence, QPainter, QPalette, QShortcut
+from PySide6.QtGui import QIcon, QKeyEvent, QKeySequence, QPainter, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -72,15 +76,24 @@ LIST_MIN_WIDTH = 288
 LIST_MAX_WIDTH = 440
 
 
+ICON_SIZE = 16
+
+
 @dataclass(frozen=True)
 class Row:
     """One list entry. `tags` is what the filter box matches besides the title; it is
-    empty on pages that carry no tags."""
+    empty on pages that carry no tags. `tag_ids`, `content` (flattened, see
+    `flatten_for_filter`) and `kind` are for pages whose search reads more than that;
+    `icon` sits before the title when one list mixes kinds of item."""
 
-    item_id: int
+    item_id: Hashable
     title: str
     subtitle: str = ""
     tags: tuple[str, ...] = ()
+    tag_ids: frozenset[int] = frozenset()
+    content: str = ""
+    kind: str = ""
+    icon: QIcon | None = None
 
 
 @dataclass(frozen=True)
@@ -88,7 +101,7 @@ class ListPageState:
     """What this page looked like when the user navigated away from it."""
 
     filter_text: str = ""
-    current_id: int | None = None
+    current_id: Hashable | None = None
     scroll: int = 0
     extra: dict[str, object] = field(default_factory=dict)
 
@@ -110,6 +123,8 @@ class TwoLineDelegate(QStyledItemDelegate):
         self.initStyleOption(opt, index)
         style = opt.widget.style() if opt.widget else QApplication.style()
         opt.text = ""
+        icon = QIcon(opt.icon)
+        opt.icon = QIcon()  # drawn below, in line with the title
         style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
 
         # The selection is a soft tint (theme accent_soft), so text keeps its own colours.
@@ -120,6 +135,14 @@ class TwoLineDelegate(QStyledItemDelegate):
         line = opt.fontMetrics.height() + 4
         align = QStyle.visualAlignment(opt.direction, Qt.AlignmentFlag.AlignLeft)
         align |= Qt.AlignmentFlag.AlignVCenter
+        if not icon.isNull():
+            top = rect.y() + (line - ICON_SIZE) // 2
+            if opt.direction == Qt.LayoutDirection.RightToLeft:
+                icon.paint(painter, QRect(rect.right() - ICON_SIZE + 1, top, ICON_SIZE, ICON_SIZE))
+                rect.setRight(rect.right() - ICON_SIZE - 8)
+            else:
+                icon.paint(painter, QRect(rect.x(), top, ICON_SIZE, ICON_SIZE))
+                rect.setLeft(rect.x() + ICON_SIZE + 8)
 
         painter.save()
         font = opt.font
@@ -194,7 +217,7 @@ class ListPage(QWidget):
         side.setContentsMargins(0, 0, 0, 0)
         side.setSpacing(10)
 
-        header = QHBoxLayout()
+        header = self.header = QHBoxLayout()
         header.setSpacing(10)
         header.addWidget(QLabel(title, objectName="pageTitle"))
         header.addStretch(1)
@@ -242,7 +265,7 @@ class ListPage(QWidget):
     def rows(self) -> list[Row]:
         raise NotImplementedError
 
-    def show_item(self, item_id: int) -> None:
+    def show_item(self, item_id: Hashable) -> None:
         raise NotImplementedError
 
     def clear_editor(self) -> None:
@@ -251,10 +274,10 @@ class ListPage(QWidget):
     def primary_action(self) -> None:
         raise NotImplementedError
 
-    def delete_item(self, item_id: int) -> None:
+    def delete_item(self, item_id: Hashable) -> None:
         raise NotImplementedError
 
-    def row_actions(self, item_id: int) -> list[tuple[str, Callable[[], None]]]:
+    def row_actions(self, item_id: Hashable) -> list[tuple[str, Callable[[], None]]]:
         """What a right-click on a row offers; nothing by default (no menu at all)."""
         return []
 
@@ -277,6 +300,12 @@ class ListPage(QWidget):
         self.filter.selectAll()
 
     # filtering -------------------------------------------------------------------------
+    def row_matches(self, row: Row) -> bool:
+        return self._filter.matches(row.title, row.tags)
+
+    def filter_active(self) -> bool:
+        return not self._filter.is_empty
+
     def filter_text(self) -> str:
         return self.filter.text() if self.filter is not None else ""
 
@@ -305,9 +334,10 @@ class ListPage(QWidget):
         self._filter = parse_list_filter(text)
         self.refresh()
 
-    def _update_filter_count(self, shown: int, total: int) -> None:
+    def _update_filter_count(self, shown_rows: list[Row], rows: list[Row]) -> None:
         """Say how much is hidden, and only then — a pill on an unfiltered list is noise."""
-        filtering = not self._filter.is_empty
+        shown, total = len(shown_rows), len(rows)
+        filtering = self.filter_active()
         self.filter_count.setVisible(filtering)
         if filtering:
             text = strings.FILTER_COUNT.format(shown=local_digits(shown), total=local_digits(total))
@@ -324,11 +354,11 @@ class ListPage(QWidget):
         )
 
     # shared behaviour ------------------------------------------------------------------
-    def current_id(self) -> int | None:
+    def current_id(self) -> Hashable | None:
         item = self.list.currentItem()
-        return None if item is None else int(item.data(ID_ROLE))
+        return None if item is None else item.data(ID_ROLE)
 
-    def refresh(self, select_id: int | None = None, load: bool = True) -> None:
+    def refresh(self, select_id: Hashable | None = None, load: bool = True) -> None:
         """Reload the list. With load=False the editor keeps its content (used mid-typing).
 
         `select_id` also pins that row past the filter: a row the caller just created or
@@ -337,8 +367,8 @@ class ListPage(QWidget):
         keep = select_id if select_id is not None else self.current_id()
         rows = self.rows()
         self._total_rows = len(rows)
-        shown = [r for r in rows if r.item_id == select_id or self._filter.matches(r.title, r.tags)]
-        self._update_filter_count(len(shown), len(rows))
+        shown = [r for r in rows if r.item_id == select_id or self.row_matches(r)]
+        self._update_filter_count(shown, rows)
         self.list.blockSignals(True)
         self.list.clear()
         target: QListWidgetItem | None = None
@@ -346,6 +376,8 @@ class ListPage(QWidget):
             item = QListWidgetItem(row.title)
             item.setData(ID_ROLE, row.item_id)
             item.setData(SUBTITLE_ROLE, row.subtitle)
+            if row.icon is not None:
+                item.setIcon(row.icon)
             # Both lines are elided to the list's width; the tooltip is where the rest is.
             item.setToolTip("\n".join(part for part in (row.title, row.subtitle) if part))
             self.list.addItem(item)
@@ -368,13 +400,13 @@ class ListPage(QWidget):
         """Refresh one list entry in place (after an autosave) without reloading."""
         for i in range(self.list.count()):
             item = self.list.item(i)
-            if int(item.data(ID_ROLE)) == row.item_id:
+            if item.data(ID_ROLE) == row.item_id:
                 item.setText(row.title)
                 item.setData(SUBTITLE_ROLE, row.subtitle)
                 item.setToolTip("\n".join(part for part in (row.title, row.subtitle) if part))
                 return
 
-    def select(self, item_id: int) -> None:
+    def select(self, item_id: Hashable) -> None:
         self.clear_filter(reload=False)
         self.refresh(select_id=item_id)
         self.list.setFocus()
@@ -402,14 +434,14 @@ class ListPage(QWidget):
             self.clear_editor()
             return
         self.detail.setCurrentIndex(1)
-        self.show_item(int(current.data(ID_ROLE)))
+        self.show_item(current.data(ID_ROLE))
 
     def _row_menu(self, pos: QPoint) -> None:
         item = self.list.itemAt(pos)
         if item is None:
             return
         self.list.setCurrentItem(item)
-        actions = self.row_actions(int(item.data(ID_ROLE)))
+        actions = self.row_actions(item.data(ID_ROLE))
         if not actions:
             return
         menu = QMenu(self.list)

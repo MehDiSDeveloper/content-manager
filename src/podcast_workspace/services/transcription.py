@@ -76,6 +76,11 @@ class TranscriptionService:
         with UnitOfWork(self._sf) as uow:
             return uow.transcripts.voice_ids()
 
+    def texts(self) -> dict[int, str]:
+        """voice id -> transcript text, for every voice that has one."""
+        with UnitOfWork(self._sf) as uow:
+            return uow.transcripts.texts()
+
     def delete(self, voice_id: int) -> None:
         with UnitOfWork(self._sf) as uow:
             existing = uow.transcripts.for_voice(voice_id)

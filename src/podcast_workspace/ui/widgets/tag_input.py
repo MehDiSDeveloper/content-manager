@@ -3,6 +3,9 @@
 Typing shows forgiving live suggestions of existing tags. Enter picks the highlighted
 row, and the highlighted row is always an existing tag when one matches, so a
 near-duplicate can only be created by deliberately choosing the "create" row.
+
+With `allow_create=False` it picks among existing tags only: a search filter, not an
+editor, where a tag that does not exist yet has nothing to find.
 """
 
 from PySide6.QtCore import QEvent, QObject, Qt, Signal
@@ -27,11 +30,15 @@ class TagInput(QWidget):
         events: AppEvents,
         limit: int | None = None,
         parent: QWidget | None = None,
+        allow_create: bool = True,
+        placeholder: str = "",
     ) -> None:
         super().__init__(parent)
         self._tags = tags
         self._events = events
         self._limit = limit
+        self._allow_create = allow_create
+        self._placeholder = placeholder or strings.TAG_INPUT_PLACEHOLDER
         self._ids: list[int] = []
 
         col = QVBoxLayout(self)
@@ -44,7 +51,7 @@ class TagInput(QWidget):
 
         row = QHBoxLayout()
         row.setSpacing(8)
-        self.edit = QLineEdit(placeholderText=strings.TAG_INPUT_PLACEHOLDER)
+        self.edit = QLineEdit(placeholderText=self._placeholder)
         self.edit.setClearButtonEnabled(True)
         self.edit.textEdited.connect(self._update_suggestions)
         self.edit.installEventFilter(self)
@@ -102,7 +109,7 @@ class TagInput(QWidget):
         self.edit.setPlaceholderText(
             strings.TAG_INPUT_FULL.format(limit=local_digits(self._limit))
             if full
-            else strings.TAG_INPUT_PLACEHOLDER
+            else self._placeholder
         )
 
     def _parent_name(self, tag: Tag) -> str | None:
@@ -119,7 +126,7 @@ class TagInput(QWidget):
         matches = self._tags.suggest(text, exclude_ids=attached)
         create: tuple[str, str] | None = None
         exact = self._tags.find_exact(text)
-        if exact is None:
+        if exact is None and self._allow_create:
             name = " ".join(text.split())
             similar = [m.tag.name for m in matches if m.score >= NEAR_DUPLICATE_THRESHOLD] or [
                 t.name for t in self._tags.similar_to(name)
@@ -130,7 +137,7 @@ class TagInput(QWidget):
                 else strings.TAG_INPUT_CREATE.format(name=name)
             )
             create = (label, name)
-        elif exact.id in attached:
+        elif exact is not None and exact.id in attached:
             matches = [m for m in matches if m.tag.id != exact.id]
         self._list.fill([m.tag for m in matches], self._parent_name, create)
 

@@ -223,6 +223,13 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
   HighlightedText (unreadable in dark). Lines/focus/markers use the Link role (accent_strong)
 
 ## Status
+- v1.8: Voices and Ideas merged into one «ایده‌ها» page (`ui/pages/ideas_page.py`; rows keyed by
+  `IdeaKey(kind, id)`, kind switch همه/صوتی/متنی, one editor pane per kind). Its search is a
+  `FacetSearchBar`: phrases kept as chips with Enter, required tag chips (a tag counts its
+  subtags), all ANDed (`domain/list_filter.FacetFilter`), plus «در محتوا» for idea text and
+  transcripts. Global search reads titles only unless «در محتوا» is on (idea first line indexed
+  as its title, migration f3a8c1e5d907), counts what the content would add, and has kind tabs
+  with counts
 - v1.7: «Transcribe all» queue on the Voices page, progress in the sidebar
 - v1.6: archive (active/all/archived switch on Voices, Ideas and search) and a 30-day trash
   page (select, restore, delete forever, restore all, empty, search inside the trash)

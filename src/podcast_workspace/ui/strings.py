@@ -26,7 +26,6 @@ THEME_TOOLTIP = "تغییر پوسته (Ctrl+T)"
 NAV_TOOLTIP = "{label} — {keys}"
 
 NAV_EPISODES = "اپیزودها"
-NAV_VOICES = "صداها"
 NAV_IDEAS = "ایده‌ها"
 NAV_TAGS = "برچسب‌ها"
 
@@ -38,19 +37,18 @@ SIDEBAR_COLLAPSE = "جمع کردن نوار کناری  (Ctrl+B)"
 SIDEBAR_EXPAND = "باز کردن نوار کناری  (Ctrl+B)"
 
 SEARCH_PLACEHOLDER = "جستجو…"
-SEARCH_TOOLTIP = "جستجو در عنوان‌ها، یادداشت‌ها، رونوشت‌ها و برچسب‌ها (Ctrl+K)"
+SEARCH_TOOLTIP = "جستجو در عنوان‌ها، نام‌ها و برچسب‌ها؛ متن‌ها هم با «در محتوا» (Ctrl+K)"
 SEARCH_TITLE = "نتایج جستجو"
 SEARCH_EMPTY = "چیزی پیدا نشد. بخشی از یک کلمه یا نام برچسب را امتحان کنید."
 SEARCH_CORRECTED = "با اصلاح املایی: {pairs}"
 SEARCH_VIA_TAG = "برچسب «{tag}»"
-SEARCH_COUNT = "{n} نتیجه"
 KIND_LABELS = {
     SearchKind.EPISODE: "اپیزود",
-    SearchKind.IDEA_NOTE: "ایده",
+    SearchKind.IDEA_NOTE: "ایدهٔ متنی",
     SearchKind.EPISODE_NOTE: "یادداشت اپیزود",
     SearchKind.TIMESTAMP_NOTE: "یادداشت زمان‌دار",
     SearchKind.TAG: "برچسب",
-    SearchKind.VOICE: "صدا",
+    SearchKind.VOICE: "ایدهٔ صوتی",
     SearchKind.TRANSCRIPT: "رونوشت",
 }
 UNTITLED_NOTE = "یادداشت بی‌عنوان"
@@ -117,13 +115,12 @@ SOURCE_ADD_TOOLTIP = "به صداها اضافه می‌شود؛ فایل سر �
 SOURCE_ADD_OPEN = "افزودن و باز کردن"
 SOURCE_ADD_OPEN_TOOLTIP = "افزودن، و رفتن به صداها برای برچسب و یادداشت"
 SOURCE_ADDING = "در حال افزودن…"
-SOURCE_ADDED = "«{name}» به صداها اضافه شد"
+SOURCE_ADDED = "«{name}» به ایده‌های صوتی اضافه شد"
 SOURCE_IN_SUBFOLDER = "در {folder}"
 SIZE_MB = "{n} مگابایت"
 SIZE_KB = "{n} کیلوبایت"
 
-VOICES_TITLE = "صداها"
-VOICE_IMPORT = "وارد کردن صدا"
+VOICE_IMPORT = "افزودن صوت"
 VOICE_IMPORT_DIALOG = "انتخاب فایل‌های صوتی"
 VOICE_IMPORT_FILTER = "فایل‌های صوتی ({patterns})"
 VOICE_IMPORTING = "در حال وارد کردن…"
@@ -131,7 +128,6 @@ VOICE_IMPORT_DONE = "{imported} فایل وارد شد"
 VOICE_IMPORT_DUP = "{n} فایل از قبل وجود داشت"
 VOICE_IMPORT_UNSUPPORTED = "{n} فایل پشتیبانی نمی‌شود"
 VOICE_IMPORT_FAILED = "{n} فایل خوانده نشد"
-VOICE_EMPTY = "هنوز صدایی وارد نکرده‌اید. فایل‌ها را اینجا بکشید یا «وارد کردن صدا» را بزنید."
 VOICE_MISSING = "فایل در این مسیر پیدا نشد."
 VOICE_SHOW_IN_FOLDER = "نمایش در پوشه"
 VOICE_DURATION_UNKNOWN = "مدت نامعلوم"
@@ -140,9 +136,8 @@ VOICE_PATH_COPIED = "مسیر کپی شد"
 VOICE_NOTE_COUNT = "{n} یادداشت"
 
 IDEAS_TITLE = "ایده‌ها"
-IDEA_NEW = "ایدهٔ تازه"
+IDEA_NEW = "نوشتن ایده"
 IDEA_PLACEHOLDER = "ایده‌تان را بنویسید… (خودکار ذخیره می‌شود)"
-IDEA_EMPTY = "هنوز ایده‌ای ثبت نشده. با «ایدهٔ تازه» اولین را بنویسید."
 IDEA_UNSAVED = "ایدهٔ تازه (هنوز ذخیره نشده)"
 
 # Archive and trash (domain/lifecycle.py)
@@ -161,10 +156,6 @@ ARCHIVED_BADGE = "بایگانی‌شده"
 ARCHIVED_NOTE = "بایگانی‌شده — در فهرست فعال و جستجوی معمول نمی‌آید"
 MOVE_TO_TRASH = "انتقال به سطل زباله"
 MOVE_TO_TRASH_TOOLTIP = "تا {days} روز در سطل زباله می‌ماند و از آنجا برمی‌گردد  (Delete)"
-VOICE_ARCHIVED_EMPTY = "صدای بایگانی‌شده‌ای نیست."
-IDEA_ARCHIVED_EMPTY = "ایدهٔ بایگانی‌شده‌ای نیست."
-VOICE_ACTIVE_EMPTY = "صدای فعالی نیست؛ بقیه بایگانی شده‌اند («همه» یا «بایگانی»)."
-IDEA_ACTIVE_EMPTY = "ایدهٔ فعالی نیست؛ بقیه بایگانی شده‌اند («همه» یا «بایگانی»)."
 
 NAV_TRASH = "سطل زباله"
 TRASH_TITLE = "سطل زباله"
@@ -259,8 +250,6 @@ FILTER_NO_MATCH = (
 )
 FILTER_CLEAR = "پاک کردن پالایه (Esc)"
 EPISODE_FILTER_PLACEHOLDER = "پالایش اپیزودها بر پایهٔ عنوان یا برچسب…"
-VOICE_FILTER_PLACEHOLDER = "پالایش صداها بر پایهٔ نام یا برچسب…"
-IDEA_FILTER_PLACEHOLDER = "پالایش ایده‌ها بر پایهٔ متن یا برچسب…"
 
 CANCEL = "انصراف"
 DELETE = "حذف"
@@ -564,6 +553,61 @@ UNDO_ACTIONS = {
     "trash": "انتقال {target} {quoted} به سطل زباله",
 }
 UNDO_SOMETHING = "آخرین تغییر"
+
+# The Ideas page: audio and text ideas in one list, and its faceted search
+IDEA_KINDS = {"all": "همه", "audio": "صوتی", "text": "متنی"}
+IDEA_KIND_TOOLTIP = "کدام ایده‌ها: همه، فقط صوتی‌ها یا فقط متنی‌ها"
+IDEA_NEW_TOOLTIP = "نوشتن ایدهٔ متنی تازه  (Ctrl+N)"
+VOICE_IMPORT_TOOLTIP = (
+    "افزودن فایل صوتی به‌عنوان ایدهٔ صوتی  (Ctrl+O)\nفایل‌ها را روی همین صفحه هم می‌شود کشید."
+)
+IDEA_EMPTY = {
+    "all": "هنوز ایده‌ای نیست. با «نوشتن ایده» بنویسید، یا فایل صوتی را اینجا بکشید.",
+    "audio": "هنوز ایدهٔ صوتی‌ای نیست. فایل‌ها را اینجا بکشید یا «افزودن صوت» را بزنید.",
+    "text": "هنوز ایدهٔ متنی‌ای نیست. با «نوشتن ایده» اولین را بنویسید.",
+}
+IDEA_ACTIVE_EMPTY = {
+    "all": "ایدهٔ فعالی نیست؛ بقیه بایگانی شده‌اند («همه» یا «بایگانی»).",
+    "audio": "ایدهٔ صوتی فعالی نیست؛ بقیه بایگانی شده‌اند («همه» یا «بایگانی»).",
+    "text": "ایدهٔ متنی فعالی نیست؛ بقیه بایگانی شده‌اند («همه» یا «بایگانی»).",
+}
+IDEA_ARCHIVED_EMPTY = {
+    "all": "ایدهٔ بایگانی‌شده‌ای نیست.",
+    "audio": "ایدهٔ صوتی بایگانی‌شده‌ای نیست.",
+    "text": "ایدهٔ متنی بایگانی‌شده‌ای نیست.",
+}
+IDEA_SEARCH_PLACEHOLDER = "جستجو در ایده‌ها…"
+IDEA_SEARCH_TOOLTIP = (
+    "عنوان و برچسب ایده‌ها را می‌گردد  (Ctrl+F)\n"
+    "Enter عبارت را نگه می‌دارد تا عبارت بعدی را هم اضافه کنید؛ هر ایده باید همه را داشته باشد.\n"
+    '«"دو کلمه"» یعنی کنار هم، و «#نام» فقط برچسب‌ها را می‌گردد.'
+)
+IDEA_PIN_HINT = "Enter: نگه‌داشتن این عبارت و افزودن عبارت بعدی"
+IDEA_TAG_FILTER_PLACEHOLDER = "پالایش با برچسب…"
+IDEA_TAG_FILTER_TOOLTIP = (
+    "فقط ایده‌هایی که همهٔ این برچسب‌ها را دارند؛ زیربرچسب‌های هر برچسب هم حساب می‌شوند"
+)
+CONTENT_SWITCH = "در محتوا"
+IDEA_CONTENT_TOOLTIP = "متن کامل ایده‌های متنی و رونوشت ایده‌های صوتی هم جستجو شود"
+PHRASE_REMOVE_TOOLTIP = "برداشتن این عبارت"
+FACETS_CLEAR = "پاک کردن همه"
+FACETS_CLEAR_TOOLTIP = "برداشتن همهٔ عبارت‌ها و برچسب‌های جستجو"
+FACET_COUNT_KINDS = "{audio} صوتی · {text} متنی"
+FACET_NO_MATCH = "هیچ ایده‌ای با همهٔ این شرط‌ها جور در نیامد.\nیکی از عبارت‌ها یا برچسب‌ها را بردارید."
+FACET_NO_MATCH_CONTENT = (
+    "هیچ ایده‌ای با همهٔ این شرط‌ها جور در نیامد.\n"
+    "یکی از عبارت‌ها یا برچسب‌ها را بردارید، یا «در محتوا» را روشن کنید."
+)
+
+# Global search: titles unless the content is asked for, and a filter by kind
+SEARCH_CONTENT_TOOLTIP = (
+    "متن یادداشت‌ها، ایده‌ها و رونوشت‌ها هم جستجو شود؛ خاموش: فقط عنوان‌ها، نام‌ها و برچسب‌ها"
+)
+SEARCH_MORE_IN_CONTENT = "{n} نتیجهٔ دیگر در محتوا — نشان بده"
+SEARCH_KINDS = {"all": "همه", "episode": "اپیزود", "audio": "صوتی", "text": "متنی"}
+SEARCH_KIND_TAB = "{label} {n}"
+SEARCH_KIND_TOOLTIP = "فقط یک نوع از نتایج"
+SEARCH_EMPTY_KIND = "در این دسته نتیجه‌ای نیست؛ «همه» را ببینید."
 
 
 def apply_language(language: str) -> None:

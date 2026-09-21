@@ -480,6 +480,11 @@ class TranscriptRepository(SqlRepository[Transcript, TranscriptRow]):
     def voice_ids(self) -> set[int]:
         return set(self.session.scalars(select(TranscriptRow.voice_id)))
 
+    def texts(self) -> dict[int, str]:
+        """voice id -> transcript text, without the segments (for list searches)."""
+        rows = self.session.execute(select(TranscriptRow.voice_id, TranscriptRow.text))
+        return {voice_id: text for voice_id, text in rows}
+
     def replace(self, transcript: Transcript) -> Transcript:
         """Store as the voice's only transcript (the old one, if any, is dropped)."""
         row = self.session.scalar(

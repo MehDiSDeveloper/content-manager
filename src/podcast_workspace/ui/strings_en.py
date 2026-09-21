@@ -20,7 +20,6 @@ THEME_TOOLTIP = "Switch theme (Ctrl+T)"
 NAV_TOOLTIP = "{label} — {keys}"
 
 NAV_EPISODES = "Episodes"
-NAV_VOICES = "Voices"
 NAV_IDEAS = "Ideas"
 NAV_TAGS = "Tags"
 
@@ -32,19 +31,18 @@ SIDEBAR_COLLAPSE = "Collapse sidebar  (Ctrl+B)"
 SIDEBAR_EXPAND = "Expand sidebar  (Ctrl+B)"
 
 SEARCH_PLACEHOLDER = "Search…"
-SEARCH_TOOLTIP = "Search titles, notes, transcripts and tags (Ctrl+K)"
+SEARCH_TOOLTIP = "Search titles, names and tags; text too with “In content” (Ctrl+K)"
 SEARCH_TITLE = "Search results"
 SEARCH_EMPTY = "Nothing found. Try part of a word or a tag name."
 SEARCH_CORRECTED = "Spelling corrected: {pairs}"
 SEARCH_VIA_TAG = "tag “{tag}”"
-SEARCH_COUNT = "{n} results"
 KIND_LABELS = {
     SearchKind.EPISODE: "Episode",
-    SearchKind.IDEA_NOTE: "Idea",
+    SearchKind.IDEA_NOTE: "Text idea",
     SearchKind.EPISODE_NOTE: "Episode note",
     SearchKind.TIMESTAMP_NOTE: "Timestamped note",
     SearchKind.TAG: "Tag",
-    SearchKind.VOICE: "Voice",
+    SearchKind.VOICE: "Audio idea",
     SearchKind.TRANSCRIPT: "Transcript",
 }
 UNTITLED_NOTE = "Untitled note"
@@ -114,13 +112,12 @@ SOURCE_ADD_TOOLTIP = "Adds it to Voices; the file stays where it is  (Ctrl+Enter
 SOURCE_ADD_OPEN = "Add and open"
 SOURCE_ADD_OPEN_TOOLTIP = "Add it, then go to Voices to tag it and take notes"
 SOURCE_ADDING = "Adding…"
-SOURCE_ADDED = "“{name}” was added to Voices"
+SOURCE_ADDED = "“{name}” was added to audio ideas"
 SOURCE_IN_SUBFOLDER = "in {folder}"
 SIZE_MB = "{n} MB"
 SIZE_KB = "{n} KB"
 
-VOICES_TITLE = "Voices"
-VOICE_IMPORT = "Import audio"
+VOICE_IMPORT = "Add audio"
 VOICE_IMPORT_DIALOG = "Choose audio files"
 VOICE_IMPORT_FILTER = "Audio files ({patterns})"
 VOICE_IMPORTING = "Importing…"
@@ -128,7 +125,6 @@ VOICE_IMPORT_DONE = "{imported} files imported"
 VOICE_IMPORT_DUP = "{n} already there"
 VOICE_IMPORT_UNSUPPORTED = "{n} not supported"
 VOICE_IMPORT_FAILED = "{n} could not be read"
-VOICE_EMPTY = "No voices yet. Drop files here or click “Import audio”."
 VOICE_MISSING = "The file is no longer at this path."
 VOICE_SHOW_IN_FOLDER = "Show in folder"
 VOICE_DURATION_UNKNOWN = "Unknown length"
@@ -137,9 +133,8 @@ VOICE_PATH_COPIED = "Path copied"
 VOICE_NOTE_COUNT = "{n} notes"
 
 IDEAS_TITLE = "Ideas"
-IDEA_NEW = "New idea"
+IDEA_NEW = "Write idea"
 IDEA_PLACEHOLDER = "Write your idea… (saved automatically)"
-IDEA_EMPTY = "No ideas yet. Write the first one with “New idea”."
 IDEA_UNSAVED = "New idea (not saved yet)"
 
 ARCHIVE_SCOPES = {
@@ -157,10 +152,6 @@ ARCHIVED_BADGE = "Archived"
 ARCHIVED_NOTE = "Archived — not in the active list or everyday search"
 MOVE_TO_TRASH = "Move to trash"
 MOVE_TO_TRASH_TOOLTIP = "Kept in the trash for {days} days, restorable from there  (Delete)"
-VOICE_ARCHIVED_EMPTY = "No archived voices."
-IDEA_ARCHIVED_EMPTY = "No archived ideas."
-VOICE_ACTIVE_EMPTY = "No active voices; the rest are archived (“All” or “Archived”)."
-IDEA_ACTIVE_EMPTY = "No active ideas; the rest are archived (“All” or “Archived”)."
 
 NAV_TRASH = "Trash"
 TRASH_TITLE = "Trash"
@@ -251,8 +242,6 @@ FILTER_COUNT_TOOLTIP = "Showing {shown} of {total} items"
 FILTER_NO_MATCH = "Nothing matches “{query}”.\nTry part of a word, or type “#” and a tag name."
 FILTER_CLEAR = "Clear filter (Esc)"
 EPISODE_FILTER_PLACEHOLDER = "Filter episodes by title or tag…"
-VOICE_FILTER_PLACEHOLDER = "Filter voices by name or tag…"
-IDEA_FILTER_PLACEHOLDER = "Filter ideas by text or tag…"
 
 CANCEL = "Cancel"
 DELETE = "Delete"
@@ -554,3 +543,55 @@ UNDO_ACTIONS = {
     "trash": "Move {target} {quoted} to the trash",
 }
 UNDO_SOMETHING = "The last change"
+
+# The Ideas page: audio and text ideas in one list, and its faceted search
+IDEA_KINDS = {"all": "All", "audio": "Audio", "text": "Text"}
+IDEA_KIND_TOOLTIP = "Which ideas: all, audio only or text only"
+IDEA_NEW_TOOLTIP = "Write a new text idea  (Ctrl+N)"
+VOICE_IMPORT_TOOLTIP = (
+    "Add audio files as audio ideas  (Ctrl+O)\nYou can also drop files on this page."
+)
+IDEA_EMPTY = {
+    "all": "No ideas yet. Write one with “Write idea”, or drop audio files here.",
+    "audio": "No audio ideas yet. Drop files here or click “Add audio”.",
+    "text": "No text ideas yet. Write the first one with “Write idea”.",
+}
+IDEA_ACTIVE_EMPTY = {
+    "all": "No active ideas; the rest are archived (“All” or “Archived”).",
+    "audio": "No active audio ideas; the rest are archived (“All” or “Archived”).",
+    "text": "No active text ideas; the rest are archived (“All” or “Archived”).",
+}
+IDEA_ARCHIVED_EMPTY = {
+    "all": "No archived ideas.",
+    "audio": "No archived audio ideas.",
+    "text": "No archived text ideas.",
+}
+IDEA_SEARCH_PLACEHOLDER = "Search ideas…"
+IDEA_SEARCH_TOOLTIP = (
+    "Searches idea titles and tags  (Ctrl+F)\n"
+    "Enter keeps the phrase so you can add another; an idea must match them all.\n"
+    '“"two words"” means side by side, and “#name” searches tags only.'
+)
+IDEA_PIN_HINT = "Enter: keep this phrase and add another"
+IDEA_TAG_FILTER_PLACEHOLDER = "Filter by tag…"
+IDEA_TAG_FILTER_TOOLTIP = "Only ideas carrying all of these tags; a tag's subtags count too"
+CONTENT_SWITCH = "In content"
+IDEA_CONTENT_TOOLTIP = "Also search the full text of text ideas and the transcripts of audio ideas"
+PHRASE_REMOVE_TOOLTIP = "Remove this phrase"
+FACETS_CLEAR = "Clear all"
+FACETS_CLEAR_TOOLTIP = "Remove every search phrase and tag"
+FACET_COUNT_KINDS = "{audio} audio · {text} text"
+FACET_NO_MATCH = "No idea matches all of these.\nRemove one of the phrases or tags."
+FACET_NO_MATCH_CONTENT = (
+    "No idea matches all of these.\nRemove one of the phrases or tags, or turn on “In content”."
+)
+
+# Global search: titles unless the content is asked for, and a filter by kind
+SEARCH_CONTENT_TOOLTIP = (
+    "Also search the text of notes, ideas and transcripts; off: titles, names and tags only"
+)
+SEARCH_MORE_IN_CONTENT = "{n} more in content — show them"
+SEARCH_KINDS = {"all": "All", "episode": "Episodes", "audio": "Audio", "text": "Text"}
+SEARCH_KIND_TAB = "{label} {n}"
+SEARCH_KIND_TOOLTIP = "Only one kind of result"
+SEARCH_EMPTY_KIND = "Nothing of this kind; see “All”."

@@ -1,7 +1,8 @@
 """Main window: sidebar (right in RTL, left in LTR) holding search + navigation, and the
 page stack.
 
-Nav pages: Episodes, Board, Voices, Audio folder, Ideas, Tags, Trash (Ctrl+1..7). Off-nav pages:
+Nav pages: Episodes, Board, Ideas (audio and text), Audio folder, Tags, Trash (Ctrl+1..6).
+Off-nav pages:
 the startup resume screen and search results. An episode is always shown in one place — the Episodes
 page, beside its list — whether it is reached from there, the board, a tag, a search hit
 or the resume screen.
@@ -82,7 +83,8 @@ from podcast_workspace.ui.icons import (
 from podcast_workspace.ui.idea_inbox import IdeaInbox
 from podcast_workspace.ui.navigation import NavEntry, NavigationHistory, capture_state
 from podcast_workspace.ui.pages.board_page import BoardPage
-from podcast_workspace.ui.pages.content_pages import EpisodesPage, IdeasPage, VoicesPage
+from podcast_workspace.ui.pages.content_pages import EpisodesPage
+from podcast_workspace.ui.pages.ideas_page import IdeasPage
 from podcast_workspace.ui.pages.resume_page import ResumePage
 from podcast_workspace.ui.pages.search_page import SearchPage
 from podcast_workspace.ui.pages.source_page import SourcePage
@@ -298,9 +300,8 @@ class MainWindow(QMainWindow):
         self._settings_dialog: SettingsDialog | None = None
         self.episodes_page = EpisodesPage(workspace, self.events)
         self.board_page = BoardPage(workspace, self.events)
-        self.voices_page = VoicesPage(workspace, self.events, self.player, self.transcription_jobs)
+        self.ideas_page = IdeasPage(workspace, self.events, self.player, self.transcription_jobs)
         self.source_page = SourcePage(workspace, self.events, self.player)
-        self.ideas_page = IdeasPage(workspace, self.events)
         self.tags_page = TagsPage(workspace, self.events)
         self.trash_page = TrashPage(workspace, self.events)
         self.workspace_page = self.episodes_page.workspace  # lives inside the Episodes page
@@ -309,9 +310,8 @@ class MainWindow(QMainWindow):
         self._pages: list[QWidget] = [
             self.episodes_page,
             self.board_page,
-            self.voices_page,
-            self.source_page,
             self.ideas_page,
+            self.source_page,
             self.tags_page,
             self.trash_page,
         ]
@@ -327,7 +327,7 @@ class MainWindow(QMainWindow):
         self.tags_page.open_idea.connect(self.open_idea)
         self.source_page.open_voice.connect(self.open_voice)
         self.source_page.record_requested.connect(self._record)
-        self.voices_page.settings_requested.connect(lambda: self.open_settings(TAB_TRANSCRIPTION))
+        self.ideas_page.settings_requested.connect(lambda: self.open_settings(TAB_TRANSCRIPTION))
         self.bot.status_changed.connect(self._on_bot_status)
         self.transcription_jobs.queue_changed.connect(self._show_transcribe_progress)
         self.transcription_jobs.progress.connect(lambda *_: self._show_transcribe_progress())
@@ -445,9 +445,8 @@ class MainWindow(QMainWindow):
         entries = (
             (strings.NAV_EPISODES, episodes_icon, "episodes"),
             (strings.NAV_BOARD, board_icon, "board"),
-            (strings.NAV_VOICES, voices_icon, "voices"),
-            (strings.NAV_SOURCE, folder_icon, "source"),
             (strings.NAV_IDEAS, ideas_icon, "ideas"),
+            (strings.NAV_SOURCE, folder_icon, "source"),
             (strings.NAV_TAGS, tags_icon, "tags"),
             (strings.NAV_TRASH, trash_icon, "trash"),
         )
@@ -623,9 +622,9 @@ class MainWindow(QMainWindow):
             counts = [
                 len(self._ws.episodes.list_all()),
                 None,  # the board shows the same episodes
-                len(self._ws.voices.list_all(ArchiveScope.ACTIVE)),
+                len(self._ws.voices.list_all(ArchiveScope.ACTIVE))
+                + len(self._ws.ideas.list_all(ArchiveScope.ACTIVE)),
                 self.source_page.pending_count(),  # files waiting to be reviewed
-                len(self._ws.ideas.list_all(ArchiveScope.ACTIVE)),
                 len(self._ws.tags.list_all()),
                 self._ws.trash.count() or None,  # an empty trash shows no number
             ]
@@ -745,13 +744,13 @@ class MainWindow(QMainWindow):
         self.episodes_page.open_episode(episode_id, note_id)
 
     def open_voice(self, voice_id: int) -> None:
-        self.show_page(self.voices_page)
-        self.voices_page.select(voice_id)
-        self.voices_page.player.waveform.setFocus()
+        self.show_page(self.ideas_page)
+        self.ideas_page.open_voice(voice_id)
+        self.ideas_page.focus_editor()
 
     def open_idea(self, idea_id: int) -> None:
         self.show_page(self.ideas_page)
-        self.ideas_page.select(idea_id)
+        self.ideas_page.open_idea(idea_id)
 
     def focus_search(self) -> None:
         if self._compact:  # the box only exists on the open sidebar
@@ -854,8 +853,8 @@ class MainWindow(QMainWindow):
             case TargetKind.VOICE:
                 self.open_voice(target.item_id)
             case TargetKind.TIMESTAMP_NOTE if target.owner_id is not None:
-                self.show_page(self.voices_page, remember=False)
-                self.voices_page.open_note(target.owner_id, target.item_id)
+                self.show_page(self.ideas_page, remember=False)
+                self.ideas_page.open_note(target.owner_id, target.item_id)
             case TargetKind.IDEA:
                 self.open_idea(target.item_id)
             case TargetKind.TAG:
@@ -913,7 +912,9 @@ class MainWindow(QMainWindow):
                 self._leave_search()
             return
         try:
-            result = self._ws.search.search(query, scope=self.search_page.scope())
+            result = self._ws.search.search(
+                query, scope=self.search_page.scope(), in_content=self.search_page.in_content()
+            )
         except Exception as exc:
             show_error(self, exc)
             return
@@ -942,17 +943,17 @@ class MainWindow(QMainWindow):
             case SearchKind.EPISODE_NOTE if hit.owner_id is not None:
                 self.open_episode(hit.owner_id, hit.source_id)
             case SearchKind.VOICE:
-                self.show_page(self.voices_page, remember=False)
-                self.voices_page.select(hit.source_id)
+                self.show_page(self.ideas_page, remember=False)
+                self.ideas_page.open_voice(hit.source_id)
             case SearchKind.TRANSCRIPT if hit.owner_id is not None:
-                self.show_page(self.voices_page, remember=False)
-                self.voices_page.open_transcript(hit.owner_id, query)
+                self.show_page(self.ideas_page, remember=False)
+                self.ideas_page.open_transcript(hit.owner_id, query)
             case SearchKind.TIMESTAMP_NOTE if hit.owner_id is not None:
-                self.show_page(self.voices_page, remember=False)
-                self.voices_page.open_note(hit.owner_id, hit.source_id)
+                self.show_page(self.ideas_page, remember=False)
+                self.ideas_page.open_note(hit.owner_id, hit.source_id)
             case SearchKind.IDEA_NOTE:
                 self.show_page(self.ideas_page, remember=False)
-                self.ideas_page.select(hit.source_id)
+                self.ideas_page.open_idea(hit.source_id)
             case SearchKind.TAG:
                 self.show_page(self.tags_page, remember=False)
                 self.tags_page.select(hit.source_id)
@@ -1054,7 +1055,7 @@ class MainWindow(QMainWindow):
 
     def _on_data_replaced(self, _report: object) -> None:
         """An import replaced every row: drop anything that points at old data."""
-        self.voices_page.clear_editor()  # stops the player on a file that may be gone
+        self.ideas_page.clear_editor()  # stops the player on a file that may be gone
         self._history.clear()
         self._ws.history.clear()  # its entries name rows that no longer exist
         self._last_change = None
@@ -1087,14 +1088,12 @@ class MainWindow(QMainWindow):
     def _on_bot_item(self, ref: ItemRef) -> None:
         self.events.tags_changed.emit()  # the bot may have created tags
         self.events.data_changed.emit()
-        if ref.kind is ItemKind.IDEA:
-            self.ideas_page.external_change()
-            self.ideas_page.status.setText(strings.BOT_RECEIVED_IDEA)
-            QTimer.singleShot(6000, lambda: self.ideas_page.status.setText(""))
-        else:
-            self.voices_page.external_change()
-            self.voices_page.status.setText(strings.BOT_RECEIVED_VOICE)
-            QTimer.singleShot(6000, lambda: self.voices_page.status.setText(""))
+        self.ideas_page.external_change()
+        received = (
+            strings.BOT_RECEIVED_IDEA if ref.kind is ItemKind.IDEA else strings.BOT_RECEIVED_VOICE
+        )
+        self.ideas_page.status.setText(received)
+        QTimer.singleShot(6000, lambda: self.ideas_page.status.setText(""))
 
     def _record(self) -> None:
         path = self._ws.settings.recorder_path()

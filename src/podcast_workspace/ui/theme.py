@@ -326,6 +326,27 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     #hitSnippet {{ color: {c.muted}; }}
     #chipClose {{ border: none; background: transparent; color: {c.muted}; padding: 0 4px; }}
     #chipClose:hover {{ color: {c.danger}; }}
+    /* A kept search phrase: the accent's tint, so it never reads as one of the tags. */
+    #phraseChip {{
+        background: {c.accent_soft}; border: 1px solid {c.accent}; border-radius: 11px;
+    }}
+    #phraseChip QLabel {{ color: {on_soft}; font-weight: 600; }}
+    /* An on/off switch that says what it does: quiet when off, filled when on. */
+    QToolButton#toggleChip {{
+        background: transparent; color: {c.muted}; border: 1px solid {c.border};
+        border-radius: 12px; padding: 6px 10px; font-weight: 600;
+    }}
+    QToolButton#toggleChip:hover {{ color: {c.text}; background: {c.hover}; }}
+    QToolButton#toggleChip:checked {{
+        background: {c.accent_soft}; color: {on_soft}; border-color: {c.accent};
+    }}
+    QToolButton#toggleChip:focus {{ border: 1px dashed {c.accent_strong}; }}
+    #hint {{ color: {c.muted}; font-size: 8.5pt; padding: 0 4px; }}
+    QPushButton#linkButton {{
+        background: transparent; border: none; color: {c.accent_strong};
+        padding: 2px 4px; font-weight: 600;
+    }}
+    QPushButton#linkButton:hover {{ text-decoration: underline; }}
 
     #sectionTitle {{ font-size: 12.5pt; font-weight: 700; color: {c.text}; }}
     #clock {{ font-size: 12pt; font-weight: 600; color: {c.text}; min-width: 64px; }}
