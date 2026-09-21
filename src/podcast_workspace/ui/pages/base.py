@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 from podcast_workspace.domain.list_filter import ListFilter, parse_list_filter
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.support import direction_mark, local_digits
+from podcast_workspace.ui.theme import TEXT_WEIGHT
 
 
 def _rtl(text: str) -> str:
@@ -120,7 +121,7 @@ class TwoLineDelegate(QStyledItemDelegate):
             rect.width(),
         )
         painter.drawText(QRect(rect.x(), rect.y(), rect.width(), line), align, title)
-        font.setWeight(font.Weight.Normal)
+        font.setWeight(TEXT_WEIGHT)
         painter.setFont(font)
         painter.setPen(muted)
         subtitle = opt.fontMetrics.elidedText(

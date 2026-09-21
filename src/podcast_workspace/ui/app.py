@@ -9,10 +9,11 @@ from podcast_workspace import __version__
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import language, strings
 from podcast_workspace.ui.main_window import MainWindow
-from podcast_workspace.ui.theme import ThemeManager, load_fonts
+from podcast_workspace.ui.theme import ThemeManager, configure_text_rendering, load_fonts
 
 
 def main() -> int:
+    configure_text_rendering()
     app = QApplication(sys.argv)
     app.setApplicationName("PodcastWorkspace")
     app.setApplicationVersion(__version__)

@@ -98,6 +98,7 @@ from podcast_workspace.ui.support import (
     show_error,
 )
 from podcast_workspace.ui.theme import (
+    TEXT_WEIGHT,
     ThemeManager,
     colors,
     section_ink,
@@ -204,7 +205,7 @@ class NavButton(QPushButton):
     def _restyle(self, checked: bool) -> None:
         """QSS cannot reach the child labels; mirror the checked look by hand."""
         font = self.label.font()
-        font.setWeight(QFont.Weight.DemiBold if checked else QFont.Weight.Normal)
+        font.setWeight(QFont.Weight.DemiBold if checked else TEXT_WEIGHT)
         self.label.setFont(font)
         role = QPalette.ColorRole.Link if checked else QPalette.ColorRole.PlaceholderText
         self.count.setStyleSheet(f"color: {self.palette().color(role).name()};")

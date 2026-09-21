@@ -7,6 +7,7 @@ strokes and text on it, so a pastel never has to carry text by itself.
 
 import contextlib
 import ctypes
+import os
 import sys
 from dataclasses import dataclass
 
@@ -18,7 +19,10 @@ from podcast_workspace.paths import resources_dir
 from podcast_workspace.services.settings_service import SettingsService, Theme
 
 PREFERRED_FONTS = ("Vazirmatn", "Vazir", "Segoe UI")
-FONT_POINT_SIZE = 10
+FONT_POINT_SIZE = 10.5
+# Grayscale FreeType draws a touch lighter than ClearType; Medium brings body text back
+# to a solid stroke. Code that resets a font after a bold run resets it to this.
+TEXT_WEIGHT = QFont.Weight.Medium
 
 
 @dataclass(frozen=True)
@@ -118,6 +122,19 @@ def _rgba(color: str, alpha: float) -> str:
     return f"rgba({c.red()}, {c.green()}, {c.blue()}, {round(alpha * 255)})"
 
 
+def configure_text_rendering() -> None:
+    """Pick the font rasteriser; must run before the QApplication exists.
+
+    Qt's default DirectWrite engine gives Vazirmatn ClearType colour fringes and stepped
+    curves, worst on low-PPI screens at fractional scaling (110%) and on the dark theme,
+    where Persian text reads as dotted. FreeType renders it smooth and fringe-free.
+    An explicit QT_QPA_PLATFORM or -platform argument still wins.
+    """
+    if sys.platform != "win32" or "QT_QPA_PLATFORM" in os.environ or "-platform" in sys.argv:
+        return
+    os.environ["QT_QPA_PLATFORM"] = "windows:fontengine=freetype"
+
+
 def load_fonts(app: QApplication) -> str:
     """Register the bundled fonts (resources/fonts, Vazirmatn) and pick one."""
     fonts_dir = resources_dir() / "fonts"
@@ -127,10 +144,14 @@ def load_fonts(app: QApplication) -> str:
     family = next((f for f in PREFERRED_FONTS if f in families), app.font().family())
     font = app.font()
     font.setFamily(family)
-    font.setPointSize(FONT_POINT_SIZE)
-    # Vazirmatn's curves thin out under full hinting at text sizes.
+    font.setPointSizeF(FONT_POINT_SIZE)
+    font.setWeight(TEXT_WEIGHT)
+    # Vazirmatn's curves thin out under full hinting at text sizes; light hinting keeps
+    # baselines sharp without bending the curves.
     font.setHintingPreference(QFont.HintingPreference.PreferVerticalHinting)
-    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    font.setStyleStrategy(
+        QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.NoSubpixelAntialias
+    )
     app.setFont(font)
     return family
 

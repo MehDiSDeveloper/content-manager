@@ -43,7 +43,7 @@ from podcast_workspace.domain.pipeline import PIPELINE, days_untouched, is_stale
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.support import AppEvents, local_digits, show_error
-from podcast_workspace.ui.theme import colors
+from podcast_workspace.ui.theme import TEXT_WEIGHT, colors
 
 ID_ROLE = Qt.ItemDataRole.UserRole
 NEXT_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -138,7 +138,7 @@ class _CardDelegate(QStyledItemDelegate):
             strings.DIRECTION_MARK + _clip(str(index.data(Qt.ItemDataRole.DisplayRole) or ""), 70),
         )
         y += line * title_lines + 6
-        font.setWeight(font.Weight.Normal)
+        font.setWeight(TEXT_WEIGHT)
         painter.setFont(font)
         painter.setPen(palette.color(QPalette.ColorRole.PlaceholderText))
         next_action = str(index.data(NEXT_ROLE) or "")
