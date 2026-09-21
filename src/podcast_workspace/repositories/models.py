@@ -117,6 +117,9 @@ class VoiceRow(Base):
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
     format: Mapped[str] = mapped_column(String(16), default="")
     imported_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    # Archive / trash (migration d2c7f9a4b615): plain nullable columns, None = not.
+    archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
     tags: Mapped[list[TagRow]] = relationship(secondary=voice_tags)
 
@@ -128,6 +131,8 @@ class IdeaNoteRow(Base):
     text: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
     tags: Mapped[list[TagRow]] = relationship(secondary=idea_note_tags)
 

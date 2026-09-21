@@ -90,6 +90,7 @@ SECTION_INKS: dict[str, tuple[str, str]] = {
     "source": ("#3f8fce", "#a9d2f5"),
     "ideas": ("#b1850f", "#f1d98a"),
     "tags": ("#c9577f", "#f4b0ca"),
+    "trash": ("#6f7686", "#b9c0cf"),
 }
 STATUS_INKS: dict[str, tuple[str, str]] = {
     "idea": ("#b1850f", "#f1d98a"),

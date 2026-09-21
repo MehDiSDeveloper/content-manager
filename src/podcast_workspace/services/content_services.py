@@ -8,6 +8,10 @@ fields that change — never a copy of the database.
 What is not recorded, and why: importing voices (additive, and the files stay on disk),
 `open()` and `set_duration` (bookkeeping, not edits), and anything the Bale bot does
 (it runs inside `history.suspended()`: the user's stack is for the user's own actions).
+
+Voices and ideas are never deleted from here: `delete` puts them in the trash
+(`domain/lifecycle.py`), which keeps everything they carry. Emptying the trash — by
+hand or after 30 days — is `services/trash.py`, and is the only real delete.
 """
 
 from collections.abc import Iterable
@@ -25,11 +29,11 @@ from podcast_workspace.domain.entities import (
     IdeaNote,
     Season,
     TimestampNote,
-    Transcript,
     Voice,
     utcnow,
 )
 from podcast_workspace.domain.errors import DomainError
+from podcast_workspace.domain.lifecycle import ArchiveScope
 from podcast_workspace.domain.smart_links import (
     LinkCandidate,
     LinkKind,
@@ -71,6 +75,18 @@ def _relink(
         ids = episode.voice_ids if kind is LinkKind.VOICE else episode.idea_note_ids
         ids.add(item_id)
         uow.episodes.update(episode)
+
+
+def _shelve(
+    sf: sessionmaker[Session], repo: str, item_id: int, field_name: str, when: datetime | None
+) -> None:
+    """Set one voice's or idea's `archived_at` / `deleted_at` (the inverse of archiving
+    or trashing it)."""
+    with UnitOfWork(sf) as uow:
+        items = getattr(uow, repo)
+        item = items.get(item_id)
+        setattr(item, field_name, when)
+        items.update(item)
 
 
 class EpisodeService:
@@ -253,11 +269,11 @@ class EpisodeService:
             candidates = [
                 LinkCandidate(LinkKind.VOICE, v.id, frozenset(v.tag_ids), v.imported_at)
                 for v in uow.voices.list_all()
-                if v.id is not None
+                if v.id is not None and not v.archived
             ] + [
                 LinkCandidate(LinkKind.IDEA, i.id, frozenset(i.tag_ids), i.updated_at)
                 for i in uow.idea_notes.list_all()
-                if i.id is not None
+                if i.id is not None and not i.archived
             ]
         return rank_smart_links(episode.tag_ids, candidates)
 
@@ -346,8 +362,9 @@ class EpisodeService:
             restored.tag_ids = _known_tags(uow, restored.tag_ids)
             if restored.season_id is not None and uow.seasons.find(restored.season_id) is None:
                 restored.season_id = None
-            restored.voice_ids &= {v.id for v in uow.voices.list_all()}
-            restored.idea_note_ids &= {i.id for i in uow.idea_notes.list_all()}
+            # A link to an item in the trash is kept: restoring the item brings it back.
+            restored.voice_ids &= {v.id for v in uow.voices.list_all(include_trashed=True)}
+            restored.idea_note_ids &= {i.id for i in uow.idea_notes.list_all(include_trashed=True)}
             uow.episodes.add(restored)
             for note in notes:
                 uow.episode_notes.add(deepcopy(note))
@@ -558,9 +575,14 @@ class IdeaService:
         self._sf = session_factory
         self._history = history
 
-    def list_all(self) -> list[IdeaNote]:
+    def list_all(self, scope: ArchiveScope = ArchiveScope.ALL) -> list[IdeaNote]:
+        """Ideas outside the trash, narrowed by the archive switch."""
         with UnitOfWork(self._sf) as uow:
-            return uow.idea_notes.list_all()
+            return [i for i in uow.idea_notes.list_all() if scope.shows(i.archived)]
+
+    def list_trashed(self) -> list[IdeaNote]:
+        with UnitOfWork(self._sf) as uow:
+            return uow.idea_notes.list_trashed()
 
     def get(self, idea_id: int) -> IdeaNote:
         with UnitOfWork(self._sf) as uow:
@@ -621,16 +643,40 @@ class IdeaService:
         )
         return saved
 
-    def delete(self, idea_id: int) -> None:
+    def set_archived(self, idea_id: int, archived: bool) -> IdeaNote:
+        """Put away, or bring back. Not an edit: `updated_at` stays."""
         with UnitOfWork(self._sf) as uow:
-            idea = deepcopy(uow.idea_notes.get(idea_id))
-            episodes = frozenset(uow.episodes.ids_with_idea(idea_id))
-            uow.idea_notes.delete(idea_id)
+            idea = uow.idea_notes.get(idea_id)
+            if idea.archived == archived:
+                return idea
+            before = idea.archived_at
+            idea.archived_at = utcnow() if archived else None
+            saved = uow.idea_notes.update(idea)
+        after = saved.archived_at
         self._history.record(
-            ChangeKind.DELETE,
+            ChangeKind.ARCHIVE if archived else ChangeKind.UNARCHIVE,
             Target(TargetKind.IDEA, idea_id),
-            undo=lambda: self._restore(idea, episodes),
-            redo=lambda: self._erase(idea_id),
+            undo=lambda: _shelve(self._sf, "idea_notes", idea_id, "archived_at", before),
+            redo=lambda: _shelve(self._sf, "idea_notes", idea_id, "archived_at", after),
+            details=(_short(saved.text),),
+            weight=len(saved.text),
+        )
+        return saved
+
+    def delete(self, idea_id: int) -> None:
+        """Into the trash: hidden everywhere, kept whole until it is emptied."""
+        with UnitOfWork(self._sf) as uow:
+            idea = uow.idea_notes.get(idea_id)
+            if idea.in_trash:
+                return
+            idea.deleted_at = utcnow()
+            uow.idea_notes.update(idea)
+        when = idea.deleted_at
+        self._history.record(
+            ChangeKind.TRASH,
+            Target(TargetKind.IDEA, idea_id),
+            undo=lambda: _shelve(self._sf, "idea_notes", idea_id, "deleted_at", None),
+            redo=lambda: _shelve(self._sf, "idea_notes", idea_id, "deleted_at", when),
             details=(_short(idea.text),),
             weight=len(idea.text),
         )
@@ -678,9 +724,18 @@ class VoiceService:
         self._sf = session_factory
         self._history = history
 
-    def list_all(self) -> list[Voice]:
+    def list_all(
+        self, scope: ArchiveScope = ArchiveScope.ALL, include_trashed: bool = False
+    ) -> list[Voice]:
+        """Voices outside the trash, narrowed by the archive switch. `include_trashed` is
+        for the audio folder, which must not offer a file the workspace still holds."""
         with UnitOfWork(self._sf) as uow:
-            return uow.voices.list_all()
+            voices = uow.voices.list_all(include_trashed=include_trashed)
+        return [v for v in voices if v.in_trash or scope.shows(v.archived)]
+
+    def list_trashed(self) -> list[Voice]:
+        with UnitOfWork(self._sf) as uow:
+            return uow.voices.list_trashed()
 
     def get(self, voice_id: int) -> Voice:
         with UnitOfWork(self._sf) as uow:
@@ -696,7 +751,13 @@ class VoiceService:
                 continue
             try:
                 with UnitOfWork(self._sf) as uow:
-                    if uow.voices.find_by_path(str(path)) is not None:
+                    known = uow.voices.find_by_path(str(path))
+                    if known is not None and known.in_trash:
+                        # Imported again on purpose: it comes back out of the trash.
+                        known.deleted_at = None
+                        report.imported.append(uow.voices.update(known))
+                        continue
+                    if known is not None:
                         report.already_present.append(path)
                         continue
                 info = probe(path)
@@ -736,28 +797,43 @@ class VoiceService:
             voice.duration_ms = duration_ms
             return uow.voices.update(voice)
 
-    def delete(self, voice_id: int) -> None:
-        """Removes the voice from the workspace only. The audio file stays on disk.
-
-        Its timestamp notes, transcript and episode links go with it, so undo puts all of
-        them back: losing a transcript to a mis-click would cost a long re-run.
-        """
+    def set_archived(self, voice_id: int, archived: bool) -> Voice:
         with UnitOfWork(self._sf) as uow:
-            voice = deepcopy(uow.voices.get(voice_id))
-            notes = tuple(deepcopy(n) for n in uow.timestamp_notes.list_for_voice(voice_id))
-            transcript = deepcopy(uow.transcripts.for_voice(voice_id))
-            episodes = frozenset(uow.episodes.ids_with_voice(voice_id))
-            uow.voices.delete(voice_id)
-        name = Path(voice.file_path).name
+            voice = uow.voices.get(voice_id)
+            if voice.archived == archived:
+                return voice
+            before = voice.archived_at
+            voice.archived_at = utcnow() if archived else None
+            saved = uow.voices.update(voice)
+        after, name = saved.archived_at, Path(saved.file_path).name
         self._history.record(
-            ChangeKind.DELETE,
+            ChangeKind.ARCHIVE if archived else ChangeKind.UNARCHIVE,
             Target(TargetKind.VOICE, voice_id),
-            undo=lambda: self._restore(voice, notes, transcript, episodes),
-            redo=lambda: self._erase(voice_id),
+            undo=lambda: _shelve(self._sf, "voices", voice_id, "archived_at", before),
+            redo=lambda: _shelve(self._sf, "voices", voice_id, "archived_at", after),
             details=(name,),
-            weight=len(name)
-            + sum(len(n.text) for n in notes)
-            + (len(transcript.text) if transcript is not None else 0),
+            weight=len(name),
+        )
+        return saved
+
+    def delete(self, voice_id: int) -> None:
+        """Into the trash. The audio file stays on disk, and the voice keeps its timestamp
+        notes, transcript and episode links until the trash is emptied: losing a
+        transcript to a mis-click would cost a long re-run."""
+        with UnitOfWork(self._sf) as uow:
+            voice = uow.voices.get(voice_id)
+            if voice.in_trash:
+                return
+            voice.deleted_at = utcnow()
+            uow.voices.update(voice)
+        when, name = voice.deleted_at, Path(voice.file_path).name
+        self._history.record(
+            ChangeKind.TRASH,
+            Target(TargetKind.VOICE, voice_id),
+            undo=lambda: _shelve(self._sf, "voices", voice_id, "deleted_at", None),
+            redo=lambda: _shelve(self._sf, "voices", voice_id, "deleted_at", when),
+            details=(name,),
+            weight=len(name),
         )
 
     # inverses ---------------------------------------------------------------------------
@@ -766,29 +842,6 @@ class VoiceService:
             voice = uow.voices.get(voice_id)
             voice.set_tags(_known_tags(uow, tag_ids))
             uow.voices.update(voice)
-
-    def _restore(
-        self,
-        voice: Voice,
-        notes: tuple[TimestampNote, ...],
-        transcript: Transcript | None,
-        episodes: frozenset[int],
-    ) -> None:
-        with UnitOfWork(self._sf) as uow:
-            restored = deepcopy(voice)
-            restored.tag_ids = _known_tags(uow, restored.tag_ids)
-            uow.voices.add(restored)
-            for note in notes:
-                uow.timestamp_notes.add(deepcopy(note))
-            if transcript is not None:
-                uow.transcripts.add(deepcopy(transcript))
-            _relink(uow, episodes, LinkKind.VOICE, voice.id)
-
-    def _erase(self, voice_id: int | None) -> None:
-        if voice_id is None:
-            return
-        with UnitOfWork(self._sf) as uow:
-            uow.voices.delete(voice_id)
 
 
 class TimestampNoteService:

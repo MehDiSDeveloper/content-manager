@@ -34,6 +34,25 @@ class EpisodeStatus(StrEnum):
     PUBLISHED = "published"
 
 
+class Shelved:
+    """Mixin for items that can be archived and put in the trash (`domain/lifecycle.py`).
+
+    Both are moments, not flags: when it was archived, when it went in the trash (the
+    purge counts from there). None means it is not.
+    """
+
+    archived_at: datetime | None
+    deleted_at: datetime | None
+
+    @property
+    def archived(self) -> bool:
+        return self.archived_at is not None
+
+    @property
+    def in_trash(self) -> bool:
+        return self.deleted_at is not None
+
+
 class Taggable:
     """Mixin for entities that carry a tag set. `TAG_LIMIT` None means unlimited."""
 
@@ -115,7 +134,7 @@ class Episode(Taggable):
 
 
 @dataclass(eq=False)
-class Voice(Taggable):
+class Voice(Taggable, Shelved):
     TAG_LIMIT: ClassVar[int | None] = MAX_TAGS_PER_ITEM
 
     file_path: str
@@ -123,6 +142,8 @@ class Voice(Taggable):
     format: str = ""
     imported_at: datetime = field(default_factory=utcnow)
     tag_ids: set[int] = field(default_factory=set)
+    archived_at: datetime | None = None
+    deleted_at: datetime | None = None
     id: int | None = None
 
     def __post_init__(self) -> None:
@@ -133,13 +154,15 @@ class Voice(Taggable):
 
 
 @dataclass(eq=False)
-class IdeaNote(Taggable):
+class IdeaNote(Taggable, Shelved):
     TAG_LIMIT: ClassVar[int | None] = MAX_TAGS_PER_ITEM
 
     text: str
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
     tag_ids: set[int] = field(default_factory=set)
+    archived_at: datetime | None = None
+    deleted_at: datetime | None = None
     id: int | None = None
 
     def __post_init__(self) -> None:

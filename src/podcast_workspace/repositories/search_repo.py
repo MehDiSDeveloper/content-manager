@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from podcast_workspace.domain.lifecycle import ArchiveScope
 from podcast_workspace.domain.search import SearchKind, decode_rowid
 
 # Each source as (id, t = title, b = body, o = owner id).
@@ -31,6 +32,23 @@ _TAG_LINKS: dict[SearchKind, tuple[str, str]] = {
     SearchKind.EPISODE: ("episode_tags", "episode_id"),
     SearchKind.IDEA_NOTE: ("idea_note_tags", "idea_note_id"),
     SearchKind.VOICE: ("voice_tags", "voice_id"),
+}
+
+# Kinds that live and die with a voice or an idea: (id, archived, trashed) per hit. A
+# timestamp note or a transcript follows its voice into the archive and the trash.
+_STATE_SQL: dict[SearchKind, str] = {
+    SearchKind.IDEA_NOTE: (
+        "SELECT id, archived_at IS NOT NULL, deleted_at IS NOT NULL FROM idea_notes"
+    ),
+    SearchKind.VOICE: "SELECT id, archived_at IS NOT NULL, deleted_at IS NOT NULL FROM voices",
+    SearchKind.TIMESTAMP_NOTE: (
+        "SELECT n.id, v.archived_at IS NOT NULL, v.deleted_at IS NOT NULL "
+        "FROM timestamp_notes n JOIN voices v ON v.id = n.voice_id"
+    ),
+    SearchKind.TRANSCRIPT: (
+        "SELECT t.id, v.archived_at IS NOT NULL, v.deleted_at IS NOT NULL "
+        "FROM transcripts t JOIN voices v ON v.id = t.voice_id"
+    ),
 }
 
 Match = tuple[SearchKind, int, float]  # kind, source id, bm25 rank (lower is better)
@@ -81,6 +99,28 @@ class SearchRepository:
             )
             for source_id, title, body, owner in rows:
                 result[(kind, source_id)] = (title or "", body or "", owner)
+        return result
+
+    def hidden(
+        self, keys: Iterable[tuple[SearchKind, int]], scope: ArchiveScope
+    ) -> set[tuple[SearchKind, int]]:
+        """The hits `scope` leaves out. The trash is always left out; an archived-only
+        search also leaves out what can never be archived (episodes, their notes, tags)."""
+        by_kind: dict[SearchKind, set[int]] = defaultdict(set)
+        for kind, source_id in keys:
+            by_kind[kind].add(source_id)
+        result: set[tuple[SearchKind, int]] = set()
+        for kind, ids in by_kind.items():
+            sql = _STATE_SQL.get(kind)
+            if sql is None:
+                if scope is ArchiveScope.ARCHIVED:
+                    result.update((kind, i) for i in ids)
+                continue
+            placeholders = ", ".join(str(int(i)) for i in ids)
+            rows = self.session.execute(text(f"SELECT * FROM ({sql}) WHERE id IN ({placeholders})"))
+            for source_id, archived, trashed in rows:
+                if trashed or not scope.shows(bool(archived)):
+                    result.add((kind, source_id))
         return result
 
     def items_tagged(self, tag_ids: Iterable[int]) -> list[tuple[SearchKind, int, int]]:

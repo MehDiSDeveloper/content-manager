@@ -144,7 +144,7 @@ class BackupService:
     # export ----------------------------------------------------------------------------
     def _read_all(self) -> _Snapshot:
         with UnitOfWork(self._sf) as uow:
-            voices = uow.voices.list_all()
+            voices = uow.voices.list_all(include_trashed=True)  # the trash is data too
             episodes = uow.episodes.list_all()
             episode_notes = [
                 n
@@ -167,7 +167,7 @@ class BackupService:
             return _Snapshot(
                 tags=uow.tags.list_all(),
                 voices=voices,
-                ideas=uow.idea_notes.list_all(),
+                ideas=uow.idea_notes.list_all(include_trashed=True),
                 episodes=episodes,
                 episode_notes=episode_notes,
                 timestamp_notes=timestamp_notes,
@@ -239,6 +239,8 @@ class BackupService:
                     "duration_ms": v.duration_ms,
                     "format": v.format,
                     "imported_at": _dt(v.imported_at),
+                    "archived_at": _dt(v.archived_at),
+                    "deleted_at": _dt(v.deleted_at),
                     "tag_ids": sorted(v.tag_ids),
                 }
                 for v in snap.voices
@@ -249,6 +251,8 @@ class BackupService:
                     "text": i.text,
                     "created_at": _dt(i.created_at),
                     "updated_at": _dt(i.updated_at),
+                    "archived_at": _dt(i.archived_at),
+                    "deleted_at": _dt(i.deleted_at),
                     "tag_ids": sorted(i.tag_ids),
                 }
                 for i in snap.ideas
@@ -403,6 +407,9 @@ class BackupService:
                     format=v.get("format") or "",
                     imported_at=_req_dt(v["imported_at"]),
                     tag_ids=set(v.get("tag_ids") or ()),
+                    # Exports made before archive/trash existed have neither.
+                    archived_at=_parse_dt(v.get("archived_at")),
+                    deleted_at=_parse_dt(v.get("deleted_at")),
                 )
                 for v in data["voices"]
             ],
@@ -413,6 +420,8 @@ class BackupService:
                     created_at=_req_dt(i["created_at"]),
                     updated_at=_req_dt(i["updated_at"]),
                     tag_ids=set(i.get("tag_ids") or ()),
+                    archived_at=_parse_dt(i.get("archived_at")),
+                    deleted_at=_parse_dt(i.get("deleted_at")),
                 )
                 for i in data["idea_notes"]
             ],

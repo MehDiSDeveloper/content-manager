@@ -2,6 +2,7 @@
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select, text
@@ -93,13 +94,17 @@ class TagRepository(SqlRepository[Tag, TagRow]):
         return [self._to_domain(row) for row in rows]
 
     def usage_counts(self) -> dict[int, int]:
-        """Tag id -> number of episodes, voices and ideas carrying it."""
+        """Tag id -> number of episodes, voices and ideas carrying it. Items in the trash
+        do not count: they are nowhere else in the app either."""
         rows = self.session.execute(
             text(
                 "SELECT tag_id, COUNT(*) FROM ("
                 " SELECT tag_id FROM episode_tags UNION ALL"
-                " SELECT tag_id FROM voice_tags UNION ALL"
-                " SELECT tag_id FROM idea_note_tags) GROUP BY tag_id"
+                " SELECT tag_id FROM voice_tags WHERE voice_id NOT IN"
+                "  (SELECT id FROM voices WHERE deleted_at IS NOT NULL) UNION ALL"
+                " SELECT tag_id FROM idea_note_tags WHERE idea_note_id NOT IN"
+                "  (SELECT id FROM idea_notes WHERE deleted_at IS NOT NULL)"
+                ") GROUP BY tag_id"
             )
         )
         return {tag_id: count for tag_id, count in rows}
@@ -246,19 +251,6 @@ class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
             raise NotFoundError(name, min(missing))
         return rows
 
-    def ids_with_voice(self, voice_id: int) -> set[int]:
-        """Episodes this voice is linked to (the link rows vanish with the voice)."""
-        return self._linked_ids("episode_voices", "voice_id", voice_id)
-
-    def ids_with_idea(self, idea_id: int) -> set[int]:
-        return self._linked_ids("episode_idea_notes", "idea_note_id", idea_id)
-
-    def _linked_ids(self, table: str, column: str, item_id: int) -> set[int]:
-        rows = self.session.execute(
-            text(f"SELECT episode_id FROM {table} WHERE {column} = :item"), {"item": item_id}
-        )
-        return {episode_id for (episode_id,) in rows}
-
     def list_all(self) -> list[Episode]:
         rows = self.session.scalars(select(EpisodeRow).order_by(EpisodeRow.updated_at.desc()))
         return [self._to_domain(row) for row in rows]
@@ -315,6 +307,8 @@ class VoiceRepository(SqlRepository[Voice, VoiceRow]):
             format=row.format,
             imported_at=row.imported_at,
             tag_ids={tag.id for tag in row.tags},
+            archived_at=row.archived_at,
+            deleted_at=row.deleted_at,
         )
 
     def _apply(self, entity: Voice, row: VoiceRow) -> None:
@@ -324,15 +318,29 @@ class VoiceRepository(SqlRepository[Voice, VoiceRow]):
         row.duration_ms = entity.duration_ms
         row.format = entity.format
         row.imported_at = entity.imported_at
+        row.archived_at = entity.archived_at
+        row.deleted_at = entity.deleted_at
         row.tags = self._tag_rows(entity.tag_ids)
 
     def find_by_path(self, file_path: str) -> Voice | None:
         row = self.session.scalar(select(VoiceRow).where(VoiceRow.file_path == file_path))
         return None if row is None else self._to_domain(row)
 
-    def list_all(self) -> list[Voice]:
-        rows = self.session.scalars(select(VoiceRow).order_by(VoiceRow.imported_at.desc()))
-        return [self._to_domain(row) for row in rows]
+    def list_all(self, include_trashed: bool = False) -> list[Voice]:
+        """Newest first. The trash is left out unless asked for (export, the audio
+        folder's "already known" check, restoring links)."""
+        query = select(VoiceRow).order_by(VoiceRow.imported_at.desc())
+        if not include_trashed:
+            query = query.where(VoiceRow.deleted_at.is_(None))
+        return [self._to_domain(row) for row in self.session.scalars(query)]
+
+    def list_trashed(self) -> list[Voice]:
+        query = select(VoiceRow).where(VoiceRow.deleted_at.is_not(None))
+        return [self._to_domain(row) for row in self.session.scalars(query)]
+
+    def ids_trashed_before(self, cutoff: datetime) -> set[int]:
+        query = select(VoiceRow.id).where(VoiceRow.deleted_at <= cutoff)
+        return set(self.session.scalars(query))
 
 
 class IdeaNoteRepository(SqlRepository[IdeaNote, IdeaNoteRow]):
@@ -346,6 +354,8 @@ class IdeaNoteRepository(SqlRepository[IdeaNote, IdeaNoteRow]):
             created_at=row.created_at,
             updated_at=row.updated_at,
             tag_ids={tag.id for tag in row.tags},
+            archived_at=row.archived_at,
+            deleted_at=row.deleted_at,
         )
 
     def _apply(self, entity: IdeaNote, row: IdeaNoteRow) -> None:
@@ -353,11 +363,23 @@ class IdeaNoteRepository(SqlRepository[IdeaNote, IdeaNoteRow]):
         row.text = entity.text
         row.created_at = entity.created_at
         row.updated_at = entity.updated_at
+        row.archived_at = entity.archived_at
+        row.deleted_at = entity.deleted_at
         row.tags = self._tag_rows(entity.tag_ids)
 
-    def list_all(self) -> list[IdeaNote]:
-        rows = self.session.scalars(select(IdeaNoteRow).order_by(IdeaNoteRow.updated_at.desc()))
-        return [self._to_domain(row) for row in rows]
+    def list_all(self, include_trashed: bool = False) -> list[IdeaNote]:
+        query = select(IdeaNoteRow).order_by(IdeaNoteRow.updated_at.desc())
+        if not include_trashed:
+            query = query.where(IdeaNoteRow.deleted_at.is_(None))
+        return [self._to_domain(row) for row in self.session.scalars(query)]
+
+    def list_trashed(self) -> list[IdeaNote]:
+        query = select(IdeaNoteRow).where(IdeaNoteRow.deleted_at.is_not(None))
+        return [self._to_domain(row) for row in self.session.scalars(query)]
+
+    def ids_trashed_before(self, cutoff: datetime) -> set[int]:
+        query = select(IdeaNoteRow.id).where(IdeaNoteRow.deleted_at <= cutoff)
+        return set(self.session.scalars(query))
 
 
 class TimestampNoteRepository(SqlRepository[TimestampNote, TimestampNoteRow]):

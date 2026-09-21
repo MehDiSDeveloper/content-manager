@@ -45,6 +45,9 @@ class ChangeKind(StrEnum):
     RECOLOR = "recolor"
     REPARENT = "reparent"
     MERGE = "merge"
+    ARCHIVE = "archive"
+    UNARCHIVE = "unarchive"
+    TRASH = "trash"
 
 
 class TargetKind(StrEnum):

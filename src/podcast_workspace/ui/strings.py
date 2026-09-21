@@ -134,8 +134,6 @@ VOICE_IMPORT_FAILED = "{n} فایل خوانده نشد"
 VOICE_EMPTY = "هنوز صدایی وارد نکرده‌اید. فایل‌ها را اینجا بکشید یا «وارد کردن صدا» را بزنید."
 VOICE_MISSING = "فایل در این مسیر پیدا نشد."
 VOICE_SHOW_IN_FOLDER = "نمایش در پوشه"
-VOICE_DELETE = "حذف از فضای کاری"
-VOICE_DELETE_CONFIRM = "«{name}» از فضای کاری حذف شود؟ فایل صوتی روی دیسک باقی می‌ماند."
 VOICE_DURATION_UNKNOWN = "مدت نامعلوم"
 VOICE_PATH_TOOLTIP = "مسیر فایل — برای کپی کلیک کنید"
 VOICE_PATH_COPIED = "مسیر کپی شد"
@@ -145,8 +143,70 @@ IDEAS_TITLE = "ایده‌ها"
 IDEA_NEW = "ایدهٔ تازه"
 IDEA_PLACEHOLDER = "ایده‌تان را بنویسید… (خودکار ذخیره می‌شود)"
 IDEA_EMPTY = "هنوز ایده‌ای ثبت نشده. با «ایدهٔ تازه» اولین را بنویسید."
-IDEA_DELETE_CONFIRM = "این ایده حذف شود؟"
 IDEA_UNSAVED = "ایدهٔ تازه (هنوز ذخیره نشده)"
+
+# Archive and trash (domain/lifecycle.py)
+ARCHIVE_SCOPES = {
+    "active": "فعال",
+    "all": "همه",
+    "archived": "بایگانی",
+}
+ARCHIVE_SCOPE_TOOLTIP = "کدام‌ها نشان داده شوند: فعال‌ها، همه، یا فقط بایگانی‌شده‌ها"
+SEARCH_SCOPE_TOOLTIP = "بایگانی‌شده‌ها فقط وقتی جستجو می‌شوند که «همه» یا «بایگانی» را انتخاب کنید"
+ARCHIVE = "بایگانی"
+UNARCHIVE = "خروج از بایگانی"
+ARCHIVE_TOOLTIP = "از فهرست فعال و جستجوی معمول کنار می‌رود؛ برچسب‌ها و پیوندهایش می‌مانند"
+UNARCHIVE_TOOLTIP = "به فهرست فعال برمی‌گردد"
+ARCHIVED_BADGE = "بایگانی‌شده"
+ARCHIVED_NOTE = "بایگانی‌شده — در فهرست فعال و جستجوی معمول نمی‌آید"
+MOVE_TO_TRASH = "انتقال به سطل زباله"
+MOVE_TO_TRASH_TOOLTIP = "تا {days} روز در سطل زباله می‌ماند و از آنجا برمی‌گردد  (Delete)"
+VOICE_ARCHIVED_EMPTY = "صدای بایگانی‌شده‌ای نیست."
+IDEA_ARCHIVED_EMPTY = "ایدهٔ بایگانی‌شده‌ای نیست."
+VOICE_ACTIVE_EMPTY = "صدای فعالی نیست؛ بقیه بایگانی شده‌اند («همه» یا «بایگانی»)."
+IDEA_ACTIVE_EMPTY = "ایدهٔ فعالی نیست؛ بقیه بایگانی شده‌اند («همه» یا «بایگانی»)."
+
+NAV_TRASH = "سطل زباله"
+TRASH_TITLE = "سطل زباله"
+TRASH_HINT = (
+    "موارد حذف‌شده {days} روز اینجا می‌مانند و بعد برای همیشه پاک می‌شوند. "
+    "تا آن وقت در هیچ فهرست و جستجویی نمی‌آیند و همه‌چیزشان محفوظ است."
+)
+TRASH_EMPTY = "سطل زباله خالی است."
+TRASH_FILTER_PLACEHOLDER = "جستجو در سطل زباله…"
+TRASH_FILTER_TOOLTIP = "جستجو در متن، نام و برچسب موارد حذف‌شده  (Ctrl+F)"
+TRASH_KINDS = {
+    "all": "همه",
+    "voice": "صداها",
+    "idea": "ایده‌ها",
+}
+TRASH_RESTORE = "بازیابی"
+TRASH_RESTORE_TOOLTIP = "برگرداندن موارد انتخاب‌شده به جای قبلی‌شان  (Enter)"
+TRASH_RESTORE_ALL = "بازیابی همه"
+TRASH_PURGE = "حذف برای همیشه"
+TRASH_PURGE_TOOLTIP = "پاک کردن موارد انتخاب‌شده، بی‌بازگشت  (Delete)"
+TRASH_EMPTY_ALL = "خالی کردن سطل زباله"
+TRASH_SELECT_ALL = "انتخاب همه"
+TRASH_SELECT_ALL_TOOLTIP = "انتخاب همهٔ موارد این فهرست  (Ctrl+A)"
+TRASH_SELECTED = "{n} مورد انتخاب شده"
+TRASH_PURGE_CONFIRM = (
+    "{n} مورد برای همیشه پاک شود؟ برچسب‌گذاری‌ها، یادداشت‌ها، رونوشت و پیوندهایشان هم "
+    "پاک می‌شود و این کار بازگشت ندارد. فایل‌های صوتی روی دیسک می‌مانند."
+)
+TRASH_EMPTY_CONFIRM = (
+    "همهٔ {n} مورد سطل زباله برای همیشه پاک شود؟ این کار بازگشت ندارد. "
+    "فایل‌های صوتی روی دیسک می‌مانند."
+)
+TRASH_RESTORE_ALL_CONFIRM = "همهٔ {n} مورد سطل زباله بازیابی شود؟"
+TRASH_RESTORED = "{n} مورد بازیابی شد"
+TRASH_PURGED = "{n} مورد برای همیشه پاک شد"
+TRASH_AUTO_PURGED = "{n} مورد که {days} روز در سطل زباله بود برای همیشه پاک شد"
+TRASH_DAYS_LEFT = "{n} روز تا پاک شدن"
+TRASH_DELETED_AT = "حذف‌شده در {when}"
+TRASH_FROM_ARCHIVE = "به بایگانی برمی‌گردد"
+TRASH_PREVIEW_EMPTY = "یک مورد را انتخاب کنید تا محتوایش را ببینید."
+TRASH_PREVIEW_MANY = "{n} مورد انتخاب شده. «بازیابی» یا «حذف برای همیشه» روی همهٔ آن‌ها اعمال می‌شود."
+TRASH_VOICE_HINT = "برای شنیدن و ویرایش، اول بازیابی کنید."
 
 TAGS_TITLE = "برچسب‌ها"
 TAG_NEW = "برچسب تازه"
@@ -485,6 +545,9 @@ UNDO_ACTIONS = {
     "recolor": "تغییر رنگ برچسب {quoted}",
     "reparent": "جابه‌جایی برچسب {quoted}",
     "merge": "ادغام برچسب {quoted} در {other}",
+    "archive": "بایگانی {target} {quoted}",
+    "unarchive": "خروج {target} {quoted} از بایگانی",
+    "trash": "انتقال {target} {quoted} به سطل زباله",
 }
 UNDO_SOMETHING = "آخرین تغییر"
 

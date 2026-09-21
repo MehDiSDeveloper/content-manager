@@ -56,7 +56,8 @@ class SourceFolderService:
             return []
         if not folder.is_dir():
             raise FileNotFoundError(str(folder))
-        known = {_key(v.file_path) for v in self._voices.list_all()}
+        # A voice in the trash is still the workspace's: its file is not offered again.
+        known = {_key(v.file_path) for v in self._voices.list_all(include_trashed=True)}
         found: list[SourceFile] = []
         for root, dirs, files in os.walk(folder):
             dirs[:] = sorted(d for d in dirs if not d.startswith("."))
@@ -98,7 +99,7 @@ class SourceFolderService:
             return report.imported[0]
         if report.failed:
             raise OSError(report.failed[0][1])
-        for voice in self._voices.list_all():  # it was there already
+        for voice in self._voices.list_all(include_trashed=True):  # it was there already
             if _key(voice.file_path) == _key(path):
                 return voice
         raise FileNotFoundError(str(path))

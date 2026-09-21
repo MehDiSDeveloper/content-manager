@@ -131,8 +131,6 @@ VOICE_IMPORT_FAILED = "{n} could not be read"
 VOICE_EMPTY = "No voices yet. Drop files here or click “Import audio”."
 VOICE_MISSING = "The file is no longer at this path."
 VOICE_SHOW_IN_FOLDER = "Show in folder"
-VOICE_DELETE = "Remove from workspace"
-VOICE_DELETE_CONFIRM = "Remove “{name}” from the workspace? The audio file stays on disk."
 VOICE_DURATION_UNKNOWN = "Unknown length"
 VOICE_PATH_TOOLTIP = "File path — click to copy"
 VOICE_PATH_COPIED = "Path copied"
@@ -142,8 +140,68 @@ IDEAS_TITLE = "Ideas"
 IDEA_NEW = "New idea"
 IDEA_PLACEHOLDER = "Write your idea… (saved automatically)"
 IDEA_EMPTY = "No ideas yet. Write the first one with “New idea”."
-IDEA_DELETE_CONFIRM = "Delete this idea?"
 IDEA_UNSAVED = "New idea (not saved yet)"
+
+ARCHIVE_SCOPES = {
+    "active": "Active",
+    "all": "All",
+    "archived": "Archived",
+}
+ARCHIVE_SCOPE_TOOLTIP = "Which to show: active, all, or only archived"
+SEARCH_SCOPE_TOOLTIP = "Archived items are searched only when “All” or “Archived” is chosen"
+ARCHIVE = "Archive"
+UNARCHIVE = "Unarchive"
+ARCHIVE_TOOLTIP = "Leaves the active list and everyday search; tags and links stay"
+UNARCHIVE_TOOLTIP = "Back to the active list"
+ARCHIVED_BADGE = "Archived"
+ARCHIVED_NOTE = "Archived — not in the active list or everyday search"
+MOVE_TO_TRASH = "Move to trash"
+MOVE_TO_TRASH_TOOLTIP = "Kept in the trash for {days} days, restorable from there  (Delete)"
+VOICE_ARCHIVED_EMPTY = "No archived voices."
+IDEA_ARCHIVED_EMPTY = "No archived ideas."
+VOICE_ACTIVE_EMPTY = "No active voices; the rest are archived (“All” or “Archived”)."
+IDEA_ACTIVE_EMPTY = "No active ideas; the rest are archived (“All” or “Archived”)."
+
+NAV_TRASH = "Trash"
+TRASH_TITLE = "Trash"
+TRASH_HINT = (
+    "Deleted items stay here for {days} days, then are gone for good. Until then they "
+    "appear in no list or search, and everything they hold is kept."
+)
+TRASH_EMPTY = "The trash is empty."
+TRASH_FILTER_PLACEHOLDER = "Search the trash…"
+TRASH_FILTER_TOOLTIP = "Search the text, names and tags of deleted items  (Ctrl+F)"
+TRASH_KINDS = {
+    "all": "All",
+    "voice": "Voices",
+    "idea": "Ideas",
+}
+TRASH_RESTORE = "Restore"
+TRASH_RESTORE_TOOLTIP = "Put the selected items back where they were  (Enter)"
+TRASH_RESTORE_ALL = "Restore all"
+TRASH_PURGE = "Delete forever"
+TRASH_PURGE_TOOLTIP = "Delete the selected items, with no way back  (Delete)"
+TRASH_EMPTY_ALL = "Empty trash"
+TRASH_SELECT_ALL = "Select all"
+TRASH_SELECT_ALL_TOOLTIP = "Select every item in this list  (Ctrl+A)"
+TRASH_SELECTED = "{n} selected"
+TRASH_PURGE_CONFIRM = (
+    "Delete {n} items forever? Their tagging, notes, transcripts and links go too, and "
+    "this cannot be undone. Audio files stay on disk."
+)
+TRASH_EMPTY_CONFIRM = (
+    "Delete all {n} items in the trash forever? This cannot be undone. Audio files stay on disk."
+)
+TRASH_RESTORE_ALL_CONFIRM = "Restore all {n} items in the trash?"
+TRASH_RESTORED = "{n} restored"
+TRASH_PURGED = "{n} deleted forever"
+TRASH_AUTO_PURGED = "{n} items that spent {days} days in the trash were deleted for good"
+TRASH_DAYS_LEFT = "{n} days left"
+TRASH_DELETED_AT = "Deleted {when}"
+TRASH_FROM_ARCHIVE = "returns to the archive"
+TRASH_PREVIEW_EMPTY = "Select an item to see what it holds."
+TRASH_PREVIEW_MANY = "{n} selected. Restore or Delete forever applies to all of them."
+TRASH_VOICE_HINT = "Restore it to listen and edit."
 
 TAGS_TITLE = "Tags"
 TAG_NEW = "New tag"
@@ -477,5 +535,8 @@ UNDO_ACTIONS = {
     "recolor": "Recolour tag {quoted}",
     "reparent": "Move tag {quoted}",
     "merge": "Merge tag {quoted} into {other}",
+    "archive": "Archive {target} {quoted}",
+    "unarchive": "Unarchive {target} {quoted}",
+    "trash": "Move {target} {quoted} to the trash",
 }
 UNDO_SOMETHING = "The last change"

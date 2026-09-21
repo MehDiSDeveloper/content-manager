@@ -109,6 +109,25 @@ def tags_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+def trash_icon(color: QColor) -> QIcon:
+    """A bin with its lid: the trash."""
+    pixmap, p = _canvas()
+    _stroke(p, color)
+    p.drawLine(QPointF(2.8, 4.6), QPointF(15.2, 4.6))
+    p.drawLine(QPointF(7.2, 4.6), QPointF(7.6, 2.6))
+    p.drawLine(QPointF(7.6, 2.6), QPointF(10.4, 2.6))
+    p.drawLine(QPointF(10.4, 2.6), QPointF(10.8, 4.6))
+    path = QPainterPath(QPointF(4.4, 4.6))
+    path.lineTo(5.4, 15.4)
+    path.lineTo(12.6, 15.4)
+    path.lineTo(13.6, 4.6)
+    p.drawPath(path)
+    p.drawLine(QPointF(7.6, 7.4), QPointF(7.9, 12.8))
+    p.drawLine(QPointF(10.4, 7.4), QPointF(10.1, 12.8))
+    p.end()
+    return QIcon(pixmap)
+
+
 def settings_icon(color: QColor) -> QIcon:
     """Two sliders."""
     pixmap, p = _canvas()

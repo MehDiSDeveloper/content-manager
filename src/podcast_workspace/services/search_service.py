@@ -6,6 +6,9 @@ Three passes, merged and de-duplicated, best quality first:
 3. items carrying a tag found in 1/2                           -> MatchQuality.TAGGED
 4. only if little was found: misspelled terms are corrected against the index
    vocabulary (fts5vocab) and the word query is re-run         -> MatchQuality.TYPO
+
+What sits in the trash is never found here, and archived voices/ideas (with their notes
+and transcripts) only when the caller's `ArchiveScope` asks for them.
 """
 
 import bisect
@@ -15,6 +18,7 @@ from rapidfuzz import process
 from rapidfuzz.distance import OSA
 from sqlalchemy.orm import Session, sessionmaker
 
+from podcast_workspace.domain.lifecycle import ArchiveScope
 from podcast_workspace.domain.search import (
     MatchQuality,
     SearchHit,
@@ -84,7 +88,9 @@ class SearchService:
         with UnitOfWork(self._sf) as uow:
             self._vocabulary(uow)
 
-    def search(self, query: str, limit: int = MAX_HITS) -> SearchResult:
+    def search(
+        self, query: str, limit: int = MAX_HITS, scope: ArchiveScope = ArchiveScope.ACTIVE
+    ) -> SearchResult:
         terms = query_terms(query)
         if not terms:
             return SearchResult(query, [], {})
@@ -95,6 +101,12 @@ class SearchService:
                 key = (kind, source_id)
                 if key not in best or (quality, rank) < best[key][:2]:
                     best[key] = (quality, rank, None)
+
+        def drop_hidden(final: bool) -> None:
+            # Tag hits stay until the end: the items they carry are found through them.
+            keys = [k for k in best if final or k[0] is not SearchKind.TAG]
+            for key in repo.hidden(keys, scope):
+                del best[key]
 
         corrections: dict[str, str] = {}
         with UnitOfWork(self._sf) as uow:
@@ -108,6 +120,7 @@ class SearchService:
                     repo.substring_matches(" AND ".join(fts_phrase(t) for t in terms)),
                     MatchQuality.SUBSTRING,
                 )
+            drop_hidden(final=False)  # before counting: hidden hits must not suppress the typo pass
 
             if len(best) < TYPO_PASS_BELOW:
                 vocab = self._vocabulary(uow)
@@ -135,6 +148,7 @@ class SearchService:
                     tag_rank = best[(SearchKind.TAG, tag_id)][1]
                     if key not in best or best[key][0] > MatchQuality.TAGGED:
                         best[key] = (MatchQuality.TAGGED, tag_rank, tag_names[tag_id])
+            drop_hidden(final=True)
 
             ordered = sorted(best.items(), key=lambda kv: (kv[1][0], kv[1][1]))[:limit]
             texts = repo.source_texts(key for key, _ in ordered)

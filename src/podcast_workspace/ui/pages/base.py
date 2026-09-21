@@ -12,9 +12,19 @@ is already in front of you instead of opening a page of hits from everywhere. A 
 asks for one by passing `filter_placeholder`.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import QEvent, QModelIndex, QObject, QPersistentModelIndex, QRect, QSize, Qt
+from PySide6.QtCore import (
+    QEvent,
+    QModelIndex,
+    QObject,
+    QPersistentModelIndex,
+    QPoint,
+    QRect,
+    QSize,
+    Qt,
+)
 from PySide6.QtGui import QKeyEvent, QKeySequence, QPainter, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -24,6 +34,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QStackedWidget,
     QStyle,
@@ -171,6 +182,8 @@ class ListPage(QWidget):
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list.currentItemChanged.connect(self._on_current_changed)
         self.list.installEventFilter(self)
+        self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.list.customContextMenuRequested.connect(self._row_menu)
 
         # The filter belongs to the list, so it sits in the same column and carries the
         # same width limits; the column, not the list, is what the layout stretches.
@@ -240,6 +253,10 @@ class ListPage(QWidget):
 
     def delete_item(self, item_id: int) -> None:
         raise NotImplementedError
+
+    def row_actions(self, item_id: int) -> list[tuple[str, Callable[[], None]]]:
+        """What a right-click on a row offers; nothing by default (no menu at all)."""
+        return []
 
     def new_shortcut(self) -> None:
         """Ctrl+N. A page whose detail pane makes things of its own routes it by focus."""
@@ -386,6 +403,19 @@ class ListPage(QWidget):
             return
         self.detail.setCurrentIndex(1)
         self.show_item(int(current.data(ID_ROLE)))
+
+    def _row_menu(self, pos: QPoint) -> None:
+        item = self.list.itemAt(pos)
+        if item is None:
+            return
+        self.list.setCurrentItem(item)
+        actions = self.row_actions(int(item.data(ID_ROLE)))
+        if not actions:
+            return
+        menu = QMenu(self.list)
+        for label, callback in actions:
+            menu.addAction(label, callback)
+        menu.exec(self.list.viewport().mapToGlobal(pos))
 
     def _delete_current(self) -> None:
         item_id = self.current_id()

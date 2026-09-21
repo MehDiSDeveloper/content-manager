@@ -1,7 +1,12 @@
-"""Episodes, Voices and Ideas pages: create, list, edit (autosave), delete."""
+"""Episodes, Voices and Ideas pages: create, list, edit (autosave), delete.
+
+Voices and ideas can also be archived and put in the trash (`ShelfListPage`); a delete
+on those two pages is a move to the trash, which is why it asks nothing — the toast
+offers the undo, and the trash page the restore.
+"""
 
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import replace
 from pathlib import Path
 
@@ -31,14 +36,15 @@ from PySide6.QtWidgets import (
 )
 
 from podcast_workspace.audio.engine import Player
-from podcast_workspace.domain.entities import Episode, IdeaNote, Season, Voice
+from podcast_workspace.domain.entities import Episode, IdeaNote, Season, Shelved, Voice
+from podcast_workspace.domain.lifecycle import TRASH_DAYS, ArchiveScope
 from podcast_workspace.domain.rules import MAX_TAGS_PER_ITEM
 from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS
 from podcast_workspace.services.content_services import ImportReport
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.icons import NAV_ICON_SIZE, list_pane_icon, more_icon
-from podcast_workspace.ui.pages.base import ListPage, ListPageState, Row
+from podcast_workspace.ui.pages.base import ID_ROLE, ListPage, ListPageState, Row
 from podcast_workspace.ui.pages.episode_workspace import EpisodeWorkspacePage, stale_text
 from podcast_workspace.ui.player.player_widget import PlayerWidget, install_player_keys
 from podcast_workspace.ui.player.timestamp_panel import TimestampPanel
@@ -53,6 +59,7 @@ from podcast_workspace.ui.support import (
     run_async,
     show_error,
 )
+from podcast_workspace.ui.widgets.scope_switch import ScopeSwitch
 from podcast_workspace.ui.widgets.tag_input import TagInput
 
 AUTOSAVE_DELAY_MS = 700
@@ -475,7 +482,160 @@ class EpisodesPage(ListPage):
         self.focus_main()
 
 
-class VoicesPage(ListPage):
+class ShelfListPage(ListPage):
+    """A list whose items can be archived and put in the trash: Voices and Ideas.
+
+    The switch over the list starts on «active» each time the app opens, so archived
+    items stay out of the way until asked for. An item reached from elsewhere (search,
+    a tag, an episode, an undo) that the switch would hide widens it to «all» instead:
+    an item the user was sent to must be visible, the same promise the filter box keeps.
+    """
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        self.scope = ArchiveScope.ACTIVE
+        self.scope_switch = ScopeSwitch()
+        self.scope_switch.scope_changed.connect(self._on_scope_changed)
+        side = self.list_side.layout()
+        assert isinstance(side, QVBoxLayout)
+        side.insertWidget(2, self.scope_switch)  # under the title and status, over the filter
+
+    # to implement ----------------------------------------------------------------------
+    def find_item(self, item_id: int) -> Shelved | None:
+        raise NotImplementedError
+
+    def store_archived(self, item_id: int, archived: bool) -> None:
+        raise NotImplementedError
+
+    def store_trashed(self, item_id: int) -> None:
+        raise NotImplementedError
+
+    def flush(self) -> None:
+        """Write a pending autosave before the item leaves the list."""
+
+    # the switch ------------------------------------------------------------------------
+    def _on_scope_changed(self, scope: ArchiveScope) -> None:
+        self.scope = scope
+        self.refresh()
+
+    def set_scope(self, scope: ArchiveScope) -> None:
+        self.scope = scope
+        self.scope_switch.set_scope(scope)
+
+    def visible[T: Shelved](
+        self, items: Sequence[T], empty: str, active_empty: str, archived_empty: str
+    ) -> list[T]:
+        """The items the switch shows, and the right words for when that is none."""
+        shown = [i for i in items if self.scope.shows(i.archived)]
+        if not items:
+            self._empty_text = empty
+        elif self.scope is ArchiveScope.ARCHIVED:
+            self._empty_text = archived_empty
+        else:
+            self._empty_text = active_empty
+        return shown
+
+    def badge(self, item: Shelved, subtitle: str) -> str:
+        """Across active and archived together, each archived row says so."""
+        if item.archived and self.scope is ArchiveScope.ALL:
+            return strings.ARCHIVED_BADGE + "  ·  " + subtitle
+        return subtitle
+
+    def select(self, item_id: int) -> None:
+        item = self.find_item(item_id)
+        if item is not None and not item.in_trash and not self.scope.shows(item.archived):
+            self.set_scope(ArchiveScope.ALL)
+        super().select(item_id)
+
+    # archive / trash -------------------------------------------------------------------
+    def build_shelf_buttons(self, row: QHBoxLayout) -> None:
+        """«Archive» and «Move to trash» at the end of the editor's action row."""
+        self.archive_button = QPushButton(strings.ARCHIVE)
+        self.archive_button.clicked.connect(self._toggle_current)
+        row.addWidget(self.archive_button)
+        trash = _danger_button(strings.MOVE_TO_TRASH)
+        trash.setToolTip(strings.MOVE_TO_TRASH_TOOLTIP.format(days=local_digits(TRASH_DAYS)))
+        trash.clicked.connect(self._delete_current)
+        row.addWidget(trash)
+
+    def sync_shelf(self, item: Shelved) -> None:
+        """The editor's archive button (and badge) follow the item shown."""
+        archived = item.archived
+        self.archive_button.setText(strings.UNARCHIVE if archived else strings.ARCHIVE)
+        self.archive_button.setToolTip(
+            strings.UNARCHIVE_TOOLTIP if archived else strings.ARCHIVE_TOOLTIP
+        )
+        self.archived_badge.setVisible(archived)
+
+    def make_archived_badge(self) -> QLabel:
+        self.archived_badge = QLabel(strings.ARCHIVED_BADGE, objectName="countPill")
+        self.archived_badge.setToolTip(strings.ARCHIVED_NOTE)
+        self.archived_badge.hide()
+        return self.archived_badge
+
+    def row_actions(self, item_id: int) -> list[tuple[str, Callable[[], None]]]:
+        item = self.find_item(item_id)
+        if item is None:
+            return []
+        label = strings.UNARCHIVE if item.archived else strings.ARCHIVE
+        return [
+            (label, lambda: self.toggle_archived(item_id)),
+            (strings.MOVE_TO_TRASH, lambda: self.delete_item(item_id)),
+        ]
+
+    def _toggle_current(self) -> None:
+        item_id = self.current_id()
+        if item_id is not None:
+            self.toggle_archived(item_id)
+
+    def toggle_archived(self, item_id: int) -> None:
+        item = self.find_item(item_id)
+        if item is None:
+            return
+        self.flush()
+        try:
+            self.store_archived(item_id, not item.archived)
+        except Exception as exc:
+            show_error(self, exc)
+            return
+        self._events.data_changed.emit()  # type: ignore[attr-defined]
+        self._refresh_near(item_id)
+
+    def delete_item(self, item_id: int) -> None:
+        """Into the trash, without asking: it is one undo (or one restore) away."""
+        self.flush()
+        try:
+            self.store_trashed(item_id)
+        except Exception as exc:
+            show_error(self, exc)
+            return
+        self._events.data_changed.emit()  # type: ignore[attr-defined]
+        self._refresh_near(item_id)
+        self.list.setFocus()
+
+    def _refresh_near(self, item_id: int) -> None:
+        """Reload; if the row left the list, land on the one that took its place rather
+        than jumping back to the top."""
+        row = next(
+            (i for i in range(self.list.count()) if self.list.item(i).data(ID_ROLE) == item_id),
+            0,
+        )
+        self.refresh()
+        if self.current_id() != item_id and self.list.count():
+            self.list.setCurrentRow(min(row, self.list.count() - 1))
+
+    # navigation state ------------------------------------------------------------------
+    def nav_state(self) -> ListPageState:
+        state = super().nav_state()
+        return replace(state, extra={**state.extra, "scope": self.scope.value})
+
+    def restore_nav_state(self, state: object) -> None:
+        if isinstance(state, ListPageState) and "scope" in state.extra:
+            self.set_scope(ArchiveScope(str(state.extra["scope"])))
+        super().restore_nav_state(state)
+
+
+class VoicesPage(ShelfListPage):
     TAB_NOTES, TAB_TRANSCRIPT = 0, 1
     settings_requested = Signal()
 
@@ -509,6 +669,7 @@ class VoicesPage(ListPage):
         meta_row.addWidget(self.meta)
         self.missing = QLabel(strings.VOICE_MISSING, objectName="warning")
         meta_row.addWidget(self.missing)
+        meta_row.addWidget(self.make_archived_badge())
         meta_row.addStretch(1)
         # The full path is reference information, not something to read every time:
         # one muted, elided line that copies itself on click.
@@ -553,9 +714,7 @@ class VoicesPage(ListPage):
         show.clicked.connect(self._show_in_folder)
         actions.addWidget(show)
         actions.addStretch(1)
-        delete = _danger_button(strings.VOICE_DELETE)
-        delete.clicked.connect(self._delete_current)
-        actions.addWidget(delete)
+        self.build_shelf_buttons(actions)
         col.addLayout(actions)
 
         QShortcut(QKeySequence.StandardKey.Open, self, activated=self.primary_action)
@@ -590,13 +749,32 @@ class VoicesPage(ListPage):
         if voice.id in self._transcribed:
             parts.append(strings.VOICE_HAS_TRANSCRIPT)
         parts.append(format_datetime(voice.imported_at))
-        return Row(voice.id, name, "  ·  ".join(p for p in parts if p), names)
+        subtitle = self.badge(voice, "  ·  ".join(p for p in parts if p))
+        return Row(voice.id, name, subtitle, names)
 
     def rows(self) -> list[Row]:
         self._transcribed = self._ws.transcripts.voice_ids()
         self._note_counts = self._ws.timestamp_notes.counts_by_voice()
         tags = _tag_map(self._ws)
-        return [self._row(v, tags) for v in self._ws.voices.list_all()]
+        voices = self.visible(
+            self._ws.voices.list_all(),
+            strings.VOICE_EMPTY,
+            strings.VOICE_ACTIVE_EMPTY,
+            strings.VOICE_ARCHIVED_EMPTY,
+        )
+        return [self._row(v, tags) for v in voices]
+
+    def find_item(self, item_id: int) -> Voice | None:
+        try:
+            return self._ws.voices.get(item_id)
+        except Exception:
+            return None
+
+    def store_archived(self, item_id: int, archived: bool) -> None:
+        self._ws.voices.set_archived(item_id, archived)
+
+    def store_trashed(self, item_id: int) -> None:
+        self._ws.voices.delete(item_id)
 
     def _on_transcript_changed(self, voice_id: int) -> None:
         self._transcribed.add(voice_id)
@@ -627,6 +805,7 @@ class VoicesPage(ListPage):
         self.path.set_path(voice.file_path)
         self.missing.setVisible(not Path(voice.file_path).exists())
         self.meta.setText(self._meta_text(voice))
+        self.sync_shelf(voice)
         self.tag_input.set_tag_ids(voice.tag_ids)
         assert voice.id is not None
         self.player.open_voice(voice.id, Path(voice.file_path), voice.duration_ms)
@@ -704,6 +883,8 @@ class VoicesPage(ListPage):
 
     def import_paths(self, paths: list[Path]) -> None:
         self.clear_filter(reload=False)  # imported files must not land behind a filter box
+        if self.scope is ArchiveScope.ARCHIVED:  # ...nor behind the archive switch
+            self.set_scope(ArchiveScope.ACTIVE)
         self.primary.setEnabled(False)
         self.status.setText(strings.VOICE_IMPORTING)
         run_async(
@@ -736,20 +917,6 @@ class VoicesPage(ListPage):
         self.status.setText("")
         show_error(self, exc)
 
-    def delete_item(self, item_id: int) -> None:
-        voice = self._voice
-        name = Path(voice.file_path).name if voice and voice.id == item_id else ""
-        if not confirm(self, strings.VOICE_DELETE_CONFIRM.format(name=name)):
-            return
-        try:
-            self._ws.voices.delete(item_id)
-        except Exception as exc:
-            show_error(self, exc)
-        self._voice = None
-        self._events.data_changed.emit()
-        self.refresh()
-        self.list.setFocus()
-
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
@@ -767,7 +934,7 @@ class VoicesPage(ListPage):
             event.acceptProposedAction()
 
 
-class IdeasPage(ListPage):
+class IdeasPage(ShelfListPage):
     """A new idea exists only in the editor until its first non-empty autosave."""
 
     def __init__(self, workspace: Workspace, events: AppEvents) -> None:
@@ -803,12 +970,12 @@ class IdeasPage(ListPage):
         tags_row.addWidget(self.tag_input, 1)
         col.addLayout(tags_row)
         bottom = QHBoxLayout()
+        bottom.setSpacing(10)
         self.meta = QLabel(objectName="muted")
         bottom.addWidget(self.meta)
+        bottom.addWidget(self.make_archived_badge())
         bottom.addStretch(1)
-        delete = _danger_button(strings.DELETE)
-        delete.clicked.connect(self._delete_current)
-        bottom.addWidget(delete)
+        self.build_shelf_buttons(bottom)
         col.addLayout(bottom)
 
         self._timer = QTimer(self, singleShot=True, interval=AUTOSAVE_DELAY_MS)
@@ -821,11 +988,32 @@ class IdeasPage(ListPage):
         subtitle = format_datetime(idea.updated_at)
         if names:
             subtitle += "  ·  " + strings.LIST_SEPARATOR.join(names)
-        return Row(idea.id, _first_line(idea.text), subtitle, names)
+        return Row(idea.id, _first_line(idea.text), self.badge(idea, subtitle), names)
 
     def rows(self) -> list[Row]:
         tags = _tag_map(self._ws)
-        return [self._row(i, tags) for i in self._ws.ideas.list_all()]
+        ideas = self.visible(
+            self._ws.ideas.list_all(),
+            strings.IDEA_EMPTY,
+            strings.IDEA_ACTIVE_EMPTY,
+            strings.IDEA_ARCHIVED_EMPTY,
+        )
+        return [self._row(i, tags) for i in ideas]
+
+    def find_item(self, item_id: int) -> IdeaNote | None:
+        try:
+            return self._ws.ideas.get(item_id)
+        except Exception:
+            return None
+
+    def store_archived(self, item_id: int, archived: bool) -> None:
+        self._ws.ideas.set_archived(item_id, archived)
+
+    def store_trashed(self, item_id: int) -> None:
+        self._timer.stop()
+        self._ws.ideas.delete(item_id)
+        if self._idea is not None and self._idea.id == item_id:
+            self._idea = None
 
     def show_item(self, item_id: int) -> None:
         self.flush()
@@ -841,6 +1029,7 @@ class IdeasPage(ListPage):
         self._loading = False
         self.tag_input.set_tag_ids(idea.tag_ids)
         self.meta.setText(strings.UPDATED_AT.format(when=format_datetime(idea.updated_at)))
+        self.sync_shelf(idea)
 
     def clear_editor(self) -> None:
         self._idea = None
@@ -850,6 +1039,8 @@ class IdeasPage(ListPage):
 
     def primary_action(self) -> None:
         self.flush()
+        if self.scope is ArchiveScope.ARCHIVED:  # a new idea is an active one
+            self.set_scope(ArchiveScope.ACTIVE)
         self.clear_filter()  # an empty draft matches no filter; show it anyway
         self.list.clearSelection()
         self.list.setCurrentItem(None)
@@ -861,6 +1052,7 @@ class IdeasPage(ListPage):
         self._loading = False
         self.tag_input.set_tag_ids([])
         self.meta.setText(strings.IDEA_UNSAVED)
+        self.archived_badge.hide()
         self.text.setFocus()
 
     def _schedule_save(self) -> None:
@@ -911,19 +1103,6 @@ class IdeasPage(ListPage):
         except Exception as exc:
             show_error(self, exc)
             self.tag_input.set_tag_ids(idea.tag_ids)
-
-    def delete_item(self, item_id: int) -> None:
-        if not confirm(self, strings.IDEA_DELETE_CONFIRM):
-            return
-        self._timer.stop()
-        try:
-            self._ws.ideas.delete(item_id)
-        except Exception as exc:
-            show_error(self, exc)
-        self._idea = None
-        self._events.data_changed.emit()
-        self.refresh()
-        self.list.setFocus()
 
     def hideEvent(self, event: QHideEvent) -> None:
         self.flush()
