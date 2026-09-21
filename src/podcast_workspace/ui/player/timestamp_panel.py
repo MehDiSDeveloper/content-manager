@@ -28,7 +28,7 @@ from podcast_workspace.domain.entities import TimestampNote
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.player.player_widget import PlayerWidget
-from podcast_workspace.ui.support import AppEvents, confirm, fa_digits, format_clock, show_error
+from podcast_workspace.ui.support import AppEvents, confirm, format_clock, local_digits, show_error
 
 USER_SCROLL_GRACE_S = 4.0
 
@@ -266,7 +266,7 @@ class TimestampPanel(QFrame):
             self.rows_layout.insertWidget(index, row)
             self._rows[row.note_id] = row
         self.empty.setVisible(not notes and self._voice_id is not None)
-        self.count.setText(strings.TS_COUNT.format(n=fa_digits(len(notes))) if notes else "")
+        self.count.setText(strings.TS_COUNT.format(n=local_digits(len(notes))) if notes else "")
         pairs = [(n.id, n.position_ms) for n in notes if n.id is not None]
         self._tracker.set_notes(pairs)
         self._tracker.reset()

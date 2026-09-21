@@ -29,13 +29,13 @@ from podcast_workspace.audio.waveform import (
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.player.icons import ICON_SIZE, pause_icon, play_icon, skip_icon
 from podcast_workspace.ui.player.waveform_view import WaveformView
-from podcast_workspace.ui.support import fa_digits, format_clock
+from podcast_workspace.ui.support import format_clock, local_digits
 
 SKIP_MS = 10_000
 
 
 def speed_label(speed: float) -> str:
-    return fa_digits(f"{speed:g}").replace(".", "٫") + "×"
+    return local_digits(f"{speed:g}").replace(".", strings.DECIMAL_SEPARATOR) + "×"
 
 
 class _WaveformLoader(QObject):
@@ -256,8 +256,8 @@ class PlayerWidget(QFrame):
         on_accent = palette.color(QPalette.ColorRole.HighlightedText)
         playing = self.is_current() and self.player.is_playing
         self.play.setIcon(pause_icon(on_accent) if playing else play_icon(on_accent))
-        self.back.setIcon(skip_icon(text, forward=False, label=fa_digits(10)))
-        self.forward.setIcon(skip_icon(text, forward=True, label=fa_digits(10)))
+        self.back.setIcon(skip_icon(text, forward=False, label=local_digits(10)))
+        self.forward.setIcon(skip_icon(text, forward=True, label=local_digits(10)))
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.PaletteChange:

@@ -10,12 +10,13 @@ import json
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from podcast_workspace.domain.backup_reminder import BackupReminder, backup_reminder
 from podcast_workspace.domain.entities import (
     Episode,
     EpisodeNote,
@@ -31,6 +32,7 @@ from podcast_workspace.domain.errors import ValidationError
 from podcast_workspace.paths import backups_dir, library_dir
 from podcast_workspace.repositories.db import WriteCounter
 from podcast_workspace.repositories.unit_of_work import UnitOfWork
+from podcast_workspace.services.settings_service import SettingsService
 from podcast_workspace.services.tag_service import TagService
 
 FORMAT = "podcast-workspace-export"
@@ -108,11 +110,33 @@ class _Snapshot:
 
 class BackupService:
     def __init__(
-        self, session_factory: sessionmaker[Session], tags: TagService, writes: WriteCounter
+        self,
+        session_factory: sessionmaker[Session],
+        tags: TagService,
+        writes: WriteCounter,
+        settings: SettingsService,
     ) -> None:
         self._sf = session_factory
         self._tags = tags
         self._writes = writes
+        self._settings = settings
+
+    # reminder --------------------------------------------------------------------------
+    def reminder(self, now: datetime | None = None) -> BackupReminder | None:
+        """The backup reminder due at startup, if any (`domain/backup_reminder.py`)."""
+        now = now or datetime.now(UTC)
+        settings = self._settings
+        return backup_reminder(
+            now,
+            settings.first_run_at(now),
+            settings.last_backup_at(),
+            settings.backup_snoozed_until(),
+            settings.backup_interval_days(),
+        )
+
+    def snooze_reminder(self, days: int = 1, now: datetime | None = None) -> None:
+        now = now or datetime.now(UTC)
+        self._settings.set_backup_snoozed_until(now + timedelta(days=days))
 
     # export ----------------------------------------------------------------------------
     def _read_all(self) -> _Snapshot:
@@ -187,6 +211,9 @@ class BackupService:
             partial.replace(target)
         finally:
             partial.unlink(missing_ok=True)
+        # A finished export is a backup: the reminder starts counting again from here.
+        self._settings.set_last_backup_at(datetime.now(UTC))
+        self._settings.set_backup_snoozed_until(None)
         report_progress(1.0)
         return ExportReport(target, snap.counts(), missing)
 

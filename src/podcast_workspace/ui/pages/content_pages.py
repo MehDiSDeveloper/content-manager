@@ -1,20 +1,25 @@
 """Episodes, Voices and Ideas pages: create, list, edit (autosave), delete."""
 
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QHideEvent, QKeySequence, QShortcut
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QDragEnterEvent,
+    QDropEvent,
+    QHideEvent,
+    QKeySequence,
+    QPalette,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
-    QComboBox,
     QFileDialog,
-    QFormLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QPlainTextEdit,
     QPushButton,
     QStackedWidget,
@@ -23,29 +28,31 @@ from PySide6.QtWidgets import (
 )
 
 from podcast_workspace.audio.engine import Player
-from podcast_workspace.domain.entities import Episode, EpisodeStatus, IdeaNote, Voice
+from podcast_workspace.domain.entities import Episode, IdeaNote, Voice
 from podcast_workspace.domain.rules import MAX_TAGS_PER_ITEM
 from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS
 from podcast_workspace.services.content_services import ImportReport
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
-from podcast_workspace.ui.pages.base import ListPage, Row
-from podcast_workspace.ui.pages.episode_workspace import stale_text
+from podcast_workspace.ui.icons import NAV_ICON_SIZE, list_pane_icon, more_icon
+from podcast_workspace.ui.pages.base import ListPage, ListPageState, Row
+from podcast_workspace.ui.pages.episode_workspace import EpisodeWorkspacePage, stale_text
 from podcast_workspace.ui.player.player_widget import SKIP_MS, PlayerWidget
 from podcast_workspace.ui.player.timestamp_panel import TimestampPanel
 from podcast_workspace.ui.player.transcript_panel import TranscriptionJobs, TranscriptPanel
 from podcast_workspace.ui.support import (
     AppEvents,
     confirm,
-    fa_digits,
     format_datetime,
     format_duration,
+    local_digits,
     run_async,
     show_error,
 )
 from podcast_workspace.ui.widgets.tag_input import TagInput
 
 AUTOSAVE_DELAY_MS = 700
+MINI_LIST_HEIGHT = 208
 
 
 def _danger_button(text: str) -> QPushButton:
@@ -57,60 +64,172 @@ def _first_line(text: str, width: int = 70) -> str:
     return line if len(line) <= width else line[:width].rstrip() + "…"
 
 
+def _tag_map(workspace: Workspace) -> dict[int, str]:
+    """id -> name for every tag, read once per list rebuild instead of once per row."""
+    return {t.id: t.name for t in workspace.tags.list_all() if t.id is not None}
+
+
+def _tag_labels(
+    workspace: Workspace, tag_ids: Iterable[int], known: dict[int, str] | None = None
+) -> tuple[str, ...]:
+    """The names a row carries, for the filter box and the subtitle. `known` is the map
+    from `_tag_map`; without one this falls back to the service (a single row redrawn
+    after an edit, where a tag just created is not in any map yet)."""
+    if known is None:
+        return tuple(t.name for t in workspace.tags.by_ids(tag_ids))
+    return tuple(name for name in (known.get(i) for i in tag_ids) if name)
+
+
+class _PathLabel(QLabel):
+    """One muted line showing a file path, elided in the middle, copied on click."""
+
+    def __init__(self) -> None:
+        super().__init__(objectName="muted")
+        self._path = ""
+        self.setToolTip(strings.VOICE_PATH_TOOLTIP)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+        self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.setMinimumWidth(120)
+
+    def set_path(self, path: str) -> None:
+        self._path = path
+        self._elide()
+
+    def _elide(self) -> None:
+        self.setText(
+            self.fontMetrics().elidedText(self._path, Qt.TextElideMode.ElideMiddle, self.width())
+        )
+
+    def resizeEvent(self, event: object) -> None:  # type: ignore[override]
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        self._elide()
+
+    def mouseReleaseEvent(self, event: object) -> None:  # type: ignore[override]
+        if self._path:
+            QApplication.clipboard().setText(self._path)
+        super().mouseReleaseEvent(event)  # type: ignore[arg-type]
+
+
 class EpisodesPage(ListPage):
-    open_workspace = Signal(int)
+    """Episodes as list and detail: choosing a row shows that episode's workspace beside
+    the list, in place (`episode_workspace.py`).
+
+    This is the usual three-pane arrangement of mail, notes and issue-tracker apps —
+    navigation, list, item — and it keeps one rule: the frame does not change when you
+    pick something. A click selects and shows; Enter or a double-click only moves the
+    caret into the episode. The list can be hidden for room to write (Ctrl+L), and that
+    choice is remembered, because it is the user's and not a mode.
+    """
+
+    open_voice = Signal(int)
+    open_idea = Signal(int)
+    record_requested = Signal()
 
     def __init__(self, workspace: Workspace, events: AppEvents) -> None:
-        super().__init__(strings.EPISODES_TITLE, strings.EPISODE_NEW, strings.EPISODE_EMPTY)
+        super().__init__(
+            strings.EPISODES_TITLE,
+            strings.EPISODE_NEW,
+            strings.EPISODE_EMPTY,
+            list_weight=2,
+            detail_weight=7,
+            filter_placeholder=strings.EPISODE_FILTER_PLACEHOLDER,
+        )
         self._ws = workspace
         self._events = events
-        self._episode: Episode | None = None
+        # (episode_id, note_id, focus) waiting for the list to land on that episode
+        self._pending: tuple[int, int | None, bool] | None = None
+        # One accent button per screen: here that is the workspace's "New note".
+        self.primary.setObjectName("")
 
         col = QVBoxLayout(self.editor)
         col.setContentsMargins(0, 0, 0, 0)
-        col.setSpacing(18)
-        self.title_edit = QLineEdit(objectName="titleEdit")
-        self.title_edit.setPlaceholderText(strings.EPISODE_TITLE_PLACEHOLDER)
-        self.title_edit.editingFinished.connect(self._save_fields)
-        col.addWidget(self.title_edit)
+        self.workspace = EpisodeWorkspacePage(workspace, events)
+        col.addWidget(self.workspace)
+        self.workspace.episode_saved.connect(lambda e: self.update_row(self._row(e)))
+        self.workspace.episode_gone.connect(lambda: QTimer.singleShot(0, self.refresh))
+        self.workspace.delete_requested.connect(self.delete_item)
+        self.workspace.list_toggle_requested.connect(self.toggle_list)
+        self.workspace.open_voice.connect(self.open_voice)
+        self.workspace.open_idea.connect(self.open_idea)
+        self.workspace.record_requested.connect(self.record_requested)
 
-        form = QFormLayout()
-        form.setSpacing(12)
-        self.status_box = QComboBox()
-        for status in EpisodeStatus:
-            self.status_box.addItem(strings.STATUS_LABELS[status], status)
-        self.status_box.activated.connect(lambda _i: self._save_fields())
-        form.addRow(strings.EPISODE_STATUS, self.status_box)
-        self.next_action = QLineEdit(placeholderText=strings.EPISODE_NEXT_ACTION_PLACEHOLDER)
-        self.next_action.editingFinished.connect(self._save_fields)
-        form.addRow(strings.EPISODE_NEXT_ACTION, self.next_action)
-        self.tag_input = TagInput(workspace.tags, events)
-        self.tag_input.tags_changed.connect(self._save_tags)
-        form.addRow(strings.TAG_LABEL, self.tag_input)
-        col.addLayout(form)
+        self.list.itemDoubleClicked.connect(lambda _i: self.focus_editor())
+        QShortcut(QKeySequence("Ctrl+Return"), self, activated=self.focus_editor)
+        QShortcut(
+            QKeySequence("Ctrl+L"),
+            self,
+            activated=self.toggle_list,
+            context=Qt.ShortcutContext.WidgetWithChildrenShortcut,
+        )
+        self._list_hidden = False
+        self._set_list_hidden(workspace.settings.episode_list_hidden(), remember=False)
 
-        self.meta = QLabel(objectName="muted")
-        col.addWidget(self.meta)
-        col.addStretch(1)
-        actions = QHBoxLayout()
-        enter = QPushButton(strings.EPISODE_OPEN_WORKSPACE)
-        enter.setToolTip("Ctrl+Enter")
-        enter.clicked.connect(self._open_current)
-        actions.addWidget(enter)
-        actions.addStretch(1)
-        delete = _danger_button(strings.DELETE)
-        delete.clicked.connect(self._delete_current)
-        actions.addWidget(delete)
-        col.addLayout(actions)
-        self.list.itemDoubleClicked.connect(lambda _i: self._open_current())
-        QShortcut(QKeySequence("Ctrl+Return"), self, activated=self._open_current)
+    # the list pane ---------------------------------------------------------------------
+    def toggle_list(self) -> None:
+        self._set_list_hidden(not self._list_hidden)
 
-    def _open_current(self) -> None:
-        item_id = self.current_id()
-        if item_id is not None:
-            self.open_workspace.emit(item_id)
+    def _set_list_hidden(self, hidden: bool, remember: bool = True) -> None:
+        had_focus = self.list_side.isAncestorOf(QApplication.focusWidget())
+        self._list_hidden = hidden
+        self.list_side.setVisible(not hidden)
+        self._paint_list_toggle()
+        if remember:
+            self._ws.settings.set_episode_list_hidden(hidden)
+        if hidden and had_focus:
+            self.workspace.focus_main()
+        elif not hidden and remember:
+            self.list.setFocus()
 
-    def _row(self, episode: Episode) -> Row:
+    def _paint_list_toggle(self) -> None:
+        color = self.palette().color(QPalette.ColorRole.Text)
+        button = self.workspace.list_toggle
+        button.setIcon(list_pane_icon(color, self.isRightToLeft(), self._list_hidden))
+        button.setIconSize(QSize(NAV_ICON_SIZE, NAV_ICON_SIZE))
+        button.setToolTip(strings.LIST_SHOW if self._list_hidden else strings.LIST_HIDE)
+        self.workspace.more_button.setIcon(more_icon(color))
+
+    def changeEvent(self, event: QEvent) -> None:
+        if event.type() in (QEvent.Type.PaletteChange, QEvent.Type.LayoutDirectionChange):
+            self._paint_list_toggle()
+        super().changeEvent(event)
+
+    # focus -----------------------------------------------------------------------------
+    def focus_main(self) -> None:
+        if self._list_hidden:
+            self.workspace.focus_main()
+        else:
+            self.list.setFocus()
+
+    def focus_filter(self) -> None:
+        if self._list_hidden:  # asking for the filter is asking for the list
+            self._set_list_hidden(False)
+        super().focus_filter()
+
+    def focus_editor(self) -> None:
+        """Enter or a double-click on a row: carry on writing in that episode."""
+        if self.current_id() is not None:
+            self.workspace.focus_main()
+
+    def new_shortcut(self) -> None:
+        """Ctrl+N means "another one of what I am in": a note inside the episode, an
+        episode anywhere else on the page."""
+        focus = QApplication.focusWidget()
+        if self.workspace.episode_id is not None and self.workspace.isAncestorOf(focus):
+            self.workspace.new_note()
+        else:
+            self.primary_action()
+
+    # opening ---------------------------------------------------------------------------
+    def open_episode(self, episode_id: int, note_id: int | None = None) -> None:
+        """Show an episode from elsewhere in the app (board, tags, search, resume), with
+        the caret inside it, ready to write."""
+        self.clear_filter(reload=False)
+        self._pending = (episode_id, note_id, True)
+        self.refresh(select_id=episode_id)
+        self._pending = None
+
+    def _row(self, episode: Episode, tags: dict[int, str] | None = None) -> Row:
         assert episode.id is not None
         subtitle = strings.STATUS_LABELS[episode.status]
         badge = stale_text(episode)
@@ -118,66 +237,42 @@ class EpisodesPage(ListPage):
             subtitle = badge + "  ·  " + subtitle
         if episode.next_action:
             subtitle += "  ·  " + episode.next_action
-        return Row(episode.id, episode.title, subtitle)
+        names = _tag_labels(self._ws, episode.tag_ids, tags)
+        return Row(episode.id, episode.title, subtitle, names)
 
     def rows(self) -> list[Row]:
-        return [self._row(e) for e in self._ws.episodes.list_all()]
+        tags = _tag_map(self._ws)
+        return [self._row(e, tags) for e in self._ws.episodes.list_all()]
 
     def show_item(self, item_id: int) -> None:
-        try:
-            self._episode = self._ws.episodes.open(item_id)
-        except Exception as exc:
-            show_error(self, exc)
+        note_id, focus = None, False
+        if self._pending is not None and self._pending[0] == item_id:
+            _episode, note_id, focus = self._pending
+            self._pending = None
+        if self.workspace.episode_id == item_id and note_id is None:
+            # The same episode again (the page came back into view, or the list was
+            # rebuilt): refresh it where it stands instead of opening it anew.
+            self.workspace.reload()
+            if focus:
+                self.workspace.focus_main()
             return
-        self._fill(self._episode)
+        self.workspace.open(item_id, note_id, focus=focus)
 
-    def _fill(self, episode: Episode) -> None:
-        self.title_edit.setText(episode.title)
-        self.status_box.setCurrentIndex(self.status_box.findData(episode.status))
-        self.next_action.setText(episode.next_action)
-        self.tag_input.set_tag_ids(episode.tag_ids)
-        self.meta.setText(
-            strings.CREATED_AT.format(when=format_datetime(episode.created_at))
-            + "     "
-            + strings.UPDATED_AT.format(when=format_datetime(episode.updated_at))
-        )
+    def clear_editor(self) -> None:
+        self.workspace.clear()
 
-    def focus_editor(self) -> None:
-        self.title_edit.setFocus()
+    # navigation state ------------------------------------------------------------------
+    def nav_state(self) -> ListPageState:
+        return replace(super().nav_state(), extra={"workspace": self.workspace.nav_state()})
 
-    def _save_fields(self) -> None:
-        episode = self._episode
-        if episode is None or episode.id is None:
-            return
-        try:
-            saved = self._ws.episodes.update(
-                episode.id,
-                title=self.title_edit.text(),
-                status=self.status_box.currentData(),
-                next_action=self.next_action.text(),
-            )
-        except Exception as exc:
-            show_error(self, exc)
-            self._fill(episode)  # revert to the last good state
-            return
-        if saved.updated_at != episode.updated_at:
-            self._episode = saved
-            self._fill(saved)
-            self.update_row(self._row(saved))
-            self._events.data_changed.emit()
+    def restore_nav_state(self, state: object) -> None:
+        super().restore_nav_state(state)
+        if isinstance(state, ListPageState):
+            self.workspace.restore_nav_state(state.extra.get("workspace"))
 
-    def _save_tags(self, tag_ids: list[int]) -> None:
-        episode = self._episode
-        if episode is None or episode.id is None:
-            return
-        try:
-            self._episode = self._ws.episodes.set_tags(episode.id, tag_ids)
-            self._events.data_changed.emit()
-        except Exception as exc:
-            show_error(self, exc)
-            self.tag_input.set_tag_ids(episode.tag_ids)
-
+    # actions ---------------------------------------------------------------------------
     def primary_action(self) -> None:
+        self.clear_filter(reload=False)  # what you just made has to be what you see
         try:
             episode = self._ws.episodes.create(strings.EPISODE_DEFAULT_TITLE)
         except Exception as exc:
@@ -186,22 +281,25 @@ class EpisodesPage(ListPage):
         assert episode.id is not None
         self._events.data_changed.emit()
         self.refresh(select_id=episode.id)
-        self.title_edit.setFocus()
-        self.title_edit.selectAll()
+        self.workspace.title_edit.setFocus()
+        self.workspace.title_edit.selectAll()
 
     def delete_item(self, item_id: int) -> None:
-        episode = self._episode
-        title = episode.title if episode and episode.id == item_id else ""
+        self.workspace.flush()
+        try:
+            title = self._ws.episodes.get(item_id).title
+        except Exception:
+            title = ""
         if not confirm(self, strings.EPISODE_DELETE_CONFIRM.format(title=title)):
             return
         try:
             self._ws.episodes.delete(item_id)
         except Exception as exc:
             show_error(self, exc)
-        self._episode = None
+        self.workspace.clear()
         self._events.data_changed.emit()
         self.refresh()
-        self.list.setFocus()
+        self.focus_main()
 
 
 class VoicesPage(ListPage):
@@ -211,12 +309,18 @@ class VoicesPage(ListPage):
     def __init__(
         self, workspace: Workspace, events: AppEvents, player: Player, jobs: TranscriptionJobs
     ) -> None:
-        super().__init__(strings.VOICES_TITLE, strings.VOICE_IMPORT, strings.VOICE_EMPTY)
+        super().__init__(
+            strings.VOICES_TITLE,
+            strings.VOICE_IMPORT,
+            strings.VOICE_EMPTY,
+            filter_placeholder=strings.VOICE_FILTER_PLACEHOLDER,
+        )
         self._ws = workspace
         self._events = events
         self._voice: Voice | None = None
         self._pending_note: int | None = None
         self._transcribed: set[int] = set()
+        self._note_counts: dict[int, int] = {}
         self.setAcceptDrops(True)
         self.primary.setToolTip("Ctrl+N / Ctrl+O")
 
@@ -226,20 +330,28 @@ class VoicesPage(ListPage):
         self.name = QLabel(objectName="editorTitle")
         self.name.setWordWrap(True)
         col.addWidget(self.name)
-        self.path = QLabel(objectName="muted")
-        self.path.setWordWrap(True)
-        self.path.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        col.addWidget(self.path)
-        self.missing = QLabel(strings.VOICE_MISSING, objectName="warning")
-        col.addWidget(self.missing)
+        meta_row = QHBoxLayout()
+        meta_row.setSpacing(12)
         self.meta = QLabel(objectName="muted")
-        col.addWidget(self.meta)
+        meta_row.addWidget(self.meta)
+        self.missing = QLabel(strings.VOICE_MISSING, objectName="warning")
+        meta_row.addWidget(self.missing)
+        meta_row.addStretch(1)
+        # The full path is reference information, not something to read every time:
+        # one muted, elided line that copies itself on click.
+        self.path = _PathLabel()
+        meta_row.addWidget(self.path, 2)
+        col.addLayout(meta_row)
 
-        form = QFormLayout()
+        tags_row = QHBoxLayout()
+        tags_row.setSpacing(10)
+        tag_label = QLabel(strings.TAG_LABEL, objectName="fieldLabel")
+        tag_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+        tags_row.addWidget(tag_label)
         self.tag_input = TagInput(workspace.tags, events, limit=MAX_TAGS_PER_ITEM)
         self.tag_input.tags_changed.connect(self._save_tags)
-        form.addRow(strings.TAG_LABEL, self.tag_input)
-        col.addLayout(form)
+        tags_row.addWidget(self.tag_input, 1)
+        col.addLayout(tags_row)
 
         self.player = PlayerWidget(player)
         self.player.exact_duration.connect(self._store_exact_duration)
@@ -308,18 +420,29 @@ class VoicesPage(ListPage):
         else:
             self.player.player.toggle()
 
-    def _row(self, voice: Voice) -> Row:
+    def _row(self, voice: Voice, tags: dict[int, str] | None = None) -> Row:
         assert voice.id is not None
         name = Path(voice.file_path).name
+        names = _tag_labels(self._ws, voice.tag_ids, tags)
         parts = [format_duration(voice.duration_ms), voice.format.upper()]
-        parts.append(format_datetime(voice.imported_at))
+        # Tags go in ahead of the counts and the date: the subtitle is elided at the
+        # list's width, and what a voice is about survives elision better than when it
+        # arrived. The full line is in the row's tooltip either way.
+        if names:
+            parts.append(strings.LIST_SEPARATOR.join(names))
+        notes = self._note_counts.get(voice.id, 0)
+        if notes:
+            parts.append(strings.VOICE_NOTE_COUNT.format(n=local_digits(notes)))
         if voice.id in self._transcribed:
             parts.append(strings.VOICE_HAS_TRANSCRIPT)
-        return Row(voice.id, name, "  ·  ".join(p for p in parts if p))
+        parts.append(format_datetime(voice.imported_at))
+        return Row(voice.id, name, "  ·  ".join(p for p in parts if p), names)
 
     def rows(self) -> list[Row]:
         self._transcribed = self._ws.transcripts.voice_ids()
-        return [self._row(v) for v in self._ws.voices.list_all()]
+        self._note_counts = self._ws.timestamp_notes.counts_by_voice()
+        tags = _tag_map(self._ws)
+        return [self._row(v, tags) for v in self._ws.voices.list_all()]
 
     def _on_transcript_changed(self, voice_id: int) -> None:
         self._transcribed.add(voice_id)
@@ -347,7 +470,7 @@ class VoicesPage(ListPage):
             return
         self._voice = voice
         self.name.setText(Path(voice.file_path).name)
-        self.path.setText(voice.file_path)
+        self.path.set_path(voice.file_path)
         self.missing.setVisible(not Path(voice.file_path).exists())
         self.meta.setText(self._meta_text(voice))
         self.tag_input.set_tag_ids(voice.tag_ids)
@@ -426,6 +549,7 @@ class VoicesPage(ListPage):
             self.import_paths([Path(f) for f in files])
 
     def import_paths(self, paths: list[Path]) -> None:
+        self.clear_filter(reload=False)  # imported files must not land behind a filter box
         self.primary.setEnabled(False)
         self.status.setText(strings.VOICE_IMPORTING)
         run_async(
@@ -436,16 +560,18 @@ class VoicesPage(ListPage):
 
     def _on_imported(self, report: ImportReport) -> None:
         self.primary.setEnabled(True)
-        parts = [strings.VOICE_IMPORT_DONE.format(imported=fa_digits(len(report.imported)))]
+        parts = [strings.VOICE_IMPORT_DONE.format(imported=local_digits(len(report.imported)))]
         if report.already_present:
-            parts.append(strings.VOICE_IMPORT_DUP.format(n=fa_digits(len(report.already_present))))
+            parts.append(
+                strings.VOICE_IMPORT_DUP.format(n=local_digits(len(report.already_present)))
+            )
         if report.unsupported:
             parts.append(
-                strings.VOICE_IMPORT_UNSUPPORTED.format(n=fa_digits(len(report.unsupported)))
+                strings.VOICE_IMPORT_UNSUPPORTED.format(n=local_digits(len(report.unsupported)))
             )
         if report.failed:
-            parts.append(strings.VOICE_IMPORT_FAILED.format(n=fa_digits(len(report.failed))))
-        self.status.setText("، ".join(parts))
+            parts.append(strings.VOICE_IMPORT_FAILED.format(n=local_digits(len(report.failed))))
+        self.status.setText(strings.LIST_SEPARATOR.join(parts))
         QTimer.singleShot(8000, lambda: self.status.setText(""))
         self._events.data_changed.emit()
         first = report.imported[0].id if report.imported else None
@@ -491,7 +617,15 @@ class IdeasPage(ListPage):
     """A new idea exists only in the editor until its first non-empty autosave."""
 
     def __init__(self, workspace: Workspace, events: AppEvents) -> None:
-        super().__init__(strings.IDEAS_TITLE, strings.IDEA_NEW, strings.IDEA_EMPTY)
+        # Ideas are short: browsing the list matters more than a very wide editor.
+        super().__init__(
+            strings.IDEAS_TITLE,
+            strings.IDEA_NEW,
+            strings.IDEA_EMPTY,
+            list_weight=3,
+            detail_weight=4,
+            filter_placeholder=strings.IDEA_FILTER_PLACEHOLDER,
+        )
         self._ws = workspace
         self._events = events
         self._idea: IdeaNote | None = None
@@ -505,11 +639,15 @@ class IdeasPage(ListPage):
         self.text.setTabChangesFocus(True)
         self.text.textChanged.connect(self._schedule_save)
         col.addWidget(self.text, 1)
-        form = QFormLayout()
+        tags_row = QHBoxLayout()
+        tags_row.setSpacing(10)
+        tag_label = QLabel(strings.TAG_LABEL, objectName="fieldLabel")
+        tag_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+        tags_row.addWidget(tag_label)
         self.tag_input = TagInput(workspace.tags, events, limit=MAX_TAGS_PER_ITEM)
         self.tag_input.tags_changed.connect(self._save_tags)
-        form.addRow(strings.TAG_LABEL, self.tag_input)
-        col.addLayout(form)
+        tags_row.addWidget(self.tag_input, 1)
+        col.addLayout(tags_row)
         bottom = QHBoxLayout()
         self.meta = QLabel(objectName="muted")
         bottom.addWidget(self.meta)
@@ -523,16 +661,17 @@ class IdeasPage(ListPage):
         self._timer.timeout.connect(self._save_text)
         self._loading = False
 
-    def _row(self, idea: IdeaNote) -> Row:
+    def _row(self, idea: IdeaNote, tags: dict[int, str] | None = None) -> Row:
         assert idea.id is not None
-        names = [t.name for t in self._ws.tags.by_ids(idea.tag_ids)]
+        names = _tag_labels(self._ws, idea.tag_ids, tags)
         subtitle = format_datetime(idea.updated_at)
         if names:
-            subtitle += "  ·  " + "، ".join(names)
-        return Row(idea.id, _first_line(idea.text), subtitle)
+            subtitle += "  ·  " + strings.LIST_SEPARATOR.join(names)
+        return Row(idea.id, _first_line(idea.text), subtitle, names)
 
     def rows(self) -> list[Row]:
-        return [self._row(i) for i in self._ws.ideas.list_all()]
+        tags = _tag_map(self._ws)
+        return [self._row(i, tags) for i in self._ws.ideas.list_all()]
 
     def show_item(self, item_id: int) -> None:
         self.flush()
@@ -557,6 +696,7 @@ class IdeasPage(ListPage):
 
     def primary_action(self) -> None:
         self.flush()
+        self.clear_filter()  # an empty draft matches no filter; show it anyway
         self.list.clearSelection()
         self.list.setCurrentItem(None)
         self._idea = None

@@ -37,6 +37,7 @@ from podcast_workspace.services.content_services import (
     TimestampNoteService,
     VoiceService,
 )
+from podcast_workspace.services.history import HistoryService
 from podcast_workspace.services.settings_service import BotOwner, SettingsService
 from podcast_workspace.services.tag_service import TagService
 
@@ -191,12 +192,14 @@ class BaleBotService:
         voices: VoiceService,
         tags: TagService,
         timestamp_notes: TimestampNoteService,
+        history: HistoryService,
     ) -> None:
         self._settings = settings
         self._ideas = ideas
         self._voices = voices
         self._tags = tags
         self._notes = timestamp_notes
+        self.history = history
         self._worker: _Worker | None = None
         self.status = BotStatus.STOPPED
 
@@ -310,10 +313,13 @@ class _Worker(threading.Thread):
 
     # dispatch --------------------------------------------------------------------------
     def _handle(self, update: dict[str, Any]) -> None:
-        if "callback_query" in update:
-            self._on_callback(update["callback_query"])
-        elif "message" in update:
-            self._on_message(update["message"])
+        # Items arriving from the phone are not the user's own doing at the keyboard:
+        # they must not land on (or flush) the undo stack in front of them.
+        with self._svc.history.suspended():
+            if "callback_query" in update:
+                self._on_callback(update["callback_query"])
+            elif "message" in update:
+                self._on_message(update["message"])
 
     def _send(self, chat_id: int, text: str, markup: dict[str, Any] | None = None) -> int | None:
         try:

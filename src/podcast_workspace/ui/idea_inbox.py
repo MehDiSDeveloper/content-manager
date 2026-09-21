@@ -5,7 +5,7 @@ Type, Enter saves an IdeaNote and closes; Esc (or clicking away with nothing typ
 
 from PySide6.QtCore import QEvent, QObject, QPoint, Qt, Signal
 from PySide6.QtGui import QCursor, QGuiApplication, QKeyEvent
-from PySide6.QtWidgets import QFrame, QLabel, QPlainTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QPlainTextEdit, QVBoxLayout, QWidget
 
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
@@ -27,7 +27,8 @@ class IdeaInbox(QWidget):
         )
         self._ws = workspace
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        # A parentless window: it does inherit the app's direction, but say so plainly.
+        self.setLayoutDirection(QApplication.layoutDirection())
         self.setFixedSize(WIDTH, HEIGHT)
         self.setWindowTitle(strings.INBOX_TITLE)
         outer = QVBoxLayout(self)

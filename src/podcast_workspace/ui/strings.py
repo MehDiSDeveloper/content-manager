@@ -1,7 +1,20 @@
-"""All user-visible Persian text, in one place."""
+"""All user-visible text, in one place.
+
+The values written here are the Persian originals. `apply_language` swaps every name for
+its English counterpart from `strings_en.py` once, at startup, before any widget is
+built — so the rest of the UI keeps reading `strings.NAME` and never knows which language
+it is showing. Changing the language therefore takes a restart.
+"""
 
 from podcast_workspace.domain.entities import EpisodeStatus
 from podcast_workspace.domain.search import SearchKind
+
+LANGUAGE = "fa"
+RTL = True
+# Formatting that differs between the languages as much as the words do.
+QUOTE = "«{text}»"
+DECIMAL_SEPARATOR = "٫"
+DIRECTION_MARK = "\u200f"  # RLM: keeps the base direction of mixed Persian/Latin runs
 
 APP_NAME = "فضای کاری پادکست"
 STARTUP_ERROR_TITLE = "خطا در راه‌اندازی"
@@ -10,13 +23,22 @@ STARTUP_ERROR_BODY = "پایگاه داده باز نشد:\n{error}"
 THEME_TO_DARK = "پوستهٔ تیره"
 THEME_TO_LIGHT = "پوستهٔ روشن"
 THEME_TOOLTIP = "تغییر پوسته (Ctrl+T)"
+NAV_TOOLTIP = "{label} — {keys}"
 
 NAV_EPISODES = "اپیزودها"
 NAV_VOICES = "صداها"
 NAV_IDEAS = "ایده‌ها"
 NAV_TAGS = "برچسب‌ها"
 
-SEARCH_PLACEHOLDER = "جستجو در عنوان‌ها، یادداشت‌ها و برچسب‌ها…  (Ctrl+K)"
+NAV_BACK = "بازگشت"
+NAV_BACK_TO = "بازگشت به {page}"
+NAV_BACK_TOOLTIP = "بازگشت به {page} — همان‌جایی که بودید  (Alt+←)"
+NAV_BACK_NOTHING = "جایی برای بازگشت نیست  (Alt+←)"
+SIDEBAR_COLLAPSE = "جمع کردن نوار کناری  (Ctrl+B)"
+SIDEBAR_EXPAND = "باز کردن نوار کناری  (Ctrl+B)"
+
+SEARCH_PLACEHOLDER = "جستجو…"
+SEARCH_TOOLTIP = "جستجو در عنوان‌ها، یادداشت‌ها، رونوشت‌ها و برچسب‌ها (Ctrl+K)"
 SEARCH_TITLE = "نتایج جستجو"
 SEARCH_EMPTY = "چیزی پیدا نشد. بخشی از یک کلمه یا نام برچسب را امتحان کنید."
 SEARCH_CORRECTED = "با اصلاح املایی: {pairs}"
@@ -51,6 +73,10 @@ EPISODE_NEXT_ACTION = "قدم بعدی"
 EPISODE_NEXT_ACTION_PLACEHOLDER = "یک جمله: کار بعدی برای این اپیزود چیست؟"
 EPISODE_EMPTY = "هنوز اپیزودی ندارید. با «اپیزود تازه» شروع کنید."
 EPISODE_DELETE_CONFIRM = "اپیزود «{title}» حذف شود؟ صداها و ایده‌های پیوندشده حذف نمی‌شوند."
+LIST_HIDE = "پنهان کردن فهرست — فضای بیشتر برای نوشتن  (Ctrl+L)"
+LIST_SHOW = "نمایش فهرست اپیزودها  (Ctrl+L)"
+EPISODE_DELETE = "حذف اپیزود"
+EPISODE_MORE = "کارهای بیشتر"
 
 VOICES_TITLE = "صداها"
 VOICE_IMPORT = "وارد کردن صدا"
@@ -67,6 +93,9 @@ VOICE_SHOW_IN_FOLDER = "نمایش در پوشه"
 VOICE_DELETE = "حذف از فضای کاری"
 VOICE_DELETE_CONFIRM = "«{name}» از فضای کاری حذف شود؟ فایل صوتی روی دیسک باقی می‌ماند."
 VOICE_DURATION_UNKNOWN = "مدت نامعلوم"
+VOICE_PATH_TOOLTIP = "مسیر فایل — برای کپی کلیک کنید"
+VOICE_PATH_COPIED = "مسیر کپی شد"
+VOICE_NOTE_COUNT = "{n} یادداشت"
 
 IDEAS_TITLE = "ایده‌ها"
 IDEA_NEW = "ایدهٔ تازه"
@@ -78,6 +107,7 @@ IDEA_UNSAVED = "ایدهٔ تازه (هنوز ذخیره نشده)"
 TAGS_TITLE = "برچسب‌ها"
 TAG_NEW = "برچسب تازه"
 TAG_FILTER_PLACEHOLDER = "پیدا کردن برچسب…"
+TAG_FILTER_TOOLTIP = "پیدا کردن برچسب در همین درخت  (Ctrl+F)"
 TAG_RENAME = "تغییر نام"
 TAG_RECOLOR = "تغییر رنگ"
 TAG_NEST = "انتقال به زیرِ…"
@@ -86,6 +116,13 @@ TAG_MERGE = "ادغام در…"
 TAG_DELETE = "حذف"
 TAG_EMPTY = "هنوز برچسبی ندارید. برچسب‌ها را هنگام کار با اپیزودها و ایده‌ها هم می‌توانید بسازید."
 TAG_USAGE_HEADER = "کاربرد"
+TAG_ACTIONS = "کارها"
+TAG_ACTIONS_TOOLTIP = "کارهای این برچسب"
+TAG_USES_TITLE = "کجا به کار رفته"
+TAG_USES_EMPTY = "هنوز جایی از این برچسب استفاده نشده."
+TAG_USES_NONE = "یک برچسب را انتخاب کنید تا موردهایش اینجا بیاید."
+TAG_USES_COUNT = "{n} مورد"
+TAG_OPEN_ITEM = "باز کردن (Enter)"
 TAG_NAME_HEADER = "نام"
 TAG_DELETE_CONFIRM = (
     "برچسب «{name}» حذف شود؟ از {n} مورد برداشته می‌شود و زیرمجموعه‌هایش یک سطح بالا می‌روند."
@@ -108,6 +145,18 @@ TAG_INPUT_CREATE = "ایجاد برچسب تازهٔ «{name}»"
 TAG_INPUT_CREATE_SIMILAR = "ایجاد برچسب تازهٔ «{name}» — مشابهِ «{similar}» وجود دارد"
 TAG_REMOVE_TOOLTIP = "برداشتن برچسب"
 TAG_LABEL = "برچسب‌ها"
+
+FILTER_TOOLTIP = "پالایش همین فهرست بر پایهٔ عنوان و برچسب  (Ctrl+F)\n«#نام» فقط برچسب را می‌گردد"
+FILTER_COUNT = "{shown} از {total}"
+FILTER_COUNT_TOOLTIP = "{shown} مورد از {total} مورد نشان داده می‌شود"
+FILTER_NO_MATCH = (
+    "هیچ موردی با «{query}» جور در نیامد.\n"
+    "بخشی از یک کلمه را امتحان کنید، یا با «#» نام برچسب را بنویسید."
+)
+FILTER_CLEAR = "پاک کردن پالایه (Esc)"
+EPISODE_FILTER_PLACEHOLDER = "پالایش اپیزودها بر پایهٔ عنوان یا برچسب…"
+VOICE_FILTER_PLACEHOLDER = "پالایش صداها بر پایهٔ نام یا برچسب…"
+IDEA_FILTER_PLACEHOLDER = "پالایش ایده‌ها بر پایهٔ متن یا برچسب…"
 
 CANCEL = "انصراف"
 DELETE = "حذف"
@@ -149,12 +198,10 @@ NAV_BOARD = "تابلو"
 BOARD_TITLE = "تابلوی تولید"
 BOARD_COLUMN_COUNT = "{n}"
 BOARD_HINT = "کارت‌ها را بین ستون‌ها بکشید یا Ctrl+←/→ بزنید؛ Enter باز می‌کند"
+BOARD_EMPTY = "هنوز اپیزودی ندارید. با «اپیزود تازه» شروع کنید؛ بعد کارت‌ها را بین ستون‌ها بکشید."
 STALE_BADGE = "راکد: {days} روز"
 STALE_TOOLTIP = "بیش از ۱۰ روز است که این اپیزود دست نخورده"
-EPISODE_OPEN_WORKSPACE = "ورود به فضای کار"
 
-WS_BACK = "بازگشت"
-WS_BACK_TOOLTIP = "بازگشت (Alt+←)"
 WS_NOTES = "یادداشت‌ها"
 WS_NOTE_NEW = "یادداشت تازه"
 WS_NOTE_TITLE_PLACEHOLDER = "عنوان یادداشت (اختیاری)"
@@ -162,12 +209,21 @@ WS_NOTE_BODY_PLACEHOLDER = "بنویسید… (خودکار ذخیره می‌ش
 WS_NOTES_EMPTY = "این اپیزود هنوز یادداشتی ندارد. با «یادداشت تازه» (Ctrl+N) شروع کنید."
 WS_NOTE_DELETE = "حذف یادداشت"
 WS_NOTE_DELETE_CONFIRM = "یادداشت «{title}» حذف شود؟"
-WS_LINKED_VOICES = "صداهای پیوندشده"
-WS_LINKED_IDEAS = "ایده‌های پیوندشده"
 WS_LINK_ADD = "افزودن…"
 WS_LINKED_EMPTY = "—"
+WS_VOICES_EMPTY = (
+    "هنوز صدایی به این اپیزود پیوند نخورده. «افزودن…» را بزنید یا از تب پیشنهادها انتخاب کنید."
+)
+WS_IDEAS_EMPTY = (
+    "هنوز ایده‌ای به این اپیزود پیوند نخورده. «افزودن…» را بزنید یا از تب پیشنهادها انتخاب کنید."
+)
 WS_UNLINK = "برداشتن پیوند (Delete)"
 WS_OPEN = "باز کردن (Enter)"
+WS_MATERIALS = "مواد اپیزود"
+WS_TAB_VOICES = "صداها"
+WS_TAB_IDEAS = "ایده‌ها"
+WS_TAB_SMART = "پیشنهادها"
+WS_TAB_COUNT = "{label} {n}"
 WS_SMART = "پیشنهادهای هم‌برچسب"
 WS_SMART_NO_TAGS = "به اپیزود برچسب بدهید تا صداها و ایده‌های هم‌برچسب اینجا بیایند."
 WS_SMART_NONE = "صدا یا ایده‌ای با برچسب مشترک پیدا نشد."
@@ -315,3 +371,86 @@ DATA_IMPORT_DONE = "بازگردانی شد: {episodes} اپیزود، {voices} 
 DATA_IMPORT_BAD_FILE = "این فایل خروجیِ این برنامه نیست یا خراب است."
 DATA_FOLDER = "پوشهٔ داده‌ها"
 DATA_OPEN_FOLDER = "باز کردن پوشه"
+
+SETTINGS_LANGUAGE = "زبان برنامه"
+LANGUAGE_NAMES = {"fa": "فارسی", "en": "English"}
+LANGUAGE_RESTART_TITLE = "تغییر زبان"
+LANGUAGE_RESTART = (
+    "زبان تازه پس از راه‌اندازی دوبارهٔ برنامه اعمال می‌شود. همین حالا دوباره راه‌اندازی شود؟"
+)
+LANGUAGE_RESTART_NOW = "راه‌اندازی دوباره"
+LANGUAGE_RESTART_LATER = "بعداً"
+
+BACKUP_REMINDER_TITLE = "یادآوری پشتیبان‌گیری"
+BACKUP_REMINDER_BODY = "{days} روز از آخرین پشتیبان‌گیری گذشته است."
+BACKUP_REMINDER_NEVER = "هنوز هیچ پشتیبانی از داده‌هایتان نگرفته‌اید."
+BACKUP_REMINDER_HINT = (
+    "یک فایل خروجی همهٔ اپیزودها، یادداشت‌ها، ایده‌ها و صداها را نگه می‌دارد. "
+    "بهتر است آن را روی دیسک یا فضای ابری دیگری نگه دارید."
+)
+BACKUP_NOW = "پشتیبان‌گیری الان"
+BACKUP_TOMORROW = "فردا یادآوری کن"
+BACKUP_LATER = "بعداً"
+SETTINGS_BACKUP_REMINDER = "یادآوری پشتیبان‌گیری"
+BACKUP_INTERVALS = {
+    0: "خاموش",
+    3: "هر ۳ روز",
+    7: "هر هفته",
+    14: "هر دو هفته",
+    30: "هر ماه",
+}
+BACKUP_LAST = "آخرین پشتیبان: {when}"
+BACKUP_LAST_NEVER = "هنوز پشتیبانی گرفته نشده."
+
+# Undo / redo. The history stores what happened as data (services/history.py); the
+# phrases live here. `{quoted}` is what the change names (a tag, a title), `{other}` a
+# second name the phrase needs, and both already carry their guillemets or are empty.
+LIST_SEPARATOR = "، "
+UNDO = "بازگردانی"
+REDO = "انجام دوباره"
+UNDO_TOOLTIP = "{action}  (Ctrl+Z)"
+REDO_TOOLTIP = "{action}  (Ctrl+Y)"
+UNDO_NOTHING = "چیزی برای بازگردانی نیست"
+REDO_NOTHING = "چیزی برای انجام دوباره نیست"
+UNDO_DONE = "بازگردانی شد: {action}"
+REDO_DONE = "دوباره انجام شد: {action}"
+UNDO_FAILED = "بازگردانی این تغییر دیگر ممکن نیست؛ موردش حذف شده یا عوض شده است."
+REDO_FAILED = "انجام دوبارهٔ این تغییر دیگر ممکن نیست."
+UNDO_OFFER = "{action} انجام شد"
+
+UNDO_TARGETS = {
+    "episode": "اپیزود",
+    "voice": "صدا",
+    "idea": "ایده",
+    "tag": "برچسب",
+    "episode_note": "یادداشت",
+    "timestamp_note": "یادداشت زمان‌دار",
+}
+UNDO_ACTIONS = {
+    "create": "ساختن {target} {quoted}",
+    "delete": "حذف {target} {quoted}",
+    "edit": "ویرایش {target} {quoted}",
+    "rename": "تغییر نام برچسب {other} به {quoted}",
+    "status": "تغییر وضعیت {target} {other} به {quoted}",
+    "tags_added": "افزودن برچسب {quoted} به {target}",
+    "tags_removed": "برداشتن برچسب {quoted} از {target}",
+    "linked": "پیوند {quoted} به {target}",
+    "unlinked": "برداشتن پیوند {quoted} از {target}",
+    "recolor": "تغییر رنگ برچسب {quoted}",
+    "reparent": "جابه‌جایی برچسب {quoted}",
+    "merge": "ادغام برچسب {quoted} در {other}",
+}
+UNDO_SOMETHING = "آخرین تغییر"
+
+
+def apply_language(language: str) -> None:
+    """Replace every text above with the chosen language's. Call once, before any UI.
+
+    Persian is what this module holds already, so only English has anything to do.
+    """
+    if language != "en":
+        return
+    from podcast_workspace.ui import strings_en
+
+    names = {name: value for name, value in vars(strings_en).items() if name.isupper()}
+    globals().update(names)

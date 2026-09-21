@@ -2,6 +2,7 @@
 
 import threading
 from collections.abc import Iterable
+from copy import deepcopy
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -9,7 +10,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from podcast_workspace.domain.entities import Tag
 from podcast_workspace.domain.errors import DuplicateTagError, NearDuplicateTagError
 from podcast_workspace.domain.tag_matching import TagMatch, find_exact, near_duplicates, rank_tags
+from podcast_workspace.repositories.repos import TagUses
 from podcast_workspace.repositories.unit_of_work import UnitOfWork
+from podcast_workspace.services.history import ChangeKind, HistoryService, Target, TargetKind
 
 # Calm, distinguishable colors that read on both light and dark backgrounds.
 TAG_PALETTE = (
@@ -40,8 +43,9 @@ class TagService:
     Thread-safe: the Bale bot creates tags from its own thread.
     """
 
-    def __init__(self, session_factory: sessionmaker[Session]) -> None:
+    def __init__(self, session_factory: sessionmaker[Session], history: HistoryService) -> None:
         self._session_factory = session_factory
+        self._history = history
         self._cache: list[Tag] | None = None
         self._lock = threading.RLock()
 
@@ -121,7 +125,17 @@ class TagService:
             with UnitOfWork(self._session_factory) as uow:
                 uow.tags.add(tag)
             self._invalidate()
-            return tag
+        assert tag.id is not None
+        snapshot = deepcopy(tag)
+        self._history.record(
+            ChangeKind.CREATE,
+            Target(TargetKind.TAG, tag.id),
+            undo=lambda: self._drop(snapshot.id),
+            redo=lambda: self._put_back(snapshot, frozenset(), TagUses()),
+            details=(tag.name,),
+            weight=len(tag.name),
+        )
+        return tag
 
     def invalidate(self) -> None:
         """Drop the cache after tags changed behind the service's back (data import)."""
@@ -130,38 +144,169 @@ class TagService:
     def rename(self, tag_id: int, name: str) -> Tag:
         with UnitOfWork(self._session_factory) as uow:
             tag = uow.tags.get(tag_id)
+            before = tag.name
             tag.rename(name)
             existing = self.find_exact(tag.name)
             if existing is not None and existing.id is not None and existing.id != tag_id:
                 raise DuplicateTagError(existing.name, existing.id)
             uow.tags.update(tag)
         self._invalidate()
+        after = tag.name
+        self._history.record(
+            ChangeKind.RENAME,
+            Target(TargetKind.TAG, tag_id),
+            undo=lambda: self._set_name(tag_id, before),
+            redo=lambda: self._set_name(tag_id, after),
+            details=(after, before),
+            weight=len(before) + len(after),
+        )
         return tag
 
     def recolor(self, tag_id: int, color: str) -> Tag:
         with UnitOfWork(self._session_factory) as uow:
             tag = uow.tags.get(tag_id)
+            before = tag.color
             tag.recolor(color)
             uow.tags.update(tag)
         self._invalidate()
+        after, name = tag.color, tag.name
+        self._history.record(
+            ChangeKind.RECOLOR,
+            Target(TargetKind.TAG, tag_id),
+            undo=lambda: self._set_color(tag_id, before),
+            redo=lambda: self._set_color(tag_id, after),
+            details=(name,),
+            weight=len(name),
+        )
         return tag
 
     def set_parent(self, tag_id: int, parent_id: int | None) -> Tag:
         with UnitOfWork(self._session_factory) as uow:
             tag = uow.tags.get(tag_id)
+            before = tag.parent_id
             tag.parent_id = parent_id
             uow.tags.update(tag)  # repository runs the domain cycle check
         self._invalidate()
+        name = tag.name
+        self._history.record(
+            ChangeKind.REPARENT,
+            Target(TargetKind.TAG, tag_id),
+            undo=lambda: self._set_parent(tag_id, before),
+            redo=lambda: self._set_parent(tag_id, parent_id),
+            details=(name,),
+            weight=len(name),
+        )
         return tag
 
     def delete(self, tag_id: int) -> None:
+        """Undo puts the tag back on everything it was on — that is the whole point of
+        being able to delete a tag without first checking what carries it."""
+        with UnitOfWork(self._session_factory) as uow:
+            tag = deepcopy(uow.tags.get(tag_id))
+            children = frozenset(uow.tags.child_ids(tag_id))
+            uses = uow.tags.uses_of(tag_id)
+            uow.tags.delete_keeping_children(tag_id)
+        self._invalidate()
+        self._history.record(
+            ChangeKind.DELETE,
+            Target(TargetKind.TAG, tag_id),
+            undo=lambda: self._put_back(tag, children, uses),
+            redo=lambda: self._drop(tag_id),
+            details=(tag.name,),
+            weight=len(tag.name) + len(uses),
+        )
+
+    def merge(self, source_id: int, target_id: int) -> None:
+        with UnitOfWork(self._session_factory) as uow:
+            source = deepcopy(uow.tags.get(source_id))
+            target = uow.tags.get(target_id)
+            parent_of_target = target.parent_id
+            mine = uow.tags.uses_of(source_id)
+            theirs = uow.tags.uses_of(target_id)
+            children = frozenset(uow.tags.child_ids(source_id)) - {target_id}
+            uow.tags.merge_into(source_id, target_id)
+        self._invalidate()
+        # What the target gained by the merge, and must give back when it is undone.
+        gained = TagUses(
+            mine.episodes - theirs.episodes,
+            mine.voices - theirs.voices,
+            mine.ideas - theirs.ideas,
+        )
+        self._history.record(
+            ChangeKind.MERGE,
+            Target(TargetKind.TAG, target_id),
+            undo=lambda: self._split(source, mine, gained, children, target_id, parent_of_target),
+            redo=lambda: self._merge(source_id, target_id),
+            details=(source.name, target.name),
+            weight=len(source.name) + len(mine),
+        )
+
+    # inverses -------------------------------------------------------------------------
+    def _set_name(self, tag_id: int, name: str) -> None:
+        with UnitOfWork(self._session_factory) as uow:
+            tag = uow.tags.get(tag_id)
+            tag.rename(name)
+            uow.tags.update(tag)
+        self._invalidate()
+
+    def _set_color(self, tag_id: int, color: str) -> None:
+        with UnitOfWork(self._session_factory) as uow:
+            tag = uow.tags.get(tag_id)
+            tag.recolor(color)
+            uow.tags.update(tag)
+        self._invalidate()
+
+    def _set_parent(self, tag_id: int, parent_id: int | None) -> None:
+        with UnitOfWork(self._session_factory) as uow:
+            tag = uow.tags.get(tag_id)
+            gone = parent_id is not None and uow.tags.find(parent_id) is None
+            tag.parent_id = None if gone else parent_id  # its parent went away meanwhile
+            uow.tags.update(tag)
+        self._invalidate()
+
+    def _put_back(self, tag: Tag, children: frozenset[int], uses: TagUses) -> None:
+        with UnitOfWork(self._session_factory) as uow:
+            restored = deepcopy(tag)
+            if restored.parent_id is not None and uow.tags.find(restored.parent_id) is None:
+                restored.parent_id = None  # its parent went away meanwhile
+            uow.tags.add(restored)
+            uow.tags.reparent(set(children), tag.id)
+            if tag.id is not None:
+                uow.tags.add_uses(tag.id, uses)
+        self._invalidate()
+
+    def _drop(self, tag_id: int | None) -> None:
+        if tag_id is None:
+            return
         with UnitOfWork(self._session_factory) as uow:
             uow.tags.delete_keeping_children(tag_id)
         self._invalidate()
 
-    def merge(self, source_id: int, target_id: int) -> None:
+    def _merge(self, source_id: int, target_id: int) -> None:
         with UnitOfWork(self._session_factory) as uow:
             uow.tags.merge_into(source_id, target_id)
+        self._invalidate()
+
+    def _split(
+        self,
+        source: Tag,
+        uses: TagUses,
+        gained: TagUses,
+        children: frozenset[int],
+        target_id: int,
+        parent_of_target: int | None,
+    ) -> None:
+        """Undo a merge: bring the source tag back, give it its uses and children, and
+        take off the target the uses it only has because of the merge."""
+        with UnitOfWork(self._session_factory) as uow:
+            uow.tags.add(deepcopy(source))
+            if source.id is not None:
+                uow.tags.add_uses(source.id, uses)
+            uow.tags.remove_uses(target_id, gained)
+            uow.tags.reparent(set(children), source.id)
+            target = uow.tags.get(target_id)
+            target.parent_id = parent_of_target
+            uow.tags.update(target)
         self._invalidate()
 
     def _next_color(self) -> str:

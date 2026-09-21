@@ -23,6 +23,7 @@ from podcast_workspace.services.content_services import (
     TimestampNoteService,
     VoiceService,
 )
+from podcast_workspace.services.history import HistoryService
 from podcast_workspace.services.search_service import SearchService
 from podcast_workspace.services.settings_service import SettingsService
 from podcast_workspace.services.tag_service import TagService
@@ -34,18 +35,25 @@ class Workspace:
         self._engine = engine
         session_factory = make_session_factory(engine)
         self.writes = WriteCounter(session_factory)
+        # Every use case that can be taken back records its inverse here.
+        self.history = HistoryService()
         self.settings = SettingsService(session_factory)
-        self.episodes = EpisodeService(session_factory)
-        self.episode_notes = EpisodeNoteService(session_factory)
-        self.ideas = IdeaService(session_factory)
-        self.voices = VoiceService(session_factory)
-        self.timestamp_notes = TimestampNoteService(session_factory)
-        self.tags = TagService(session_factory)
+        self.episodes = EpisodeService(session_factory, self.history)
+        self.episode_notes = EpisodeNoteService(session_factory, self.history)
+        self.ideas = IdeaService(session_factory, self.history)
+        self.voices = VoiceService(session_factory, self.history)
+        self.timestamp_notes = TimestampNoteService(session_factory, self.history)
+        self.tags = TagService(session_factory, self.history)
         self.search = SearchService(session_factory, self.writes)
         self.transcripts = TranscriptionService(session_factory, self.settings)
-        self.backup = BackupService(session_factory, self.tags, self.writes)
+        self.backup = BackupService(session_factory, self.tags, self.writes, self.settings)
         self.bot = BaleBotService(
-            self.settings, self.ideas, self.voices, self.tags, self.timestamp_notes
+            self.settings,
+            self.ideas,
+            self.voices,
+            self.tags,
+            self.timestamp_notes,
+            self.history,
         )
 
     @classmethod

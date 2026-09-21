@@ -1,9 +1,10 @@
 """Concrete repositories, one per aggregate. They accept and return domain entities only."""
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from podcast_workspace.domain.entities import (
     Episode,
@@ -17,7 +18,11 @@ from podcast_workspace.domain.entities import (
     Voice,
 )
 from podcast_workspace.domain.errors import NotFoundError
-from podcast_workspace.domain.rules import ensure_tag_limit, ensure_valid_parent
+from podcast_workspace.domain.rules import (
+    MAX_TAGS_PER_ITEM,
+    ensure_tag_limit,
+    ensure_valid_parent,
+)
 from podcast_workspace.repositories.base import SqlRepository
 from podcast_workspace.repositories.models import (
     EpisodeNoteRow,
@@ -28,6 +33,29 @@ from podcast_workspace.repositories.models import (
     TimestampNoteRow,
     TranscriptRow,
     VoiceRow,
+)
+
+
+@dataclass(frozen=True)
+class TagUses:
+    """Everything one tag is attached to. Small (ids only): safe to keep in an undo entry."""
+
+    episodes: frozenset[int] = frozenset()
+    voices: frozenset[int] = frozenset()
+    ideas: frozenset[int] = frozenset()
+
+    def __bool__(self) -> bool:
+        return bool(self.episodes or self.voices or self.ideas)
+
+    def __len__(self) -> int:
+        return len(self.episodes) + len(self.voices) + len(self.ideas)
+
+
+# link table, its item column, its owning table, and the tag limit of that item kind
+_USE_TABLES = (
+    ("episodes", "episode_tags", "episode_id", None),
+    ("voices", "voice_tags", "voice_id", MAX_TAGS_PER_ITEM),
+    ("idea_notes", "idea_note_tags", "idea_note_id", MAX_TAGS_PER_ITEM),
 )
 
 
@@ -73,6 +101,59 @@ class TagRepository(SqlRepository[Tag, TagRow]):
             )
         )
         return {tag_id: count for tag_id, count in rows}
+
+    def child_ids(self, tag_id: int) -> set[int]:
+        return set(self.session.scalars(select(TagRow.id).where(TagRow.parent_id == tag_id)))
+
+    def reparent(self, tag_ids: set[int], parent_id: int | None) -> None:
+        """Put a set of tags under one parent (used to undo a delete or a merge)."""
+        for tag_id in tag_ids:
+            row = self.session.get(TagRow, tag_id)
+            if row is not None:
+                row.parent_id = parent_id
+        self.session.flush()
+
+    def uses_of(self, tag_id: int) -> TagUses:
+        """What carries this tag right now."""
+        found: dict[str, frozenset[int]] = {}
+        for owner, table, column, _limit in _USE_TABLES:
+            rows = self.session.execute(
+                text(f"SELECT {column} FROM {table} WHERE tag_id = :tag"), {"tag": tag_id}
+            )
+            found[owner] = frozenset(item_id for (item_id,) in rows)
+        return TagUses(found["episodes"], found["voices"], found["idea_notes"])
+
+    def add_uses(self, tag_id: int, uses: TagUses) -> None:
+        """Re-attach a tag to the items that had it. Items that filled up their tags in
+        the meantime are skipped: the 15-tag limit outranks putting a use back."""
+        for ids, (owner, table, column, limit) in zip(
+            (uses.episodes, uses.voices, uses.ideas), _USE_TABLES, strict=True
+        ):
+            for item_id in ids:
+                room = (
+                    ""
+                    if limit is None
+                    else f" AND (SELECT COUNT(*) FROM {table} WHERE {column} = :item) < {limit}"
+                )
+                self.session.execute(
+                    text(
+                        f"INSERT OR IGNORE INTO {table} ({column}, tag_id) SELECT :item, :tag "
+                        f"WHERE EXISTS (SELECT 1 FROM {owner} WHERE id = :item){room}"
+                    ),
+                    {"item": item_id, "tag": tag_id},
+                )
+        self.session.expire_all()
+
+    def remove_uses(self, tag_id: int, uses: TagUses) -> None:
+        for ids, (_owner, table, column, _limit) in zip(
+            (uses.episodes, uses.voices, uses.ideas), _USE_TABLES, strict=True
+        ):
+            for item_id in ids:
+                self.session.execute(
+                    text(f"DELETE FROM {table} WHERE {column} = :item AND tag_id = :tag"),
+                    {"item": item_id, "tag": tag_id},
+                )
+        self.session.expire_all()
 
     def delete_keeping_children(self, tag_id: int) -> None:
         """Delete a tag; its children move up to its parent instead of becoming roots."""
@@ -158,6 +239,19 @@ class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
         if missing:
             raise NotFoundError(name, min(missing))
         return rows
+
+    def ids_with_voice(self, voice_id: int) -> set[int]:
+        """Episodes this voice is linked to (the link rows vanish with the voice)."""
+        return self._linked_ids("episode_voices", "voice_id", voice_id)
+
+    def ids_with_idea(self, idea_id: int) -> set[int]:
+        return self._linked_ids("episode_idea_notes", "idea_note_id", idea_id)
+
+    def _linked_ids(self, table: str, column: str, item_id: int) -> set[int]:
+        rows = self.session.execute(
+            text(f"SELECT episode_id FROM {table} WHERE {column} = :item"), {"item": item_id}
+        )
+        return {episode_id for (episode_id,) in rows}
 
     def list_all(self) -> list[Episode]:
         rows = self.session.scalars(select(EpisodeRow).order_by(EpisodeRow.updated_at.desc()))
@@ -247,6 +341,15 @@ class TimestampNoteRepository(SqlRepository[TimestampNote, TimestampNoteRow]):
             .order_by(TimestampNoteRow.position_ms)
         )
         return [self._to_domain(row) for row in rows]
+
+    def counts_by_voice(self) -> dict[int, int]:
+        """Voice id -> number of timestamp notes, for list subtitles (one query)."""
+        rows = self.session.execute(
+            select(TimestampNoteRow.voice_id, func.count(TimestampNoteRow.id)).group_by(
+                TimestampNoteRow.voice_id
+            )
+        )
+        return {voice_id: count for voice_id, count in rows}
 
 
 class EpisodeNoteRepository(SqlRepository[EpisodeNote, EpisodeNoteRow]):

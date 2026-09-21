@@ -1,14 +1,21 @@
 """Episode workspace: one view for an episode's notes, linked material, status and next action,
 plus the smart-link side panel (Voices and IdeaNotes sharing its tags).
 
-Layout (RTL): header row, next action + tags, then [main column | smart-link panel].
-Main column: note tabs + editor, and below it the linked voices / linked ideas lists.
+It is the detail pane of the Episodes page, not a page of its own: choosing an episode in
+the list shows it here, in place, and the list stays beside it. There is one way to see
+an episode and the frame never changes under the user; wanting more room to write is
+answered by hiding the list (the header's first button, Ctrl+L), which the user does and
+undoes on purpose, rather than by a mode the app switches into on a double-click.
+
+Layout (RTL): header row, next action + tags, then [main column | materials panel].
+Main column: note tabs + editor.
 """
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QHideEvent, QKeyEvent, QKeySequence, QShortcut, QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -16,6 +23,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -37,19 +45,21 @@ from podcast_workspace.domain.smart_links import LinkKind, SmartLink
 from podcast_workspace.domain.text import normalize_for_match
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
+from podcast_workspace.ui.icons import NAV_ICON_SIZE
 from podcast_workspace.ui.pages.base import SUBTITLE_ROLE, TwoLineDelegate
 from podcast_workspace.ui.support import (
     AppEvents,
     confirm,
-    fa_digits,
     format_datetime,
     format_duration,
+    local_digits,
     show_error,
 )
 from podcast_workspace.ui.widgets.tag_input import TagInput
 
 AUTOSAVE_DELAY_MS = 700
-SIDE_PANEL_WIDTH = 300
+SIDE_PANEL_MIN_WIDTH = 280
+SIDE_PANEL_MAX_WIDTH = 380
 ID_ROLE = Qt.ItemDataRole.UserRole
 KIND_ROLE = Qt.ItemDataRole.UserRole + 2
 
@@ -68,7 +78,7 @@ def stale_text(episode: Episode, now: datetime | None = None) -> str:
     now = now or datetime.now(UTC)
     if not is_stale(episode, now):
         return ""
-    return strings.STALE_BADGE.format(days=fa_digits(days_untouched(episode, now)))
+    return strings.STALE_BADGE.format(days=local_digits(days_untouched(episode, now)))
 
 
 class _LinkedList(QListWidget):
@@ -167,36 +177,98 @@ class PickerDialog(QDialog):
         return super().eventFilter(watched, event)
 
 
-class SmartLinkPanel(QFrame):
-    toggle_link = Signal(object, int, bool)  # LinkKind, item_id, link?
+class MaterialsPanel(QFrame):
+    """Everything attached to (or suggested for) the episode, in one place.
+
+    Three tabs — linked voices, linked ideas, same-tag suggestions — instead of two
+    boxes under the editor plus a separate suggestion rail: the note editor keeps the
+    whole main column, and one list at a time is enough to look at.
+    """
+
+    TAB_VOICES, TAB_IDEAS, TAB_SMART = 0, 1, 2
+
     open_item = Signal(object, int)  # LinkKind, item_id
+    toggle_link = Signal(object, int, bool)  # LinkKind, item_id, link?
+    add_requested = Signal(object)  # LinkKind
+    record_requested = Signal()
 
     def __init__(self) -> None:
         super().__init__(objectName="sidePanel")
-        self.setFixedWidth(SIDE_PANEL_WIDTH)
+        self.setMinimumWidth(SIDE_PANEL_MIN_WIDTH)
+        self.setMaximumWidth(SIDE_PANEL_MAX_WIDTH)
         col = QVBoxLayout(self)
-        col.setContentsMargins(16, 16, 16, 16)
+        col.setContentsMargins(14, 14, 14, 14)
         col.setSpacing(10)
-        col.addWidget(QLabel(strings.WS_SMART, objectName="sectionTitle"))
+        col.addWidget(QLabel(strings.WS_MATERIALS, objectName="panelTitle"))
+
+        self.tabs = QTabBar(objectName="panelTabs")
+        self.tabs.setExpanding(True)
+        # Three short labels share a narrow panel: shrink them, never scroll them.
+        self.tabs.setUsesScrollButtons(False)
+        self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
+        self.tabs.setDocumentMode(True)
+        for label in (strings.WS_TAB_VOICES, strings.WS_TAB_IDEAS, strings.WS_TAB_SMART):
+            self.tabs.addTab(label)
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+        col.addWidget(self.tabs)
+
+        self.voices_list = _LinkedList()
+        self.voices_list.open_item.connect(lambda i: self.open_item.emit(LinkKind.VOICE, i))
+        self.voices_list.unlink_item.connect(
+            lambda i: self.toggle_link.emit(LinkKind.VOICE, i, False)
+        )
+        self.ideas_list = _LinkedList()
+        self.ideas_list.open_item.connect(lambda i: self.open_item.emit(LinkKind.IDEA, i))
+        self.ideas_list.unlink_item.connect(
+            lambda i: self.toggle_link.emit(LinkKind.IDEA, i, False)
+        )
+        self.smart_list = QListWidget(objectName="smartList")
+        self.smart_list.setItemDelegate(TwoLineDelegate(self.smart_list))
+        self.smart_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.smart_list.itemDoubleClicked.connect(lambda _i: self._toggle_smart())
+        self.smart_list.currentItemChanged.connect(lambda *_: self._sync_buttons())
+        self.smart_list.installEventFilter(self)
+
+        self.stack = QStackedWidget()
+        for widget in (self.voices_list, self.ideas_list, self.smart_list):
+            self.stack.addWidget(widget)
+        col.addWidget(self.stack, 1)
+
         self.hint = QLabel(objectName="muted")
         self.hint.setWordWrap(True)
         col.addWidget(self.hint)
-        self.list = QListWidget(objectName="smartList")
-        self.list.setItemDelegate(TwoLineDelegate(self.list))
-        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.list.itemDoubleClicked.connect(lambda _i: self._toggle_current())
-        self.list.currentItemChanged.connect(lambda *_: self._sync_buttons())
-        self.list.installEventFilter(self)
-        col.addWidget(self.list, 1)
+
         buttons = QHBoxLayout()
-        self.link_button = QPushButton(strings.WS_LINK)
-        self.link_button.clicked.connect(self._toggle_current)
-        buttons.addWidget(self.link_button, 1)
+        buttons.setSpacing(6)
+        self.primary_button = QPushButton()
+        self.primary_button.clicked.connect(self._primary)
+        buttons.addWidget(self.primary_button, 1)
         self.open_button = QPushButton(strings.WS_OPEN.split(" (")[0])
         self.open_button.clicked.connect(self._open_current)
         buttons.addWidget(self.open_button)
         col.addLayout(buttons)
+
         self._linked: dict[tuple[LinkKind, int], bool] = {}
+        self._counts = [0, 0, 0]
+        self._has_tags = False
+        self._sync_buttons()
+
+    # filling ---------------------------------------------------------------------------
+    def show_linked(self, kind: LinkKind, rows: list[tuple[int, str, str]]) -> None:
+        widget = self.voices_list if kind is LinkKind.VOICE else self.ideas_list
+        keep = widget.current_id()
+        widget.clear()
+        for item_id, title, subtitle in rows:
+            item = QListWidgetItem(title)
+            item.setData(ID_ROLE, item_id)
+            item.setData(SUBTITLE_ROLE, subtitle)
+            item.setToolTip(title)
+            widget.addItem(item)
+            if item_id == keep:
+                widget.setCurrentItem(item)
+        index = self.TAB_VOICES if kind is LinkKind.VOICE else self.TAB_IDEAS
+        self._counts[index] = len(rows)
+        self._update_tab_labels()
 
     def show_links(
         self,
@@ -206,73 +278,148 @@ class SmartLinkPanel(QFrame):
         linked: set[tuple[LinkKind, int]],
         has_tags: bool,
     ) -> None:
-        current = self._current_key()
-        self.list.clear()
+        current = self._current_smart_key()
+        self.smart_list.clear()
         self._linked = {}
+        self._has_tags = has_tags
         target = None
         for link in links:
             key = (link.kind, link.item_id)
-            shared = "، ".join(sorted(tag_names.get(t, "?") for t in link.shared_tag_ids))
+            shared = strings.LIST_SEPARATOR.join(
+                sorted(tag_names.get(t, "?") for t in link.shared_tag_ids)
+            )
             kind = strings.KIND_VOICE if link.kind is LinkKind.VOICE else strings.KIND_IDEA
             subtitle = strings.WS_SMART_SUBTITLE.format(
-                kind=kind, n=fa_digits(link.score), names=shared
+                kind=kind, n=local_digits(link.score), names=shared
             )
             is_linked = key in linked
             if is_linked:
-                subtitle = strings.WS_SMART_LINKED + "، " + subtitle
+                subtitle = strings.WS_SMART_LINKED + strings.LIST_SEPARATOR + subtitle
             item = QListWidgetItem(names.get(key, "?"))
             item.setData(ID_ROLE, link.item_id)
             item.setData(KIND_ROLE, link.kind)
             item.setData(SUBTITLE_ROLE, subtitle)
             item.setToolTip(subtitle)
-            self.list.addItem(item)
+            self.smart_list.addItem(item)
             self._linked[key] = is_linked
             if key == current:
                 target = item
         if target is not None:
-            self.list.setCurrentItem(target)
-        elif self.list.count():
-            self.list.setCurrentRow(0)
-        self.hint.setText(
-            "" if links else (strings.WS_SMART_NONE if has_tags else strings.WS_SMART_NO_TAGS)
-        )
-        self.hint.setVisible(not links)
+            self.smart_list.setCurrentItem(target)
+        elif self.smart_list.count():
+            self.smart_list.setCurrentRow(0)
+        self._counts[self.TAB_SMART] = len(links)
+        self._update_tab_labels()
         self._sync_buttons()
 
-    def _current_key(self) -> tuple[LinkKind, int] | None:
-        item = self.list.currentItem()
+    def _update_tab_labels(self) -> None:
+        for index, label in enumerate(
+            (strings.WS_TAB_VOICES, strings.WS_TAB_IDEAS, strings.WS_TAB_SMART)
+        ):
+            count = self._counts[index]
+            self.tabs.setTabText(
+                index,
+                strings.WS_TAB_COUNT.format(label=label, n=local_digits(count)) if count else label,
+            )
+
+    # behaviour -------------------------------------------------------------------------
+    def _on_tab_changed(self, index: int) -> None:
+        self.stack.setCurrentIndex(index)
+        self._sync_buttons()
+
+    def _current_smart_key(self) -> tuple[LinkKind, int] | None:
+        item = self.smart_list.currentItem()
         if item is None:
             return None
-        return item.data(KIND_ROLE), int(item.data(ID_ROLE))
+        # Qt stores item data as a QVariant and hands a StrEnum back as a plain str, so
+        # the value has to be put back through LinkKind before anyone compares it.
+        return LinkKind(item.data(KIND_ROLE)), int(item.data(ID_ROLE))
 
     def _sync_buttons(self) -> None:
-        key = self._current_key()
-        self.link_button.setEnabled(key is not None)
-        self.open_button.setEnabled(key is not None)
-        linked = key is not None and self._linked.get(key, False)
-        self.link_button.setText(strings.WS_UNLINK_SHORT if linked else strings.WS_LINK)
+        index = self.tabs.currentIndex()
+        if index == self.TAB_SMART:
+            key = self._current_smart_key()
+            linked = key is not None and self._linked.get(key, False)
+            self.primary_button.setText(strings.WS_UNLINK_SHORT if linked else strings.WS_LINK)
+            self.primary_button.setObjectName("" if linked else "primary")
+            self.primary_button.setEnabled(key is not None)
+            self.open_button.setEnabled(key is not None)
+            empty = self.smart_list.count() == 0
+            self.hint.setText(
+                ""
+                if not empty
+                else (strings.WS_SMART_NONE if self._has_tags else strings.WS_SMART_NO_TAGS)
+            )
+        else:
+            widget = self.voices_list if index == self.TAB_VOICES else self.ideas_list
+            self.primary_button.setText(strings.WS_LINK_ADD)
+            self.primary_button.setObjectName("primary")
+            self.primary_button.setEnabled(True)
+            self.open_button.setEnabled(widget.current_id() is not None)
+            empty = widget.count() == 0
+            self.hint.setText(
+                ""
+                if not empty
+                else (
+                    strings.WS_VOICES_EMPTY if index == self.TAB_VOICES else strings.WS_IDEAS_EMPTY
+                )
+            )
+        self.hint.setVisible(bool(self.hint.text()))
+        # objectName drives the primary/secondary look; re-polish after changing it.
+        self.primary_button.style().unpolish(self.primary_button)
+        self.primary_button.style().polish(self.primary_button)
 
-    def _toggle_current(self) -> None:
-        key = self._current_key()
+    def _primary(self) -> None:
+        index = self.tabs.currentIndex()
+        if index == self.TAB_SMART:
+            self._toggle_smart()
+        else:
+            self.add_requested.emit(LinkKind.VOICE if index == self.TAB_VOICES else LinkKind.IDEA)
+
+    def _toggle_smart(self) -> None:
+        key = self._current_smart_key()
         if key is not None:
             self.toggle_link.emit(key[0], key[1], not self._linked.get(key, False))
 
     def _open_current(self) -> None:
-        key = self._current_key()
-        if key is not None:
-            self.open_item.emit(key[0], key[1])
+        index = self.tabs.currentIndex()
+        if index == self.TAB_SMART:
+            key = self._current_smart_key()
+            if key is not None:
+                self.open_item.emit(key[0], key[1])
+            return
+        widget = self.voices_list if index == self.TAB_VOICES else self.ideas_list
+        item_id = widget.current_id()
+        if item_id is not None:
+            kind = LinkKind.VOICE if index == self.TAB_VOICES else LinkKind.IDEA
+            self.open_item.emit(kind, item_id)
+
+    def show_tab(self, index: int) -> None:
+        self.tabs.setCurrentIndex(index)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if watched is self.list and event.type() == QEvent.Type.KeyPress:
+        if watched is self.smart_list and event.type() == QEvent.Type.KeyPress:
             assert isinstance(event, QKeyEvent)
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                self._toggle_current()
+                self._toggle_smart()
                 return True
         return super().eventFilter(watched, event)
 
 
+@dataclass(frozen=True)
+class WorkspaceState:
+    """What this page was showing when the user navigated away from it."""
+
+    episode_id: int | None = None
+    note_id: int | None = None
+    materials_tab: int = 0
+
+
 class EpisodeWorkspacePage(QWidget):
-    back_requested = Signal()
+    episode_gone = Signal()  # the episode was deleted underneath (an undo, typically)
+    episode_saved = Signal(object)  # Episode: its title, status, next action or tags changed
+    delete_requested = Signal(int)
+    list_toggle_requested = Signal()
     open_voice = Signal(int)
     open_idea = Signal(int)
     settings_requested = Signal()
@@ -288,24 +435,26 @@ class EpisodeWorkspacePage(QWidget):
         self._loading = False
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(32, 20, 32, 24)
-        root.setSpacing(14)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(12)
         root.addLayout(self._build_header())
         root.addLayout(self._build_fields())
         body = QHBoxLayout()
-        body.setSpacing(20)
-        body.addLayout(self._build_main(), 1)
-        self.smart = SmartLinkPanel()
-        self.smart.toggle_link.connect(self._toggle_link)
-        self.smart.open_item.connect(self._open_linked)
-        body.addWidget(self.smart)
+        body.setSpacing(18)
+        body.addLayout(self._build_main(), 5)
+        self.materials = MaterialsPanel()
+        self.materials.toggle_link.connect(self._toggle_link)
+        self.materials.open_item.connect(self._open_linked)
+        self.materials.add_requested.connect(self._pick)
+        body.addWidget(self.materials, 2)
         root.addLayout(body, 1)
 
         self._timer = QTimer(self, singleShot=True, interval=AUTOSAVE_DELAY_MS)
         self._timer.timeout.connect(self._save_note)
+        # Ctrl+N is the Episodes page's to route (a new episode from the list, a new note
+        # from in here), so it is not bound on this widget.
         context = Qt.ShortcutContext.WidgetWithChildrenShortcut
         for keys, handler in (
-            (QKeySequence(QKeySequence.StandardKey.New), self.new_note),
             (QKeySequence("Ctrl+R"), self.record_requested.emit),
             (QKeySequence("Ctrl+Tab"), lambda: self._cycle_note(1)),
             (QKeySequence("Ctrl+Shift+Tab"), lambda: self._cycle_note(-1)),
@@ -317,14 +466,13 @@ class EpisodeWorkspacePage(QWidget):
 
     # layout -------------------------------------------------------------------------------
     def _build_header(self) -> QHBoxLayout:
+        """The list toggle and the identity at the start, what you act on at the end."""
         header = QHBoxLayout()
-        header.setSpacing(10)
-        back = QToolButton(objectName="backButton")
-        back.setText("→  " + strings.WS_BACK)
-        back.setToolTip(strings.WS_BACK_TOOLTIP)
-        back.setCursor(Qt.CursorShape.PointingHandCursor)
-        back.clicked.connect(self._go_back)
-        header.addWidget(back)
+        header.setSpacing(8)
+        self.list_toggle = QToolButton(objectName="chromeButton")
+        self.list_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.list_toggle.clicked.connect(self.list_toggle_requested.emit)
+        header.addWidget(self.list_toggle)
         self.title_edit = QLineEdit(objectName="titleEdit")
         self.title_edit.setPlaceholderText(strings.EPISODE_TITLE_PLACEHOLDER)
         self.title_edit.editingFinished.connect(self._save_fields)
@@ -332,11 +480,7 @@ class EpisodeWorkspacePage(QWidget):
         self.stale = QLabel(objectName="staleBadge")
         self.stale.setToolTip(strings.STALE_TOOLTIP)
         header.addWidget(self.stale)
-        self.status_box = QComboBox()
-        for status in EpisodeStatus:
-            self.status_box.addItem(strings.STATUS_LABELS[status], status)
-        self.status_box.activated.connect(lambda _i: self._save_fields())
-        header.addWidget(self.status_box)
+        header.addSpacing(6)
         record = QPushButton(strings.WS_RECORD, objectName="recordButton")
         record.setToolTip(strings.WS_RECORD_TOOLTIP)
         record.clicked.connect(self.record_requested.emit)
@@ -345,22 +489,75 @@ class EpisodeWorkspacePage(QWidget):
         self.new_note_button.setToolTip("Ctrl+N")
         self.new_note_button.clicked.connect(self.new_note)
         header.addWidget(self.new_note_button)
+        # Rare, destructive or merely informative things stay one click away, out of the
+        # row of things used every day.
+        self.more_button = QToolButton(objectName="chromeButton")
+        self.more_button.setIconSize(QSize(NAV_ICON_SIZE, NAV_ICON_SIZE))
+        self.more_button.setToolTip(strings.EPISODE_MORE)
+        self.more_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.more_menu = QMenu(self.more_button)
+        self.more_menu.aboutToShow.connect(self._fill_more_menu)
+        self.more_button.setMenu(self.more_menu)
+        header.addWidget(self.more_button)
         return header
 
-    def _build_fields(self) -> QHBoxLayout:
-        row = QHBoxLayout()
-        row.setSpacing(12)
-        row.addWidget(QLabel(strings.EPISODE_NEXT_ACTION))
+    def _fill_more_menu(self) -> None:
+        menu = self.more_menu
+        menu.clear()
+        episode = self._episode
+        if episode is None or episode.id is None:
+            return
+        for line in (
+            strings.CREATED_AT.format(when=format_datetime(episode.created_at)),
+            strings.UPDATED_AT.format(when=format_datetime(episode.updated_at)),
+        ):
+            menu.addAction(line).setEnabled(False)
+        menu.addSeparator()
+        episode_id = episode.id
+        menu.addAction(strings.EPISODE_DELETE, lambda: self.delete_requested.emit(episode_id))
+
+    def _build_fields(self) -> QGridLayout:
+        """Where the episode stands: its stage and the next action on one line — the next
+        action gets the room, being the one sentence that drives the episode — and its
+        tags on the line below, where chips can run the full width instead of piling up
+        in a corner. (The stage sits here and not in the header so the title keeps
+        enough width to be read whole.)"""
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(8)
+        self.status_box = QComboBox()
+        self.status_box.setToolTip(strings.EPISODE_STATUS)
+        self.status_box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        for status in EpisodeStatus:
+            self.status_box.addItem(strings.STATUS_LABELS[status], status)
+        self.status_box.activated.connect(lambda _i: self._save_fields())
         self.next_action = QLineEdit(objectName="nextAction")
         self.next_action.setPlaceholderText(strings.EPISODE_NEXT_ACTION_PLACEHOLDER)
         self.next_action.editingFinished.connect(self._save_fields)
-        row.addWidget(self.next_action, 3)
-        row.addSpacing(8)
-        row.addWidget(QLabel(strings.TAG_LABEL))
         self.tag_input = TagInput(self._ws.tags, self._events)
         self.tag_input.tags_changed.connect(self._save_tags)
-        row.addWidget(self.tag_input, 2)
-        return row
+        line = self.next_action.sizeHint().height()
+
+        def label(text: str) -> QLabel:
+            widget = QLabel(text, objectName="fieldLabel")
+            widget.setMinimumHeight(line)  # level with the field's first line
+            widget.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeading)
+            return widget
+
+        top = Qt.AlignmentFlag.AlignTop
+        grid.addWidget(label(strings.EPISODE_STATUS), 0, 0, top)
+        stage = QHBoxLayout()
+        stage.setSpacing(10)
+        stage.addWidget(self.status_box)
+        stage.addSpacing(10)
+        stage.addWidget(label(strings.EPISODE_NEXT_ACTION))
+        stage.addWidget(self.next_action, 1)
+        grid.addLayout(stage, 0, 1)
+        grid.addWidget(label(strings.TAG_LABEL), 1, 0, top)
+        grid.addWidget(self.tag_input, 1, 1)
+        grid.setColumnStretch(1, 1)
+        return grid
 
     def _build_main(self) -> QVBoxLayout:
         col = QVBoxLayout()
@@ -404,39 +601,52 @@ class EpisodeWorkspacePage(QWidget):
         foot.addWidget(delete)
         ed.addLayout(foot)
         self.note_stack.addWidget(editor)
-        col.addWidget(self.note_stack, 3)
-
-        linked = QHBoxLayout()
-        linked.setSpacing(16)
-        self.voices_list, voices_box = self._linked_box(strings.WS_LINKED_VOICES, LinkKind.VOICE)
-        self.ideas_list, ideas_box = self._linked_box(strings.WS_LINKED_IDEAS, LinkKind.IDEA)
-        linked.addLayout(voices_box, 1)
-        linked.addLayout(ideas_box, 1)
-        col.addLayout(linked, 2)
+        col.addWidget(self.note_stack, 1)
         return col
-
-    def _linked_box(self, title: str, kind: LinkKind) -> tuple[_LinkedList, QVBoxLayout]:
-        box = QVBoxLayout()
-        box.setSpacing(6)
-        head = QHBoxLayout()
-        head.addWidget(QLabel(title, objectName="sectionTitle"))
-        head.addStretch(1)
-        add = QPushButton(strings.WS_LINK_ADD, objectName="flatButton")
-        add.clicked.connect(lambda: self._pick(kind))
-        head.addWidget(add)
-        box.addLayout(head)
-        lst = _LinkedList()
-        lst.open_item.connect(lambda item_id: self._open_linked(kind, item_id))
-        lst.unlink_item.connect(lambda item_id: self._toggle_link(kind, item_id, False))
-        box.addWidget(lst, 1)
-        return lst, box
 
     # public -------------------------------------------------------------------------------
     @property
     def episode_id(self) -> int | None:
         return None if self._episode is None else self._episode.id
 
-    def open(self, episode_id: int, note_id: int | None = None) -> bool:
+    def focus_main(self) -> None:
+        """Put the caret where work continues: the open note, else "New note"."""
+        if self._note is not None:
+            self.note_body.setFocus()
+        else:
+            self.new_note_button.setFocus()
+
+    def clear(self) -> None:
+        """No episode selected (the list is empty, or its selection was deleted)."""
+        self.flush()
+        self._episode = None
+        self._note = None
+        self._notes = []
+
+    # navigation state ---------------------------------------------------------------------
+    def nav_state(self) -> WorkspaceState:
+        return WorkspaceState(
+            episode_id=self.episode_id,
+            note_id=self._note.id if self._note is not None else None,
+            materials_tab=self.materials.tabs.currentIndex(),
+        )
+
+    def restore_nav_state(self, state: object) -> None:
+        if not isinstance(state, WorkspaceState) or state.episode_id is None:
+            return
+        if state.episode_id != self.episode_id:
+            if not self.open(state.episode_id, state.note_id):
+                return
+        elif state.note_id is not None:
+            self._load_notes(select_id=state.note_id)
+        self.materials.show_tab(state.materials_tab)
+
+    def open(self, episode_id: int, note_id: int | None = None, focus: bool = False) -> bool:
+        """Show an episode (it counts as opening it, for the resume screen).
+
+        Focus moves in only when asked: choosing a row in the list must leave the caret
+        in the list, so the arrow keys keep walking through the episodes.
+        """
         self.flush()
         try:
             self._episode = self._ws.episodes.open(episode_id)
@@ -446,12 +656,31 @@ class EpisodeWorkspacePage(QWidget):
         self._fill_fields()
         self._load_notes(select_id=note_id)
         self._refresh_links()
-        if note_id is not None and self._note is not None:
-            self.note_body.setFocus()
-            self.note_body.moveCursor(self.note_body.textCursor().MoveOperation.End)
-        elif self._note is None:
-            self.new_note_button.setFocus()
+        if focus:
+            self.focus_main()
+            if note_id is not None and self._note is not None:
+                self.note_body.moveCursor(self.note_body.textCursor().MoveOperation.End)
         return True
+
+    def reload(self, note_id: int | None = None) -> None:
+        """Read the episode again after it changed underneath us (an undo, typically).
+
+        Unlike `open`, it does not count as opening the episode and keeps the page
+        where it is; if the episode itself is gone, it steps back out.
+        """
+        if self._episode is None or self._episode.id is None:
+            return
+        episode_id = self._episode.id
+        self.flush()
+        try:
+            self._episode = self._ws.episodes.get(episode_id)
+        except Exception:
+            self._episode = None
+            self.episode_gone.emit()
+            return
+        self._fill_fields()
+        self._load_notes(select_id=note_id)
+        self._refresh_links()
 
     def flush(self) -> None:
         if self._timer.isActive():
@@ -477,6 +706,7 @@ class EpisodeWorkspacePage(QWidget):
         if episode is None:
             return
         self.title_edit.setText(episode.title)
+        self.title_edit.setCursorPosition(0)  # show where the title starts, not where it ends
         self.status_box.setCurrentIndex(self.status_box.findData(episode.status))
         self.next_action.setText(episode.next_action)
         self.tag_input.set_tag_ids(episode.tag_ids)
@@ -491,8 +721,9 @@ class EpisodeWorkspacePage(QWidget):
             self._episode = self._ws.episodes.get(self._episode.id)
         except Exception:
             self._episode = None
-            self.back_requested.emit()
+            self.episode_gone.emit()
             return
+        self.episode_saved.emit(self._episode)
         badge = stale_text(self._episode)
         self.stale.setText(badge)
         self.stale.setVisible(bool(badge))
@@ -515,6 +746,7 @@ class EpisodeWorkspacePage(QWidget):
         if saved.updated_at != episode.updated_at:
             self._episode = saved
             self._fill_fields()
+            self.episode_saved.emit(saved)
             self._changed()
 
     def _save_tags(self, tag_ids: list[int]) -> None:
@@ -527,6 +759,7 @@ class EpisodeWorkspacePage(QWidget):
             show_error(self, exc)
             self.tag_input.set_tag_ids(episode.tag_ids)
             return
+        self.episode_saved.emit(self._episode)
         self._changed()
         self._refresh_links()
 
@@ -558,13 +791,18 @@ class EpisodeWorkspacePage(QWidget):
         self._show_note(self._notes[index] if index >= 0 else None)
 
     def _show_note(self, note: EpisodeNote | None) -> None:
+        same = note is not None and self._note is not None and note.id == self._note.id
         self._note = note
         self.note_stack.setCurrentIndex(0 if note is None else 1)
         if note is None:
             return
         self._loading = True
-        self.note_title.setText(note.title)
-        self.note_body.setPlainText(note.body)
+        # Re-showing the note already in the editor (a reload) must not throw away the
+        # caret and the scroll position when nothing in it changed.
+        if not (same and self.note_title.text() == note.title):
+            self.note_title.setText(note.title)
+        if not (same and self.note_body.toPlainText() == note.body):
+            self.note_body.setPlainText(note.body)
         self._loading = False
         self._update_note_meta(note)
 
@@ -644,32 +882,36 @@ class EpisodeWorkspacePage(QWidget):
             if iid is not None:
                 names[(LinkKind.IDEA, iid)] = _first_line(idea.text)
 
-        self.voices_list.clear()
+        voice_rows: list[tuple[int, str, str]] = []
         for vid in sorted(episode.voice_ids, key=lambda i: names.get((LinkKind.VOICE, i), "")):
             voice = voices.get(vid)
             if voice is None:
                 continue
-            item = QListWidgetItem(Path(voice.file_path).name)
-            item.setData(ID_ROLE, vid)
-            item.setData(
-                SUBTITLE_ROLE, f"{format_duration(voice.duration_ms)}  ·  {voice.format.upper()}"
+            voice_rows.append(
+                (
+                    vid,
+                    Path(voice.file_path).name,
+                    f"{format_duration(voice.duration_ms)}  ·  {voice.format.upper()}",
+                )
             )
-            self.voices_list.addItem(item)
-        self.ideas_list.clear()
+        self.materials.show_linked(LinkKind.VOICE, voice_rows)
+
+        idea_rows: list[tuple[int, str, str]] = []
         linked_ideas = [ideas[i] for i in episode.idea_note_ids if i in ideas]
         for idea in sorted(linked_ideas, key=lambda i: i.updated_at, reverse=True):
-            iid = idea.id
-            item = QListWidgetItem(_first_line(idea.text))
-            item.setData(ID_ROLE, iid)
+            if idea.id is None:
+                continue
             tag_names = [t.name for t in self._ws.tags.by_ids(idea.tag_ids)]
-            item.setData(SUBTITLE_ROLE, "، ".join(tag_names))
-            self.ideas_list.addItem(item)
+            idea_rows.append(
+                (idea.id, _first_line(idea.text), strings.LIST_SEPARATOR.join(tag_names))
+            )
+        self.materials.show_linked(LinkKind.IDEA, idea_rows)
 
         linked = {(LinkKind.VOICE, v) for v in episode.voice_ids} | {
             (LinkKind.IDEA, i) for i in episode.idea_note_ids
         }
-        tag_names = {t.id: t.name for t in self._ws.tags.list_all() if t.id is not None}
-        self.smart.show_links(links, names, tag_names, linked, bool(episode.tag_ids))
+        tag_names_by_id = {t.id: t.name for t in self._ws.tags.list_all() if t.id is not None}
+        self.materials.show_links(links, names, tag_names_by_id, linked, bool(episode.tag_ids))
 
     def _toggle_link(self, kind: LinkKind, item_id: int, link: bool) -> None:
         episode = self._episode
@@ -702,7 +944,7 @@ class EpisodeWorkspacePage(QWidget):
                 (
                     i.id,
                     _first_line(i.text),
-                    "، ".join(t.name for t in self._ws.tags.by_ids(i.tag_ids)),
+                    strings.LIST_SEPARATOR.join(t.name for t in self._ws.tags.by_ids(i.tag_ids)),
                 )
                 for i in self._ws.ideas.list_all()
                 if i.id is not None and i.id not in episode.idea_note_ids
@@ -721,10 +963,6 @@ class EpisodeWorkspacePage(QWidget):
             self.open_idea.emit(item_id)
 
     # lifecycle ----------------------------------------------------------------------------
-    def _go_back(self) -> None:
-        self.flush()
-        self.back_requested.emit()
-
     def _changed(self) -> None:
         self._own_change = True
         try:

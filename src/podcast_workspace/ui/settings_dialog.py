@@ -1,4 +1,5 @@
-"""Settings, in four tabs: general (recorder, hotkey), Bale bot, transcription, data.
+"""Settings, in four tabs: general (language, recorder, hotkey), Bale bot, transcription,
+data (export/import, backup reminder).
 
 One instance lives for the whole session (MainWindow keeps it), so a model download or an
 export started here can finish safely after the dialog is closed.
@@ -30,6 +31,7 @@ from podcast_workspace.integrations.bale_api import BaleNetworkError, BaleUnauth
 from podcast_workspace.paths import data_dir
 from podcast_workspace.services.backup import ExportFormatError, ExportReport, RestoreReport
 from podcast_workspace.services.bale_bot import BaleBotService, BotStatus
+from podcast_workspace.services.settings_service import Language
 from podcast_workspace.services.transcription import WHISPER_MODELS, whisper_installed
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
@@ -37,7 +39,8 @@ from podcast_workspace.ui.bot_controller import BotController
 from podcast_workspace.ui.support import (
     confirm,
     describe_error,
-    fa_digits,
+    format_datetime,
+    local_digits,
     run_async,
     run_detached,
     show_error,
@@ -67,6 +70,7 @@ def _folder_size(path: Path) -> int:
 
 class SettingsDialog(QDialog):
     data_replaced = Signal(object)  # RestoreReport
+    restart_requested = Signal()  # the language changed and the user chose to restart now
     _task_progress = Signal(float)
 
     def __init__(
@@ -122,6 +126,12 @@ class SettingsDialog(QDialog):
 
     def _general_tab(self) -> QWidget:
         page, col = self._page()
+        col.addWidget(QLabel(strings.SETTINGS_LANGUAGE, objectName="fieldLabel"))
+        self.language_box = QComboBox()
+        for language in Language:
+            self.language_box.addItem(strings.LANGUAGE_NAMES[language.value], language)
+        col.addWidget(self.language_box, 0, Qt.AlignmentFlag.AlignLeading)
+        col.addSpacing(12)
         col.addWidget(QLabel(strings.SETTINGS_RECORDER, objectName="fieldLabel"))
         row = QHBoxLayout()
         self.recorder = QLineEdit()
@@ -236,6 +246,14 @@ class SettingsDialog(QDialog):
         open_folder.clicked.connect(lambda: os.startfile(data_dir()))
         row.addWidget(open_folder)
         col.addLayout(row)
+        col.addSpacing(12)
+        col.addWidget(QLabel(strings.SETTINGS_BACKUP_REMINDER, objectName="fieldLabel"))
+        self.reminder_box = QComboBox()
+        for days, label in strings.BACKUP_INTERVALS.items():
+            self.reminder_box.addItem(label, days)
+        col.addWidget(self.reminder_box, 0, Qt.AlignmentFlag.AlignLeading)
+        self.last_backup = _muted()
+        col.addWidget(self.last_backup)
         self.data_status = _muted()
         self.data_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         col.addWidget(self.data_status)
@@ -243,9 +261,22 @@ class SettingsDialog(QDialog):
         return page
 
     # open ------------------------------------------------------------------------------
-    def open_at(self, tab: int, hotkey_ok: bool) -> bool:
-        """Reload every field from settings, show the tab, run modally."""
+    def open_at(self, tab: int, hotkey_ok: bool, export: bool = False) -> bool:
+        """Reload every field from settings, show the tab, run modally.
+
+        `export` starts an export as soon as the dialog is up (the backup reminder's
+        "Back up now"), so its progress and its result show where they always do.
+        """
         settings = self._ws.settings
+        current = settings.language() or Language.FA
+        self.language_box.setCurrentIndex(max(0, self.language_box.findData(current)))
+        interval = settings.backup_interval_days()
+        index = self.reminder_box.findData(interval)
+        if index < 0:  # a value set some other way: show it rather than lose it
+            self.reminder_box.addItem(local_digits(interval), interval)
+            index = self.reminder_box.count() - 1
+        self.reminder_box.setCurrentIndex(index)
+        self._show_last_backup()
         self.recorder.setText(settings.recorder_path())
         template = strings.SETTINGS_HOTKEY_OK if hotkey_ok else strings.SETTINGS_HOTKEY_FAIL
         self.hotkey_status.setText(template.format(keys=self._hotkey_label))
@@ -263,10 +294,21 @@ class SettingsDialog(QDialog):
         self._show_model_state()
         self.data_status.setText("")
         self.tabs.setCurrentIndex(tab)
+        if export:
+            QTimer.singleShot(0, self._export)
         return self.exec() == QDialog.DialogCode.Accepted
+
+    def _show_last_backup(self) -> None:
+        last = self._ws.settings.last_backup_at()
+        self.last_backup.setText(
+            strings.BACKUP_LAST.format(when=format_datetime(last))
+            if last is not None
+            else strings.BACKUP_LAST_NEVER
+        )
 
     def accept(self) -> None:
         settings = self._ws.settings
+        settings.set_backup_interval_days(int(self.reminder_box.currentData()))
         settings.set_recorder_path(self.recorder.text())
         settings.set_whisper_model(str(self.model_box.currentData()))
         settings.set_whisper_model_dir(self.model_dir.text())
@@ -278,7 +320,25 @@ class SettingsDialog(QDialog):
         settings.set_bale_enabled(self.bot_enabled.isChecked())
         if bot_changed or self._bot.status in (BotStatus.STOPPED, BotStatus.UNAUTHORIZED):
             self._bot.restart()
+        language = Language(self.language_box.currentData())
+        changed = language is not (settings.language() or Language.FA)
+        settings.set_language(language)
         super().accept()
+        if changed and self._ask_restart():
+            self.restart_requested.emit()
+
+    def _ask_restart(self) -> bool:
+        """The whole UI is built in one language; the new one needs a fresh start."""
+        box = QMessageBox(self.parentWidget())
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(strings.LANGUAGE_RESTART_TITLE)
+        box.setText(strings.LANGUAGE_RESTART)
+        now = box.addButton(strings.LANGUAGE_RESTART_NOW, QMessageBox.ButtonRole.AcceptRole)
+        now.setObjectName("primary")
+        box.addButton(strings.LANGUAGE_RESTART_LATER, QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(now)
+        box.exec()
+        return box.clickedButton() is now
 
     # general ---------------------------------------------------------------------------
     def _browse_recorder(self) -> None:
@@ -378,7 +438,7 @@ class SettingsDialog(QDialog):
         if self._downloading is None:
             return
         size = _folder_size(self._ws.transcripts.managed_model_dir(self._downloading))
-        mb = fa_digits(size // (1024 * 1024))
+        mb = local_digits(size // (1024 * 1024))
         self.model_state.setText(f"{strings.TR_MODEL_DOWNLOADING}  {mb} MB")
 
     def _download_finished(self, exc: BaseException | None) -> None:
@@ -393,7 +453,7 @@ class SettingsDialog(QDialog):
 
     # data ------------------------------------------------------------------------------
     def _start_task(self, label: str) -> None:
-        dialog = QProgressDialog(label.format(percent=fa_digits(0)), "", 0, 1000, self)
+        dialog = QProgressDialog(label.format(percent=local_digits(0)), "", 0, 1000, self)
         dialog.setWindowTitle(strings.SETTINGS_TAB_DATA)
         dialog.setCancelButton(None)  # type: ignore[arg-type]
         dialog.setWindowModality(Qt.WindowModality.WindowModal)
@@ -407,7 +467,7 @@ class SettingsDialog(QDialog):
         if dialog is not None:
             dialog.setValue(int(fraction * 1000))
             dialog.setLabelText(
-                str(dialog.property("template")).format(percent=fa_digits(int(fraction * 100)))
+                str(dialog.property("template")).format(percent=local_digits(int(fraction * 100)))
             )
 
     def _end_task(self) -> None:
@@ -438,9 +498,12 @@ class SettingsDialog(QDialog):
 
     def _export_done(self, report: ExportReport) -> None:
         self._end_task()
+        self._show_last_backup()
         lines = [strings.DATA_EXPORT_DONE.format(path=report.path)]
         if report.missing_audio:
-            lines.append(strings.DATA_EXPORT_MISSING.format(n=fa_digits(len(report.missing_audio))))
+            lines.append(
+                strings.DATA_EXPORT_MISSING.format(n=local_digits(len(report.missing_audio)))
+            )
         self.data_status.setText("\n".join(lines))
 
     def _import(self) -> None:
@@ -461,7 +524,7 @@ class SettingsDialog(QDialog):
 
     def _import_done(self, report: RestoreReport) -> None:
         self._end_task()
-        counts = {k: fa_digits(v) for k, v in report.counts.items()}
+        counts = {k: local_digits(v) for k, v in report.counts.items()}
         lines = [
             strings.DATA_IMPORT_DONE.format(
                 episodes=counts["episodes"],
@@ -471,7 +534,9 @@ class SettingsDialog(QDialog):
             )
         ]
         if report.missing_audio:
-            lines.append(strings.DATA_EXPORT_MISSING.format(n=fa_digits(len(report.missing_audio))))
+            lines.append(
+                strings.DATA_EXPORT_MISSING.format(n=local_digits(len(report.missing_audio)))
+            )
         self.data_status.setText("\n".join(lines))
         self.data_replaced.emit(report)
 

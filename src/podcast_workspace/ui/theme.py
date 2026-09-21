@@ -1,4 +1,9 @@
-"""Light/dark theming: Fusion style + palette + a small stylesheet, Windows 11 colors."""
+"""Light/dark theming: Fusion style + palette + one stylesheet, in soft pastel colours.
+
+Every colour the UI uses comes from here. Pastels are for fills (buttons, selections,
+section glyphs, board columns); each pastel has a deeper "ink" of the same hue for
+strokes and text on it, so a pastel never has to carry text by itself.
+"""
 
 import contextlib
 import ctypes
@@ -6,7 +11,7 @@ import sys
 from dataclasses import dataclass
 
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtGui import QColor, QFontDatabase, QGuiApplication, QPalette
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QGuiApplication, QPalette
 from PySide6.QtWidgets import QApplication, QWidget
 
 from podcast_workspace.paths import resources_dir
@@ -24,40 +29,97 @@ class Colors:
     border: str
     text: str
     muted: str
-    accent: str
-    accent_text: str
+    accent: str  # pastel fill: primary button, play button, waveform progress
+    accent_text: str  # ink on the accent fill
+    accent_strong: str  # focus rings, links, active marks
+    accent_soft: str  # selected rows, chosen tab
     hover: str
-    accent_soft: str
+    panel: str
+    danger: str
+    danger_soft: str
+    warning: str
+    warning_soft: str
 
 
 LIGHT = Colors(
-    window="#f9f9f9",
-    sidebar="#f0f0f0",
+    window="#f8f6fc",
+    sidebar="#f1eef9",
     surface="#ffffff",
-    border="#e5e5e5",
-    text="#1b1b1b",
-    muted="#616161",
-    accent="#005fb8",
-    accent_text="#ffffff",
-    hover="#e8e8e8",
-    accent_soft="#e3eefa",
+    border="#e6e1f1",
+    text="#2a2640",
+    muted="#7c7794",
+    accent="#cbbffb",
+    accent_text="#2a1f63",
+    accent_strong="#7866dc",
+    accent_soft="#efebfe",
+    hover="#f4f1fb",
+    panel="#f4f1fb",
+    danger="#c8475f",
+    danger_soft="#fde8ec",
+    warning="#b7700f",
+    warning_soft="#fdf1dc",
 )
 DARK = Colors(
-    window="#202020",
-    sidebar="#1a1a1a",
-    surface="#2b2b2b",
-    border="#3a3a3a",
-    text="#f3f3f3",
-    muted="#a8a8a8",
-    accent="#60cdff",
-    accent_text="#000000",
-    hover="#2f2f2f",
-    accent_soft="#1d3848",
+    window="#1d1b26",
+    sidebar="#18161f",
+    surface="#262431",
+    border="#363345",
+    text="#eceaf4",
+    muted="#a19cb5",
+    accent="#bcaef8",
+    accent_text="#1c1638",
+    accent_strong="#c8bcff",
+    accent_soft="#342d55",
+    hover="#2d2a3a",
+    panel="#221f2c",
+    danger="#f29aab",
+    danger_soft="#3d2530",
+    warning="#f0b86a",
+    warning_soft="#3a2f20",
 )
+
+# One hue per sidebar section and per production stage: (ink on light, ink on dark).
+SECTION_INKS: dict[str, tuple[str, str]] = {
+    "episodes": ("#7462d6", "#c3b8fb"),
+    "board": ("#2f9471", "#9ddfc5"),
+    "voices": ("#cf6f47", "#f7bea3"),
+    "ideas": ("#b1850f", "#f1d98a"),
+    "tags": ("#c9577f", "#f4b0ca"),
+}
+STATUS_INKS: dict[str, tuple[str, str]] = {
+    "idea": ("#b1850f", "#f1d98a"),
+    "outline": ("#7462d6", "#c3b8fb"),
+    "recorded": ("#cf6f47", "#f7bea3"),
+    "script_ready": ("#3f8fce", "#a9d2f5"),
+    "edited": ("#c9577f", "#f4b0ca"),
+    "published": ("#2f9471", "#9ddfc5"),
+}
+
+_dark = False
+
+
+def colors() -> Colors:
+    """The colours of the theme in effect (for widgets that paint themselves)."""
+    return DARK if _dark else LIGHT
+
+
+def section_ink(key: str) -> QColor:
+    light, dark = SECTION_INKS.get(key, (LIGHT.muted, DARK.muted))
+    return QColor(dark if _dark else light)
+
+
+def status_ink(key: str) -> QColor:
+    light, dark = STATUS_INKS.get(key, (LIGHT.muted, DARK.muted))
+    return QColor(dark if _dark else light)
+
+
+def _rgba(color: str, alpha: float) -> str:
+    c = QColor(color)
+    return f"rgba({c.red()}, {c.green()}, {c.blue()}, {round(alpha * 255)})"
 
 
 def load_fonts(app: QApplication) -> str:
-    """Register bundled fonts (drop Vazirmatn .ttf files into resources/fonts) and pick one."""
+    """Register the bundled fonts (resources/fonts, Vazirmatn) and pick one."""
     fonts_dir = resources_dir() / "fonts"
     for font_file in sorted(fonts_dir.glob("*.[ot]tf")):
         QFontDatabase.addApplicationFont(str(font_file))
@@ -66,6 +128,9 @@ def load_fonts(app: QApplication) -> str:
     font = app.font()
     font.setFamily(family)
     font.setPointSize(FONT_POINT_SIZE)
+    # Vazirmatn's curves thin out under full hinting at text sizes.
+    font.setHintingPreference(QFont.HintingPreference.PreferVerticalHinting)
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     app.setFont(font)
     return family
 
@@ -85,132 +150,197 @@ def _palette(c: Colors) -> QPalette:
     p.setColor(role.PlaceholderText, QColor(c.muted))
     p.setColor(role.ToolTipBase, QColor(c.surface))
     p.setColor(role.ToolTipText, QColor(c.text))
-    p.setColor(role.Link, QColor(c.accent))
-    p.setColor(QPalette.ColorGroup.Disabled, role.Text, QColor(c.muted))
-    p.setColor(QPalette.ColorGroup.Disabled, role.ButtonText, QColor(c.muted))
+    p.setColor(role.Link, QColor(c.accent_strong))
+    p.setColor(role.Mid, QColor(c.border))
+    p.setColor(role.Dark, QColor(c.border))
+    p.setColor(role.Light, QColor(c.surface))
+    for disabled in (role.Text, role.ButtonText, role.WindowText):
+        p.setColor(QPalette.ColorGroup.Disabled, disabled, QColor(c.muted))
     return p
 
 
-STALE = "#d97706"
+def _tinted_rules(dark: bool) -> str:
+    """Per-section and per-stage rules: sidebar glyph tiles, board columns, status dots."""
+    rules = []
+    for key, (light_ink, dark_ink) in SECTION_INKS.items():
+        ink = dark_ink if dark else light_ink
+        rules.append(
+            f'#navGlyph[section="{key}"] {{ background: {_rgba(ink, 0.2 if dark else 0.15)}; }}'
+        )
+    for key, (light_ink, dark_ink) in STATUS_INKS.items():
+        ink = dark_ink if dark else light_ink
+        rules.append(
+            f'#boardFrame[status="{key}"] {{ background: {_rgba(ink, 0.07 if dark else 0.08)};'
+            f" border: 1px solid {_rgba(ink, 0.14 if dark else 0.16)}; }}"
+        )
+        rules.append(f'#statusDot[status="{key}"] {{ background: {ink}; }}')
+    return "\n".join(rules)
 
 
-def _stylesheet(c: Colors) -> str:
+def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
+    on_soft = c.text if dark else c.accent_text  # text on an accent_soft fill
+    # QSS does not mirror: the rail's inner edge is on the left in RTL, the right in LTR.
+    inner_edge = "left" if rtl else "right"
     return f"""
     QMainWindow, #content {{ background: {c.window}; }}
-    #sidebar {{ background: {c.sidebar}; border-left: 1px solid {c.border}; }}
-    #appTitle {{ font-size: 13pt; font-weight: 600; color: {c.text}; }}
-    #pageTitle {{ font-size: 18pt; font-weight: 600; color: {c.text}; }}
-    #editorTitle {{ font-size: 15pt; font-weight: 600; color: {c.text}; }}
-    #dialogTitle {{ font-size: 13pt; font-weight: 600; }}
+    #sidebar {{ background: {c.sidebar}; border-{inner_edge}: 1px solid {c.border}; }}
+    #appTitle {{ font-size: 13.5pt; font-weight: 700; color: {c.text}; }}
+    #appMark {{ background: {c.accent}; border-radius: 11px; }}
+    #pageTitle {{ font-size: 20pt; font-weight: 700; color: {c.text}; }}
+    #editorTitle {{ font-size: 15pt; font-weight: 700; color: {c.text}; }}
+    #dialogTitle {{ font-size: 13pt; font-weight: 700; }}
     #emptyHint {{ font-size: 11pt; color: {c.muted}; padding: 32px; }}
     #muted {{ color: {c.muted}; }}
-    #warning {{ color: {STALE}; }}
+    #warning {{ color: {c.warning}; }}
 
+    /* Padding comes from the button's own layout (glyph tile + label + count). */
     #navButton {{
-        text-align: right; padding: 9px 14px; border: none; border-radius: 6px;
+        padding: 0; border: 2px solid transparent; border-radius: 12px;
         background: transparent; color: {c.text};
     }}
     #navButton:hover {{ background: {c.hover}; }}
-    #navButton:checked {{
-        background: {c.surface}; font-weight: 600; border-right: 3px solid {c.accent};
+    #navButton:checked {{ background: {c.surface}; border-color: {c.border}; }}
+    #navButton:focus {{ border: 2px solid {c.accent_strong}; }}
+    #navButton:disabled {{ color: {c.muted}; background: transparent; }}
+    #navGlyph {{ background: transparent; border-radius: 9px; }}
+    QToolButton#chromeButton {{
+        background: transparent; border: 2px solid transparent; border-radius: 12px;
+        padding: 7px; color: {c.text};
     }}
-    #navButton:focus {{ border: 2px solid {c.accent}; }}
+    QToolButton#chromeButton:hover {{ background: {c.hover}; }}
+    QToolButton#chromeButton:focus {{ border-color: {c.accent_strong}; }}
+    QToolButton#chromeButton::menu-indicator {{ image: none; width: 0; }}
+    QLineEdit#sidebarSearch {{ padding: 8px 10px; border-radius: 12px; }}
+    QLineEdit#sidebarSearch:focus {{ padding: 7px 9px; }}
 
     QPushButton {{
         background: {c.surface}; color: {c.text};
-        border: 1px solid {c.border}; border-radius: 6px; padding: 7px 16px;
+        border: 1px solid {c.border}; border-radius: 10px; padding: 8px 18px;
     }}
-    QPushButton:hover {{ background: {c.hover}; }}
-    QPushButton:focus {{ border: 2px solid {c.accent}; padding: 6px 15px; }}
-    QPushButton:disabled {{ color: {c.muted}; }}
+    QPushButton:hover {{ background: {c.hover}; border-color: {c.accent}; }}
+    QPushButton:pressed {{ background: {c.accent_soft}; }}
+    QPushButton:focus {{ border: 2px solid {c.accent_strong}; padding: 7px 17px; }}
+    QPushButton:disabled {{ color: {c.muted}; background: {c.panel}; border-color: {c.border}; }}
     QPushButton#primary {{
-        background: {c.accent}; color: {c.accent_text}; font-weight: 600;
-        border: 2px solid {c.accent}; padding: 6px 15px;
+        background: {c.accent}; color: {c.accent_text}; font-weight: 700;
+        border: 2px solid {c.accent}; padding: 7px 18px;
     }}
-    QPushButton#primary:focus {{ border: 2px solid {c.text}; }}
-    QPushButton#danger {{ color: #dc2626; }}
+    QPushButton#primary:hover {{ border-color: {c.accent_strong}; }}
+    QPushButton#primary:pressed {{ background: {c.accent_strong}; color: {c.surface}; }}
+    QPushButton#primary:focus {{ border: 2px solid {c.accent_strong}; }}
+    QPushButton#primary:disabled {{
+        background: {c.panel}; color: {c.muted}; border-color: {c.border};
+    }}
+    QPushButton#danger {{ color: {c.danger}; }}
+    QPushButton#danger:hover {{ background: {c.danger_soft}; border-color: {c.danger}; }}
 
-    QLineEdit, QPlainTextEdit, QComboBox {{
+    QLineEdit, QPlainTextEdit, QTextEdit {{
         background: {c.surface}; color: {c.text}; border: 1px solid {c.border};
-        border-radius: 6px; padding: 7px 10px; selection-background-color: {c.accent};
+        border-radius: 10px; padding: 8px 11px; selection-background-color: {c.accent};
         selection-color: {c.accent_text};
     }}
-    QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus {{
-        border: 2px solid {c.accent}; padding: 6px 9px;
+    QLineEdit:hover, QPlainTextEdit:hover, QTextEdit:hover {{ border-color: {c.accent}; }}
+    QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus {{
+        border: 2px solid {c.accent_strong}; padding: 7px 10px;
     }}
-    QLineEdit#titleEdit {{ font-size: 16pt; font-weight: 600; padding: 8px 12px; }}
-    QLineEdit#searchBar {{ padding: 9px 14px; border-radius: 8px; font-size: 11pt; }}
-    QPlainTextEdit#ideaText {{ font-size: 12pt; padding: 12px; }}
-
-    QListWidget, QTreeWidget {{
-        background: {c.surface}; border: 1px solid {c.border}; border-radius: 8px;
+    QLineEdit:disabled, QPlainTextEdit:disabled {{ background: {c.panel}; color: {c.muted}; }}
+    /* Not styled: a stylesheet on QComboBox makes Qt draw the drop-down as a separate
+       square hanging outside the rounded frame in RTL. Fusion's own combo is correct. */
+    QComboBox {{ min-width: 132px; padding: 5px 9px; }}
+    QComboBox QAbstractItemView {{
+        background: {c.surface}; color: {c.text}; border: 1px solid {c.border};
+        selection-background-color: {c.accent_soft}; selection-color: {c.text};
         outline: none; padding: 4px;
     }}
-    QListWidget::item, QTreeWidget::item {{ border-radius: 6px; padding: 4px; }}
+    QLineEdit#titleEdit {{ font-size: 16pt; font-weight: 700; padding: 9px 13px; }}
+    QLineEdit#titleEdit:focus {{ padding: 8px 12px; }}
+    QLineEdit#searchBar {{ padding: 10px 14px; border-radius: 12px; font-size: 11pt; }}
+    QLineEdit#searchBar:focus {{ padding: 9px 13px; }}
+    /* A page's own filter box: a quieter field than an editable value, because it
+       changes what you see and not what you have. */
+    QLineEdit#listFilter {{
+        padding: 8px 11px; border-radius: 12px; background: {c.panel};
+        border-color: {c.panel};
+    }}
+    QLineEdit#listFilter:hover {{ border-color: {c.border}; }}
+    QLineEdit#listFilter:focus {{ background: {c.surface}; padding: 7px 10px; }}
+    QPlainTextEdit#ideaText {{ font-size: 12.5pt; padding: 14px; }}
+    QPlainTextEdit#ideaText:focus {{ padding: 13px; }}
+
+    QListWidget, QTreeWidget {{
+        background: {c.surface}; border: 1px solid {c.border}; border-radius: 14px;
+        outline: none; padding: 6px;
+    }}
+    QListWidget::item, QTreeWidget::item {{
+        border-radius: 9px; padding: 5px; margin: 1px 0; color: {c.text};
+    }}
     QListWidget::item:hover, QTreeWidget::item:hover {{ background: {c.hover}; }}
     QListWidget::item:selected, QTreeWidget::item:selected {{
-        background: {c.accent}; color: {c.accent_text};
+        background: {c.accent_soft}; color: {on_soft};
     }}
-    QListWidget:focus, QTreeWidget:focus {{ border: 2px solid {c.accent}; }}
-    QListWidget#suggestions {{ padding: 2px; }}
-    QListWidget#suggestions::item {{ padding: 6px 8px; }}
-    QListWidget#results::item {{ margin: 1px 0; }}
+    QListWidget:focus, QTreeWidget:focus {{ border: 1px solid {c.accent_strong}; }}
+    /* A tree row spans several columns: one flat band reads better than rounded pieces. */
+    QTreeWidget::item {{ border-radius: 0; margin: 0; padding: 6px 4px; }}
+    QTreeWidget::branch:selected {{ background: {c.accent_soft}; }}
+    QListWidget#suggestions {{ padding: 3px; }}
+    QListWidget#suggestions::item {{ padding: 7px 9px; }}
+    QListWidget#results::item {{ margin: 2px 0; border: 1px solid transparent; }}
+    QListWidget#results::item:hover {{ border-color: {c.border}; }}
     QListWidget#results::item:selected {{
-        background: {c.hover}; color: {c.text}; border: 2px solid {c.accent};
+        background: {c.accent_soft}; color: {c.text}; border: 1px solid {c.accent_strong};
     }}
+    QHeaderView {{ background: transparent; }}
     QHeaderView::section {{
-        background: {c.surface}; color: {c.muted}; border: none; padding: 6px 8px;
-        border-bottom: 1px solid {c.border};
+        background: transparent; color: {c.muted}; border: none; padding: 6px 8px;
+        border-bottom: 1px solid {c.border}; font-weight: 600;
     }}
 
     #kindBadge {{
-        background: {c.hover}; color: {c.muted}; border-radius: 4px; padding: 1px 8px;
-        font-size: 9pt;
+        background: {c.accent_soft}; color: {c.accent_strong}; border-radius: 8px;
+        padding: 2px 9px; font-size: 9pt; font-weight: 700;
     }}
-    #hitTitle {{ font-size: 11pt; color: {c.text}; }}
+    #hitTitle {{ font-size: 11pt; font-weight: 600; color: {c.text}; }}
     #hitSnippet {{ color: {c.muted}; }}
     #chipClose {{ border: none; background: transparent; color: {c.muted}; padding: 0 4px; }}
-    #chipClose:hover {{ color: {c.text}; }}
+    #chipClose:hover {{ color: {c.danger}; }}
 
-    #sectionTitle {{ font-size: 12pt; font-weight: 600; color: {c.text}; }}
+    #sectionTitle {{ font-size: 12.5pt; font-weight: 700; color: {c.text}; }}
     #clock {{ font-size: 12pt; font-weight: 600; color: {c.text}; min-width: 64px; }}
     QPushButton#playButton {{
         background: {c.accent}; border: 2px solid {c.accent}; border-radius: 24px; padding: 0;
     }}
-    QPushButton#playButton:hover {{ background: {c.accent}; border-color: {c.text}; }}
-    QPushButton#playButton:focus {{ border: 2px solid {c.text}; padding: 0; }}
+    QPushButton#playButton:hover {{ border-color: {c.accent_strong}; }}
+    QPushButton#playButton:focus {{ border: 2px solid {c.accent_strong}; padding: 0; }}
     QPushButton#playButton:disabled {{ background: {c.hover}; border-color: {c.hover}; }}
     QPushButton#transportButton {{
-        background: transparent; border: 1px solid transparent; border-radius: 20px; padding: 0;
+        background: transparent; border: 2px solid transparent; border-radius: 20px; padding: 0;
     }}
     QPushButton#transportButton:hover {{ background: {c.hover}; }}
-    QPushButton#transportButton:focus {{ border: 2px solid {c.accent}; padding: 0; }}
+    QPushButton#transportButton:focus {{ border: 2px solid {c.accent_strong}; padding: 0; }}
     QToolButton#speedButton {{
-        background: transparent; color: {c.text}; border: 1px solid {c.border};
-        border-radius: 6px; padding: 4px 10px; min-width: 44px;
+        background: {c.panel}; color: {c.text}; border: 1px solid {c.border};
+        border-radius: 10px; padding: 5px 11px; min-width: 44px; font-weight: 600;
     }}
-    QToolButton#speedButton:hover {{ background: {c.hover}; }}
+    QToolButton#speedButton:hover {{ background: {c.hover}; border-color: {c.accent}; }}
     QToolButton#speedButton::menu-indicator {{ image: none; width: 0; }}
 
     #noteScroll, #noteHost {{ background: transparent; }}
-    #noteRow {{ background: transparent; border-radius: 6px; border: 2px solid transparent; }}
+    #noteRow {{ background: transparent; border-radius: 10px; border: 2px solid transparent; }}
     #noteRow:hover {{ background: {c.hover}; }}
-    #noteRow[active="true"] {{
-        background: {c.accent_soft}; border-right: 3px solid {c.accent};
-    }}
-    #noteRow:focus {{ border: 2px solid {c.accent}; }}
+    #noteRow[active="true"] {{ background: {c.accent_soft}; }}
+    #noteRow:focus {{ border: 2px solid {c.accent_strong}; }}
     #noteText {{ color: {c.text}; font-size: 10.5pt; }}
     QToolButton#gotoButton {{
-        background: {c.hover}; color: {c.muted}; border: none; border-radius: 5px;
-        padding: 3px 8px; font-weight: 600;
+        background: {c.panel}; color: {c.muted}; border: 1px solid {c.border};
+        border-radius: 8px; padding: 3px 9px; font-weight: 600;
     }}
-    QToolButton#gotoButton:hover {{ color: {c.text}; }}
+    QToolButton#gotoButton:hover {{ color: {c.text}; border-color: {c.accent}; }}
     #noteRow[active="true"] QToolButton#gotoButton {{
-        background: {c.accent}; color: {c.accent_text};
+        background: {c.accent}; color: {c.accent_text}; border-color: {c.accent};
     }}
     QToolButton#captureChip {{
-        background: {c.hover}; color: {c.muted}; border: 1px solid {c.border};
-        border-radius: 6px; padding: 6px 10px; min-width: 52px;
+        background: {c.panel}; color: {c.muted}; border: 1px solid {c.border};
+        border-radius: 10px; padding: 7px 11px; min-width: 52px; font-weight: 600;
     }}
     QToolButton#captureChip[captured="true"] {{
         background: {c.accent}; color: {c.accent_text}; border-color: {c.accent};
@@ -218,58 +348,149 @@ def _stylesheet(c: Colors) -> str:
 
     #fieldLabel {{ color: {c.muted}; font-size: 9.5pt; font-weight: 600; }}
     QPushButton#flatButton {{
-        background: transparent; border: 1px solid transparent; color: {c.accent};
-        padding: 4px 10px;
+        background: transparent; border: 1px solid transparent; color: {c.accent_strong};
+        padding: 5px 11px; font-weight: 600;
     }}
-    QPushButton#flatButton:hover {{ background: {c.hover}; }}
-    QPushButton#flatButton:focus {{ border: 2px solid {c.accent}; padding: 3px 9px; }}
-    QPushButton#recordButton {{ color: #dc2626; font-weight: 600; }}
+    QPushButton#flatButton:hover {{ background: {c.accent_soft}; }}
+    QPushButton#flatButton:focus {{ border: 2px solid {c.accent_strong}; padding: 4px 10px; }}
+    QPushButton#recordButton {{ color: {c.danger}; font-weight: 700; }}
+    QPushButton#recordButton:hover {{ background: {c.danger_soft}; border-color: {c.danger}; }}
     QToolButton#backButton {{
-        background: transparent; color: {c.muted}; border: none; border-radius: 6px;
-        padding: 6px 10px;
+        background: transparent; color: {c.muted}; border: 2px solid transparent;
+        border-radius: 10px; padding: 6px 10px;
     }}
     QToolButton#backButton:hover {{ background: {c.hover}; color: {c.text}; }}
-    QToolButton#backButton:focus {{ border: 2px solid {c.accent}; }}
+    QToolButton#backButton:focus {{ border-color: {c.accent_strong}; }}
     #staleBadge {{
-        color: {STALE}; border: 1px solid {STALE}; border-radius: 10px; padding: 2px 10px;
-        font-size: 9pt; font-weight: 600;
+        color: {c.warning}; background: {c.warning_soft}; border-radius: 10px;
+        padding: 3px 11px; font-size: 9pt; font-weight: 700;
     }}
-    #sidePanel {{ background: {c.sidebar}; border: 1px solid {c.border}; border-radius: 10px; }}
+    #sidePanel {{ background: {c.panel}; border: 1px solid {c.border}; border-radius: 16px; }}
     #sidePanel QListWidget {{ background: {c.surface}; }}
-    QLineEdit#noteTitle {{ font-size: 12pt; font-weight: 600; }}
-    QPlainTextEdit#noteBody {{ font-size: 11.5pt; padding: 12px; }}
-    QTabBar#noteTabs::tab {{
-        background: transparent; color: {c.muted}; padding: 6px 14px; margin: 0 2px;
-        border: none; border-bottom: 2px solid transparent; max-width: 220px;
+    /* The note title is a heading you can type in, not a form field: the tab above
+       already shows it, so a boxed input would read as a duplicate. */
+    QLineEdit#noteTitle {{
+        font-size: 13.5pt; font-weight: 700; background: transparent; border: none;
+        border-bottom: 1px solid transparent; border-radius: 0; padding: 4px 2px;
     }}
-    QTabBar#noteTabs::tab:hover {{ color: {c.text}; }}
-    QTabBar#noteTabs::tab:selected {{
-        color: {c.text}; font-weight: 600; border-bottom: 2px solid {c.accent};
+    QLineEdit#noteTitle:hover {{ border-bottom: 1px solid {c.border}; }}
+    QLineEdit#noteTitle:focus {{
+        border-bottom: 2px solid {c.accent_strong}; padding: 4px 2px 3px;
     }}
-    QTabBar#noteTabs:focus {{ border: 1px dashed {c.accent}; }}
+    QPlainTextEdit#noteBody {{ font-size: 11.5pt; padding: 14px; }}
+    QPlainTextEdit#noteBody:focus {{ padding: 13px; }}
 
-    #boardFrame {{ background: {c.sidebar}; border-radius: 10px; }}
-    #columnTitle {{ font-weight: 600; color: {c.text}; }}
+    /* Tabs are pills: the chosen one is filled, the rest are quiet labels. */
+    QTabBar#noteTabs::tab, QTabBar#panelTabs::tab {{
+        background: transparent; color: {c.muted}; padding: 6px 14px; margin: 2px;
+        border: 1px solid transparent; border-radius: 10px;
+    }}
+    QTabBar#noteTabs::tab {{ max-width: 220px; }}
+    QTabBar#panelTabs::tab {{ padding: 6px 8px; }}
+    QTabBar#noteTabs::tab:hover, QTabBar#panelTabs::tab:hover {{
+        color: {c.text}; background: {c.hover};
+    }}
+    QTabBar#noteTabs::tab:selected, QTabBar#panelTabs::tab:selected {{
+        color: {on_soft}; font-weight: 700; background: {c.accent_soft};
+        border-color: {c.accent};
+    }}
+    QTabBar#noteTabs:focus, QTabBar#panelTabs:focus {{ border: 1px dashed {c.accent_strong}; }}
+    /* Any other tab widget (settings) gets the same pills over a hairline. */
+    QTabWidget::pane {{ border: none; border-top: 1px solid {c.border}; padding-top: 10px; }}
+    QTabBar::tab {{
+        background: transparent; color: {c.muted}; padding: 7px 16px; margin: 0 2px 6px;
+        border: 1px solid transparent; border-radius: 10px;
+    }}
+    QTabBar::tab:hover {{ background: {c.hover}; color: {c.text}; }}
+    QTabBar::tab:selected {{
+        background: {c.accent_soft}; color: {on_soft}; border-color: {c.accent};
+        font-weight: 700;
+    }}
+
+    #boardFrame {{ background: {c.panel}; border-radius: 16px; }}
+    #columnTitle {{ font-weight: 700; color: {c.text}; }}
+    #statusDot {{
+        border-radius: 5px; min-width: 10px; max-width: 10px;
+        min-height: 10px; max-height: 10px;
+    }}
     QListWidget#boardColumn {{ background: transparent; border: none; padding: 0; }}
     QListWidget#boardColumn::item, QListWidget#boardColumn::item:selected,
     QListWidget#boardColumn::item:hover {{ background: transparent; color: {c.text}; }}
     QListWidget#boardColumn:focus {{ border: none; }}
     #boardScroll, #boardHost {{ background: transparent; }}
 
-    #resumeCard {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 14px; }}
-    #eyebrow {{ color: {c.accent}; font-weight: 600; font-size: 10pt; }}
-    #resumeTitle {{ font-size: 20pt; font-weight: 600; color: {c.text}; }}
+    #resumeCard {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 22px; }}
+    #eyebrow {{ color: {c.accent_strong}; font-weight: 700; font-size: 10pt; }}
+    #resumeTitle {{ font-size: 21pt; font-weight: 700; color: {c.text}; }}
     #resumeNext {{ font-size: 13pt; color: {c.text}; }}
     #resumeNoteTitle {{ font-size: 11pt; font-weight: 600; color: {c.text}; }}
 
     #inboxFrame {{
-        background: {c.surface}; border: 1px solid {c.accent}; border-radius: 12px;
+        background: {c.surface}; border: 2px solid {c.accent}; border-radius: 18px;
     }}
-    QPlainTextEdit#inboxText {{ font-size: 12pt; }}
+    QPlainTextEdit#inboxText {{ font-size: 12.5pt; }}
 
     QToolTip {{
-        background: {c.surface}; color: {c.text}; border: 1px solid {c.border}; padding: 4px;
+        background: {c.surface}; color: {c.text}; border: 1px solid {c.border}; padding: 6px 8px;
     }}
+    QMenu {{
+        background: {c.surface}; color: {c.text}; border: 1px solid {c.border}; padding: 5px;
+    }}
+    QMenu::item {{ padding: 7px 18px; border-radius: 7px; }}
+    QMenu::item:selected {{ background: {c.accent_soft}; color: {c.text}; }}
+    QMenu::separator {{ height: 1px; background: {c.border}; margin: 4px 8px; }}
+    QProgressBar {{
+        background: {c.panel}; border: 1px solid {c.border}; border-radius: 7px;
+        text-align: center; color: {c.text}; min-height: 14px;
+    }}
+    QProgressBar::chunk {{ background: {c.accent}; border-radius: 6px; }}
+
+    QScrollBar:vertical {{
+        background: transparent; width: 10px; margin: 3px 1px;
+    }}
+    QScrollBar:horizontal {{
+        background: transparent; height: 10px; margin: 1px 3px;
+    }}
+    QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+        background: {c.border}; border-radius: 4px; min-height: 32px; min-width: 32px;
+    }}
+    QScrollBar::handle:hover {{ background: {c.accent}; }}
+    QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
+    QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+
+    #divider {{ background: {c.border}; max-height: 1px; min-height: 1px; border: none; }}
+    #panelTitle {{ font-size: 10.5pt; font-weight: 700; color: {c.text}; }}
+    #countPill {{
+        background: {c.accent_soft}; color: {c.accent_strong};
+        border-radius: 9px; padding: 1px 8px; font-size: 9pt; font-weight: 700; min-width: 10px;
+    }}
+    #miniList {{
+        background: {c.surface}; border: 1px solid {c.border}; border-radius: 12px; padding: 4px;
+    }}
+    #miniList::item {{ padding: 7px 9px; border-radius: 8px; }}
+    #miniList::item:hover {{ background: {c.hover}; }}
+    #miniList::item:selected {{ background: {c.accent_soft}; color: {c.text}; }}
+    #miniList:focus {{ border: 1px solid {c.accent_strong}; }}
+    #card {{
+        background: {c.surface}; border: 1px solid {c.border}; border-radius: 16px;
+    }}
+
+    /* Toast: floats over the page, reads as a raised surface in both themes. */
+    #toast {{
+        background: {c.surface}; border: 1px solid {c.accent}; border-radius: 14px;
+    }}
+    #toastText {{ color: {c.text}; }}
+    QPushButton#toastAction {{
+        background: {c.accent_soft}; color: {c.accent_strong}; border: 1px solid transparent;
+        border-radius: 9px; padding: 5px 12px; font-weight: 700;
+    }}
+    QPushButton#toastAction:hover {{ background: {c.accent}; color: {c.accent_text}; }}
+    QToolButton#toastClose {{
+        background: transparent; border: none; color: {c.muted};
+        padding: 0 6px; font-size: 13pt;
+    }}
+    QToolButton#toastClose:hover {{ color: {c.text}; }}
+    {_tinted_rules(dark)}
     """
 
 
@@ -308,12 +529,15 @@ class ThemeManager(QObject):
         return self._theme
 
     def apply(self, theme: Theme | None = None) -> None:
+        global _dark
         self._theme = theme or self._theme
-        colors = DARK if self._theme is Theme.DARK else LIGHT
-        self._app.setPalette(_palette(colors))
-        self._app.setStyleSheet(_stylesheet(colors))
+        _dark = self._theme is Theme.DARK
+        c = colors()
+        self._app.setPalette(_palette(c))
+        rtl = self._app.layoutDirection() == Qt.LayoutDirection.RightToLeft
+        self._app.setStyleSheet(_stylesheet(c, _dark, rtl))
         for window in self._app.topLevelWidgets():
-            set_native_dark_title_bar(window, self._theme is Theme.DARK)
+            set_native_dark_title_bar(window, _dark)
         self.changed.emit(self._theme)
 
     def toggle(self) -> None:

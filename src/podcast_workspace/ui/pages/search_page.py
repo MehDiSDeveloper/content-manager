@@ -16,9 +16,10 @@ from PySide6.QtWidgets import (
 from podcast_workspace.domain.search import SearchHit, SearchResult
 from podcast_workspace.domain.text import find_spans, query_terms
 from podcast_workspace.ui import strings
-from podcast_workspace.ui.support import fa_digits
+from podcast_workspace.ui.support import local_digits
 
 HIT_ROLE = Qt.ItemDataRole.UserRole
+RESULTS_MAX_WIDTH = 880
 
 
 def highlight(text: str, terms: list[str]) -> str:
@@ -83,8 +84,17 @@ class SearchPage(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        root = QVBoxLayout(self)
-        root.setContentsMargins(32, 24, 32, 24)
+        self.nav_title = strings.SEARCH_TITLE
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(32, 22, 32, 22)
+        # Results are lines of text: past a readable measure the eye loses the row it
+        # is on, so the column stops growing and the rest of the width stays empty.
+        column = QWidget()
+        column.setMaximumWidth(RESULTS_MAX_WIDTH)
+        outer.addWidget(column, 1)
+        outer.addStretch(0)
+        root = QVBoxLayout(column)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(12)
         header = QHBoxLayout()
         header.addWidget(QLabel(strings.SEARCH_TITLE, objectName="pageTitle"))
@@ -121,8 +131,11 @@ class SearchPage(QWidget):
         has_hits = bool(result.hits)
         self.results.setVisible(has_hits)
         self.empty.setVisible(not has_hits)
-        self.count.setText(strings.SEARCH_COUNT.format(n=fa_digits(len(result.hits))))
-        pairs = "، ".join(f"{bad} ← {good}" for bad, good in result.corrections.items())
+        self.count.setText(strings.SEARCH_COUNT.format(n=local_digits(len(result.hits))))
+        arrow = "←" if strings.RTL else "→"  # points from the typo to the correction
+        pairs = strings.LIST_SEPARATOR.join(
+            f"{bad} {arrow} {good}" for bad, good in result.corrections.items()
+        )
         self.corrections.setText(strings.SEARCH_CORRECTED.format(pairs=pairs) if pairs else "")
         self.corrections.setVisible(bool(pairs))
 

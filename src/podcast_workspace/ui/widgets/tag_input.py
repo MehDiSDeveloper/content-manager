@@ -13,7 +13,7 @@ from podcast_workspace.domain.entities import Tag
 from podcast_workspace.domain.tag_matching import NEAR_DUPLICATE_THRESHOLD
 from podcast_workspace.services.tag_service import TagService
 from podcast_workspace.ui import strings
-from podcast_workspace.ui.support import AppEvents, fa_digits, show_error
+from podcast_workspace.ui.support import AppEvents, local_digits, show_error
 from podcast_workspace.ui.widgets.flow_layout import FlowLayout
 from podcast_workspace.ui.widgets.tag_widgets import KIND_CREATE, SuggestionList, TagChip
 
@@ -94,13 +94,13 @@ class TagInput(QWidget):
         if self._limit is not None:
             self._counter.setText(
                 strings.TAG_INPUT_COUNT.format(
-                    n=fa_digits(len(self._ids)), limit=fa_digits(self._limit)
+                    n=local_digits(len(self._ids)), limit=local_digits(self._limit)
                 )
             )
         full = self._full()
         self.edit.setReadOnly(full)
         self.edit.setPlaceholderText(
-            strings.TAG_INPUT_FULL.format(limit=fa_digits(self._limit))
+            strings.TAG_INPUT_FULL.format(limit=local_digits(self._limit))
             if full
             else strings.TAG_INPUT_PLACEHOLDER
         )

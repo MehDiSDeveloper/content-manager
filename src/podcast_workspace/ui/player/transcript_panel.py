@@ -37,9 +37,9 @@ from podcast_workspace.ui.support import (
     AppEvents,
     confirm,
     describe_error,
-    fa_digits,
     format_clock,
     format_datetime,
+    local_digits,
     run_async,
 )
 
@@ -283,7 +283,7 @@ class TranscriptPanel(QFrame):
         if transcript is not None:
             self.meta.setText(
                 strings.TR_META.format(
-                    n=fa_digits(len(transcript.segments)),
+                    n=local_digits(len(transcript.segments)),
                     model=transcript.model,
                     when=format_datetime(transcript.created_at),
                 )
@@ -345,7 +345,7 @@ class TranscriptPanel(QFrame):
         else:
             self.progress.setRange(0, 1000)
             self.progress.setValue(int(fraction * 1000))
-            self.meta.setText(strings.TR_RUNNING.format(percent=fa_digits(int(fraction * 100))))
+            self.meta.setText(strings.TR_RUNNING.format(percent=local_digits(int(fraction * 100))))
 
     def _on_finished(self, voice_id: int) -> None:
         self._events.data_changed.emit()

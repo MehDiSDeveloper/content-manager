@@ -1,0 +1,432 @@
+"""English text for every name in `strings.py`. `strings.apply_language("en")` copies it
+over the Persian originals at startup; `tests/test_strings.py` keeps the two in step."""
+
+from podcast_workspace.domain.entities import EpisodeStatus
+from podcast_workspace.domain.search import SearchKind
+
+LANGUAGE = "en"
+RTL = False
+QUOTE = "“{text}”"
+DECIMAL_SEPARATOR = "."
+DIRECTION_MARK = "\u200e"  # LRM
+
+APP_NAME = "Podcast Workspace"
+STARTUP_ERROR_TITLE = "Startup error"
+STARTUP_ERROR_BODY = "The database could not be opened:\n{error}"
+
+THEME_TO_DARK = "Dark theme"
+THEME_TO_LIGHT = "Light theme"
+THEME_TOOLTIP = "Switch theme (Ctrl+T)"
+NAV_TOOLTIP = "{label} — {keys}"
+
+NAV_EPISODES = "Episodes"
+NAV_VOICES = "Voices"
+NAV_IDEAS = "Ideas"
+NAV_TAGS = "Tags"
+
+NAV_BACK = "Back"
+NAV_BACK_TO = "Back to {page}"
+NAV_BACK_TOOLTIP = "Back to {page}, right where you were  (Alt+←)"
+NAV_BACK_NOTHING = "Nowhere to go back to  (Alt+←)"
+SIDEBAR_COLLAPSE = "Collapse sidebar  (Ctrl+B)"
+SIDEBAR_EXPAND = "Expand sidebar  (Ctrl+B)"
+
+SEARCH_PLACEHOLDER = "Search…"
+SEARCH_TOOLTIP = "Search titles, notes, transcripts and tags (Ctrl+K)"
+SEARCH_TITLE = "Search results"
+SEARCH_EMPTY = "Nothing found. Try part of a word or a tag name."
+SEARCH_CORRECTED = "Spelling corrected: {pairs}"
+SEARCH_VIA_TAG = "tag “{tag}”"
+SEARCH_COUNT = "{n} results"
+KIND_LABELS = {
+    SearchKind.EPISODE: "Episode",
+    SearchKind.IDEA_NOTE: "Idea",
+    SearchKind.EPISODE_NOTE: "Episode note",
+    SearchKind.TIMESTAMP_NOTE: "Timestamped note",
+    SearchKind.TAG: "Tag",
+    SearchKind.VOICE: "Voice",
+    SearchKind.TRANSCRIPT: "Transcript",
+}
+UNTITLED_NOTE = "Untitled note"
+
+STATUS_LABELS = {
+    EpisodeStatus.IDEA: "Idea",
+    EpisodeStatus.OUTLINE: "Outline",
+    EpisodeStatus.RECORDED: "Recorded",
+    EpisodeStatus.SCRIPT_READY: "Script ready",
+    EpisodeStatus.EDITED: "Edited",
+    EpisodeStatus.PUBLISHED: "Published",
+}
+
+EPISODES_TITLE = "Episodes"
+EPISODE_NEW = "New episode"
+EPISODE_DEFAULT_TITLE = "New episode"
+EPISODE_TITLE_PLACEHOLDER = "Episode title"
+EPISODE_STATUS = "Status"
+EPISODE_NEXT_ACTION = "Next step"
+EPISODE_NEXT_ACTION_PLACEHOLDER = "One sentence: what is the next thing to do for this episode?"
+EPISODE_EMPTY = "No episodes yet. Start with “New episode”."
+EPISODE_DELETE_CONFIRM = "Delete episode “{title}”? Linked voices and ideas are kept."
+LIST_HIDE = "Hide the list — more room to write  (Ctrl+L)"
+LIST_SHOW = "Show the episode list  (Ctrl+L)"
+EPISODE_DELETE = "Delete episode"
+EPISODE_MORE = "More actions"
+
+VOICES_TITLE = "Voices"
+VOICE_IMPORT = "Import audio"
+VOICE_IMPORT_DIALOG = "Choose audio files"
+VOICE_IMPORT_FILTER = "Audio files ({patterns})"
+VOICE_IMPORTING = "Importing…"
+VOICE_IMPORT_DONE = "{imported} files imported"
+VOICE_IMPORT_DUP = "{n} already there"
+VOICE_IMPORT_UNSUPPORTED = "{n} not supported"
+VOICE_IMPORT_FAILED = "{n} could not be read"
+VOICE_EMPTY = "No voices yet. Drop files here or click “Import audio”."
+VOICE_MISSING = "The file is no longer at this path."
+VOICE_SHOW_IN_FOLDER = "Show in folder"
+VOICE_DELETE = "Remove from workspace"
+VOICE_DELETE_CONFIRM = "Remove “{name}” from the workspace? The audio file stays on disk."
+VOICE_DURATION_UNKNOWN = "Unknown length"
+VOICE_PATH_TOOLTIP = "File path — click to copy"
+VOICE_PATH_COPIED = "Path copied"
+VOICE_NOTE_COUNT = "{n} notes"
+
+IDEAS_TITLE = "Ideas"
+IDEA_NEW = "New idea"
+IDEA_PLACEHOLDER = "Write your idea… (saved automatically)"
+IDEA_EMPTY = "No ideas yet. Write the first one with “New idea”."
+IDEA_DELETE_CONFIRM = "Delete this idea?"
+IDEA_UNSAVED = "New idea (not saved yet)"
+
+TAGS_TITLE = "Tags"
+TAG_NEW = "New tag"
+TAG_FILTER_PLACEHOLDER = "Find a tag…"
+TAG_FILTER_TOOLTIP = "Find a tag in this tree  (Ctrl+F)"
+TAG_RENAME = "Rename"
+TAG_RECOLOR = "Change colour"
+TAG_NEST = "Move under…"
+TAG_UNNEST = "Move to top level"
+TAG_MERGE = "Merge into…"
+TAG_DELETE = "Delete"
+TAG_EMPTY = "No tags yet. You can also create tags while working on episodes and ideas."
+TAG_USAGE_HEADER = "Used"
+TAG_ACTIONS = "Actions"
+TAG_ACTIONS_TOOLTIP = "Actions for this tag"
+TAG_USES_TITLE = "Where it is used"
+TAG_USES_EMPTY = "This tag is not used anywhere yet."
+TAG_USES_NONE = "Select a tag to see its items here."
+TAG_USES_COUNT = "{n} items"
+TAG_OPEN_ITEM = "Open (Enter)"
+TAG_NAME_HEADER = "Name"
+TAG_DELETE_CONFIRM = (
+    "Delete tag “{name}”? It is removed from {n} items and its children move up one level."
+)
+TAG_MERGE_CONFIRM = "Move every use of “{source}” to “{target}” and delete “{source}”?"
+TAG_NEST_TITLE = "Move “{name}” under…"
+TAG_MERGE_TITLE = "Merge “{name}” into…"
+TAG_NEW_TITLE = "New tag"
+TAG_NAME_PLACEHOLDER = "Tag name"
+TAG_SIMILAR_HINT = "Similar tags already exist — maybe one of these is the same:"
+TAG_EXACT_EXISTS = "Tag “{name}” already exists."
+TAG_CREATE = "Create"
+TAG_CREATE_ANYWAY = "Create anyway"
+TAG_PICK = "Choose"
+
+TAG_INPUT_PLACEHOLDER = "Add a tag…"
+TAG_INPUT_COUNT = "{n} of {limit}"
+TAG_INPUT_FULL = "The {limit}-tag limit is reached"
+TAG_INPUT_CREATE = "Create new tag “{name}”"
+TAG_INPUT_CREATE_SIMILAR = "Create new tag “{name}” — “{similar}” is similar"
+TAG_REMOVE_TOOLTIP = "Remove tag"
+TAG_LABEL = "Tags"
+
+FILTER_TOOLTIP = "Filter this list by title and tag  (Ctrl+F)\n“#name” searches tags only"
+FILTER_COUNT = "{shown} of {total}"
+FILTER_COUNT_TOOLTIP = "Showing {shown} of {total} items"
+FILTER_NO_MATCH = "Nothing matches “{query}”.\nTry part of a word, or type “#” and a tag name."
+FILTER_CLEAR = "Clear filter (Esc)"
+EPISODE_FILTER_PLACEHOLDER = "Filter episodes by title or tag…"
+VOICE_FILTER_PLACEHOLDER = "Filter voices by name or tag…"
+IDEA_FILTER_PLACEHOLDER = "Filter ideas by text or tag…"
+
+CANCEL = "Cancel"
+DELETE = "Delete"
+CONFIRM_TITLE = "Confirm"
+ERROR_TITLE = "Error"
+CREATED_AT = "Created {when}"
+UPDATED_AT = "Last changed {when}"
+IMPORTED_AT = "Imported {when}"
+SELECT_SOMETHING = "Select an item from the list."
+
+ERR_TAG_LIMIT = "An item can have at most {limit} tags."
+ERR_DUPLICATE_TAG = "Tag “{name}” already exists."
+ERR_NEAR_DUPLICATE = "Similar tags exist: {names}"
+ERR_HIERARCHY = "A tag cannot sit under itself or one of its children."
+ERR_VALIDATION = "That value is not valid (it cannot be empty, for example)."
+ERR_NOT_FOUND = "This item no longer exists."
+ERR_UNEXPECTED = "Unexpected error: {error}"
+
+PLAYER_PLAY_TOOLTIP = "Play (Space)"
+PLAYER_PAUSE_TOOLTIP = "Pause (Space)"
+PLAYER_BACK_TOOLTIP = "Back 10 seconds (←)"
+PLAYER_FORWARD_TOOLTIP = "Forward 10 seconds (→)"
+PLAYER_SPEED_TOOLTIP = "Playback speed (- and =)"
+PLAYER_LOADING = "Reading the file…"
+PLAYER_ERROR = "Playback failed: {error}"
+
+TS_TITLE = "Timestamped notes"
+TS_COUNT = "{n} notes"
+TS_PLACEHOLDER = "A note at this moment…  (Insert)"
+TS_ADD = "Add"
+TS_CAPTURE_TOOLTIP = "The note's time; click to take the current moment"
+TS_GOTO_TOOLTIP = "Go to this moment (Enter)"
+TS_EMPTY = "No notes for this voice yet. Press Insert while it plays and start typing."
+TS_EDIT = "Edit (F2)"
+TS_DELETE = "Delete (Delete)"
+TS_DELETE_CONFIRM = "Delete note “{text}”?"
+
+NAV_BOARD = "Board"
+BOARD_TITLE = "Production board"
+BOARD_COLUMN_COUNT = "{n}"
+BOARD_HINT = "Drag cards between columns or press Ctrl+←/→; Enter opens"
+BOARD_EMPTY = "No episodes yet. Start with “New episode”, then drag cards between columns."
+STALE_BADGE = "Stale: {days} days"
+STALE_TOOLTIP = "This episode has not been touched for more than 10 days"
+
+WS_NOTES = "Notes"
+WS_NOTE_NEW = "New note"
+WS_NOTE_TITLE_PLACEHOLDER = "Note title (optional)"
+WS_NOTE_BODY_PLACEHOLDER = "Write… (saved automatically)"
+WS_NOTES_EMPTY = "This episode has no notes yet. Start with “New note” (Ctrl+N)."
+WS_NOTE_DELETE = "Delete note"
+WS_NOTE_DELETE_CONFIRM = "Delete note “{title}”?"
+WS_LINK_ADD = "Add…"
+WS_LINKED_EMPTY = "—"
+WS_VOICES_EMPTY = (
+    "No voices are linked to this episode yet. Click “Add…” or pick from the suggestions tab."
+)
+WS_IDEAS_EMPTY = (
+    "No ideas are linked to this episode yet. Click “Add…” or pick from the suggestions tab."
+)
+WS_UNLINK = "Unlink (Delete)"
+WS_OPEN = "Open (Enter)"
+WS_MATERIALS = "Episode material"
+WS_TAB_VOICES = "Voices"
+WS_TAB_IDEAS = "Ideas"
+WS_TAB_SMART = "Suggested"
+WS_TAB_COUNT = "{label} {n}"
+WS_SMART = "Same-tag suggestions"
+WS_SMART_NO_TAGS = "Tag the episode and voices and ideas with the same tags show up here."
+WS_SMART_NONE = "No voice or idea shares a tag with this episode."
+WS_SMART_SUBTITLE = "{kind}, {n} shared tags: {names}"
+WS_SMART_LINKED = "Linked ✓"
+WS_LINK = "Link"
+WS_UNLINK_SHORT = "Unlink"
+WS_RECORD = "Record"
+WS_RECORD_TOOLTIP = "Launch your recording program (Ctrl+R)"
+WS_PICK_VOICE = "Add voices to the episode"
+WS_PICK_IDEA = "Add ideas to the episode"
+WS_PICK_FILTER = "Filter…"
+WS_PICK_ADD = "Add"
+WS_PICK_EMPTY = "Nothing left to add."
+KIND_VOICE = "Voice"
+KIND_IDEA = "Idea"
+
+RESUME_EYEBROW = "Pick up where you left off"
+RESUME_NEXT_ACTION = "Next step"
+RESUME_NO_NEXT = "No next step yet."
+RESUME_LAST_NOTE = "Last note"
+RESUME_NO_NOTE = "No notes yet."
+RESUME_CONTINUE = "Continue"
+RESUME_SKIP = "All episodes (Esc)"
+
+INBOX_TITLE = "New idea"
+INBOX_PLACEHOLDER = "Write the idea…"
+INBOX_HINT = "Enter saves · Shift+Enter new line · Esc closes"
+
+SETTINGS = "Settings"
+SETTINGS_TOOLTIP = "Settings (Ctrl+,)"
+SETTINGS_RECORDER = "Recording program"
+SETTINGS_RECORDER_HINT = (
+    "The program you record with. The “Record” button launches it; "
+    "this app does not record audio itself."
+)
+SETTINGS_BROWSE = "Browse…"
+SETTINGS_PROGRAM_DIALOG = "Choose the recording program"
+SETTINGS_PROGRAM_FILTER = "Programs (*.exe *.lnk *.bat *.cmd);;All files (*)"
+SETTINGS_HOTKEY = "Global idea hotkey"
+SETTINGS_HOTKEY_OK = "{keys} — opens a small window to jot down an idea, from any program."
+SETTINGS_HOTKEY_FAIL = "{keys} is unavailable; another program has taken it."
+SAVE = "Save"
+RECORDER_MISSING = "The recording program was not found at:\n{path}"
+
+SETTINGS_TAB_GENERAL = "General"
+SETTINGS_TAB_BOT = "Bale bot"
+SETTINGS_TAB_TRANSCRIPTION = "Transcription"
+SETTINGS_TAB_DATA = "Data"
+
+BOT_ENABLE = "Receive ideas and voices from a Bale bot"
+BOT_TOKEN = "Bot token"
+BOT_TOKEN_PLACEHOLDER = "The token @botfather gave you in Bale"
+BOT_TOKEN_SHOW = "Show"
+BOT_TOKEN_CHECK = "Test token"
+BOT_TOKEN_CHECKING = "Checking…"
+BOT_TOKEN_OK = "The token is valid: {name}"
+BOT_TOKEN_BAD = "The token was rejected."
+BOT_TOKEN_OFFLINE = "Could not reach Bale; check your internet connection."
+BOT_HELP = (
+    "Message @botfather in Bale, create a bot and paste its token here. "
+    "Every text message to the bot becomes an idea and every voice message a voice in this "
+    "workspace; messages sent while the app is closed arrive when it opens."
+)
+BOT_OWNER = "Bot owner: {name}"
+BOT_OWNER_NONE = "Nobody has messaged the bot yet; the first private chat becomes its owner."
+BOT_OWNER_RESET = "Release"
+BOT_STATUS = {
+    "stopped": "off",
+    "connecting": "connecting…",
+    "online": "connected",
+    "offline": "offline; retrying",
+    "unauthorized": "token rejected",
+}
+BOT_SIDEBAR = "Bale: {status}"
+BOT_RECEIVED_IDEA = "A new idea arrived from Bale"
+BOT_RECEIVED_VOICE = "A new voice arrived from Bale"
+
+TR_TAB_NOTES = "Notes"
+TR_TAB_TRANSCRIPT = "Transcript"
+TR_RUN = "Transcribe"
+TR_RERUN = "Transcribe again"
+TR_RUN_TOOLTIP = "Turn this voice's speech into Persian text, offline"
+TR_CANCEL = "Cancel"
+TR_COPY = "Copy text"
+TR_COPIED = "Text copied"
+TR_EMPTY = "No transcript yet. “Transcribe” turns this voice into text, on this computer."
+TR_NO_SPEECH = "No speech was found in this voice."
+TR_RUNNING = "Transcribing… {percent}%"
+TR_LOADING_MODEL = "Preparing the model…"
+TR_BUSY_ELSEWHERE = "Another voice is being transcribed."
+TR_META = "{n} segments, {model}, {when}"
+TR_NOT_INSTALLED = "faster-whisper is not installed; install it with: pip install .[transcription]"
+TR_MODEL_MISSING = (
+    "The transcription model is not on this computer yet. Get it in Settings → Transcription."
+)
+TR_OPEN_SETTINGS = "Transcription settings"
+TR_FAILED = "Transcription failed: {error}"
+TR_FILE_MISSING = "The audio file was not found."
+TR_REPLACE_CONFIRM = "Replace the current transcript with the new result?"
+TR_REPLACE = "Replace"
+TR_GOTO_TOOLTIP = "Go to this moment (Enter)"
+VOICE_HAS_TRANSCRIPT = "Transcript"
+
+TR_MODEL = "Model"
+TR_MODELS = {
+    "small": "small — fast, less accurate (about 500 MB)",
+    "medium": "medium — balanced (about 1.5 GB)",
+    "large-v3-turbo": "large-v3-turbo — recommended (about 1.6 GB)",
+    "large-v3": "large-v3 — most accurate, slowest (about 3 GB)",
+}
+TR_MODEL_READY = "The model is ready: {path}"
+TR_MODEL_NOT_READY = "This model has not been downloaded yet."
+TR_MODEL_DOWNLOAD = "Download model"
+TR_MODEL_DOWNLOADING = "Downloading the model… (once; this can take a while)"
+TR_MODEL_DOWNLOAD_FAILED = "The model could not be downloaded: {error}"
+TR_MODEL_DIR = "Custom model folder (optional)"
+TR_MODEL_DIR_PLACEHOLDER = "A folder containing model.bin; empty = the downloaded model"
+TR_MODEL_DIR_DIALOG = "Choose a faster-whisper model folder"
+TR_MODEL_HELP = (
+    "Transcription runs entirely on this computer. Only downloading the model, once, "
+    "needs the internet."
+)
+
+DATA_EXPORT = "Export…"
+DATA_EXPORT_HELP = (
+    "Every episode, idea, note, tag, transcript and audio file in one zip file. "
+    "Settings (including the bot token) are not included."
+)
+DATA_EXPORT_DIALOG = "Save export"
+DATA_EXPORT_FILTER = "Workspace export (*.zip)"
+DATA_EXPORTING = "Exporting… {percent}%"
+DATA_EXPORT_DONE = "Export saved: {path}"
+DATA_EXPORT_MISSING = "{n} audio files were not found and are not in the export."
+DATA_IMPORT = "Restore from export…"
+DATA_IMPORT_HELP = (
+    "All current data is replaced by the file's contents. Before that, a backup of the "
+    "current state is saved in the backups folder."
+)
+DATA_IMPORT_DIALOG = "Choose an export file"
+DATA_IMPORT_CONFIRM = (
+    "Replace all current episodes, voices, ideas and tags with this file's contents?\n"
+    "A backup of the current state is saved in the backups folder."
+)
+DATA_IMPORT_ACTION = "Replace"
+DATA_IMPORTING = "Restoring… {percent}%"
+DATA_IMPORT_DONE = "Restored: {episodes} episodes, {voices} voices, {ideas} ideas, {tags} tags."
+DATA_IMPORT_BAD_FILE = "This file is not an export of this app, or it is damaged."
+DATA_FOLDER = "Data folder"
+DATA_OPEN_FOLDER = "Open folder"
+
+SETTINGS_LANGUAGE = "App language"
+LANGUAGE_NAMES = {"fa": "فارسی", "en": "English"}
+LANGUAGE_RESTART_TITLE = "Change language"
+LANGUAGE_RESTART = "The new language applies after the app restarts. Restart now?"
+LANGUAGE_RESTART_NOW = "Restart"
+LANGUAGE_RESTART_LATER = "Later"
+
+BACKUP_REMINDER_TITLE = "Backup reminder"
+BACKUP_REMINDER_BODY = "It has been {days} days since your last backup."
+BACKUP_REMINDER_NEVER = "You have not backed up your data yet."
+BACKUP_REMINDER_HINT = (
+    "One export file keeps every episode, note, idea and voice. "
+    "Keep it on another disk or in cloud storage."
+)
+BACKUP_NOW = "Back up now"
+BACKUP_TOMORROW = "Remind me tomorrow"
+BACKUP_LATER = "Later"
+SETTINGS_BACKUP_REMINDER = "Backup reminder"
+BACKUP_INTERVALS = {
+    0: "Off",
+    3: "Every 3 days",
+    7: "Every week",
+    14: "Every two weeks",
+    30: "Every month",
+}
+BACKUP_LAST = "Last backup: {when}"
+BACKUP_LAST_NEVER = "No backup yet."
+
+LIST_SEPARATOR = ", "
+UNDO = "Undo"
+REDO = "Redo"
+UNDO_TOOLTIP = "{action}  (Ctrl+Z)"
+REDO_TOOLTIP = "{action}  (Ctrl+Y)"
+UNDO_NOTHING = "Nothing to undo"
+REDO_NOTHING = "Nothing to redo"
+UNDO_DONE = "Undone: {action}"
+REDO_DONE = "Redone: {action}"
+UNDO_FAILED = "This change can no longer be undone; its item was deleted or changed."
+REDO_FAILED = "This change can no longer be redone."
+UNDO_OFFER = "Done: {action}"
+
+UNDO_TARGETS = {
+    "episode": "episode",
+    "voice": "voice",
+    "idea": "idea",
+    "tag": "tag",
+    "episode_note": "note",
+    "timestamp_note": "timestamped note",
+}
+UNDO_ACTIONS = {
+    "create": "Create {target} {quoted}",
+    "delete": "Delete {target} {quoted}",
+    "edit": "Edit {target} {quoted}",
+    "rename": "Rename tag {other} to {quoted}",
+    "status": "Change status of {target} {other} to {quoted}",
+    "tags_added": "Add tag {quoted} to {target}",
+    "tags_removed": "Remove tag {quoted} from {target}",
+    "linked": "Link {quoted} to {target}",
+    "unlinked": "Unlink {quoted} from {target}",
+    "recolor": "Recolour tag {quoted}",
+    "reparent": "Move tag {quoted}",
+    "merge": "Merge tag {quoted} into {other}",
+}
+UNDO_SOMETHING = "The last change"

@@ -2,6 +2,7 @@
 
 import base64
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
@@ -15,7 +16,19 @@ class Theme(StrEnum):
     DARK = "dark"
 
 
+class Language(StrEnum):
+    FA = "fa"
+    EN = "en"
+
+
 THEME_KEY = "ui.theme"
+LANGUAGE_KEY = "ui.language"
+SIDEBAR_COMPACT_KEY = "ui.sidebar_compact"
+LIST_HIDDEN_KEY = "ui.episode_list_hidden"
+FIRST_RUN_KEY = "app.first_run_at"
+LAST_BACKUP_KEY = "backup.last_export_at"
+BACKUP_SNOOZE_KEY = "backup.reminder_snoozed_until"
+BACKUP_INTERVAL_KEY = "backup.reminder_days"
 GEOMETRY_KEY = "ui.window_geometry"
 RECORDER_KEY = "recording.program_path"
 BALE_TOKEN_KEY = "bale.token"
@@ -26,6 +39,7 @@ WHISPER_MODEL_KEY = "transcription.model"
 WHISPER_MODEL_DIR_KEY = "transcription.model_dir"
 
 DEFAULT_WHISPER_MODEL = "large-v3-turbo"
+DEFAULT_BACKUP_INTERVAL_DAYS = 7
 
 
 @dataclass(frozen=True)
@@ -57,6 +71,26 @@ class SettingsService:
     def set_theme(self, theme: Theme) -> None:
         with UnitOfWork(self._session_factory) as uow:
             uow.settings.set(THEME_KEY, theme.value)
+
+    def language(self) -> Language | None:
+        """None means the user has not chosen yet: the app asks once, on first start."""
+        value = self._get(LANGUAGE_KEY)
+        return Language(value) if value in {lang.value for lang in Language} else None
+
+    def set_language(self, language: Language) -> None:
+        self._set(LANGUAGE_KEY, language.value)
+
+    def sidebar_compact(self) -> bool:
+        return self._get(SIDEBAR_COMPACT_KEY) is True
+
+    def set_sidebar_compact(self, compact: bool) -> None:
+        self._set(SIDEBAR_COMPACT_KEY, bool(compact))
+
+    def episode_list_hidden(self) -> bool:
+        return self._get(LIST_HIDDEN_KEY) is True
+
+    def set_episode_list_hidden(self, hidden: bool) -> None:
+        self._set(LIST_HIDDEN_KEY, bool(hidden))
 
     def window_geometry(self) -> bytes | None:
         with UnitOfWork(self._session_factory) as uow:
@@ -129,3 +163,47 @@ class SettingsService:
 
     def set_whisper_model_dir(self, path: str) -> None:
         self._set(WHISPER_MODEL_DIR_KEY, path.strip())
+
+    # backup reminder -------------------------------------------------------------------
+    def _get_datetime(self, key: str) -> datetime | None:
+        value = self._get(key)
+        if not isinstance(value, str):
+            return None
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo is not None else None
+
+    def _set_datetime(self, key: str, value: datetime | None) -> None:
+        if value is not None and value.tzinfo is None:
+            raise ValueError("naive datetime")
+        self._set(key, None if value is None else value.isoformat())
+
+    def first_run_at(self, now: datetime) -> datetime:
+        """When the app first ran on this machine; recorded on the first call."""
+        value = self._get_datetime(FIRST_RUN_KEY)
+        if value is None:
+            self._set_datetime(FIRST_RUN_KEY, now)
+            return now
+        return value
+
+    def last_backup_at(self) -> datetime | None:
+        return self._get_datetime(LAST_BACKUP_KEY)
+
+    def set_last_backup_at(self, when: datetime) -> None:
+        self._set_datetime(LAST_BACKUP_KEY, when)
+
+    def backup_snoozed_until(self) -> datetime | None:
+        return self._get_datetime(BACKUP_SNOOZE_KEY)
+
+    def set_backup_snoozed_until(self, when: datetime | None) -> None:
+        self._set_datetime(BACKUP_SNOOZE_KEY, when)
+
+    def backup_interval_days(self) -> int:
+        """Days between backup reminders; 0 turns the reminder off."""
+        value = self._get(BACKUP_INTERVAL_KEY)
+        return value if isinstance(value, int) and value >= 0 else DEFAULT_BACKUP_INTERVAL_DAYS
+
+    def set_backup_interval_days(self, days: int) -> None:
+        self._set(BACKUP_INTERVAL_KEY, max(0, int(days)))

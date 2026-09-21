@@ -13,6 +13,7 @@ from PySide6.QtGui import (
     QDragEnterEvent,
     QDragMoveEvent,
     QDropEvent,
+    QFont,
     QKeyEvent,
     QKeySequence,
     QPainter,
@@ -41,25 +42,39 @@ from podcast_workspace.domain.entities import Episode, EpisodeStatus
 from podcast_workspace.domain.pipeline import PIPELINE, days_untouched, is_stale
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
-from podcast_workspace.ui.pages.base import RLM
-from podcast_workspace.ui.support import AppEvents, fa_digits, show_error
+from podcast_workspace.ui.support import AppEvents, local_digits, show_error
+from podcast_workspace.ui.theme import colors
 
 ID_ROLE = Qt.ItemDataRole.UserRole
 NEXT_ROLE = Qt.ItemDataRole.UserRole + 1
 STALE_ROLE = Qt.ItemDataRole.UserRole + 2
 COLUMN_WIDTH = 150
-STALE_COLOR = "#d97706"
 
 
 class _CardDelegate(QStyledItemDelegate):
-    """Card: title, next action (muted, up to 2 lines), stale badge."""
+    """Card: stale badge, title (wrapped, up to 2 lines), next action (muted, 2 lines)."""
+
+    TITLE_LINES = 2
 
     def sizeHint(
         self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
     ) -> QSize:
         line = option.fontMetrics.height()
         extra = line + 6 if index.data(STALE_ROLE) else 0
-        return QSize(option.rect.width(), line * 3 + 30 + extra)
+        title_lines = self._title_lines(option, index)
+        has_next = bool(index.data(NEXT_ROLE))
+        body = line * 2 + 2 if has_next else 0
+        return QSize(option.rect.width(), line * title_lines + body + 34 + extra)
+
+    def _title_lines(
+        self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
+    ) -> int:
+        """Columns are narrow; let a long Persian title use a second line instead of
+        eliding it to three words."""
+        title = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
+        width = max(40, option.rect.width() - 28)
+        needed = option.fontMetrics.horizontalAdvance(title)
+        return min(self.TITLE_LINES, max(1, -(-needed // width)))
 
     def paint(
         self,
@@ -75,23 +90,26 @@ class _CardDelegate(QStyledItemDelegate):
         focused = bool(opt.state & QStyle.StateFlag.State_HasFocus)
         widget_focused = opt.widget is not None and opt.widget.hasFocus()
         rect = opt.rect.adjusted(2, 3, -2, -3)
+        hovered = bool(opt.state & QStyle.StateFlag.State_MouseOver)
 
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        border = (
-            palette.color(QPalette.ColorRole.Highlight)
-            if selected and widget_focused
-            else (palette.color(QPalette.ColorRole.PlaceholderText))
-        )
-        if not (selected and widget_focused):
-            border = QColor(border)
-            border.setAlphaF(0.3)
+        # A soft shadow lifts the card off its tinted column.
+        shadow = QColor(colors().text)
+        shadow.setAlphaF(0.07 if hovered else 0.04)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(shadow)
+        painter.drawRoundedRect(rect.translated(0, 2), 10, 10)
+        chosen = selected and widget_focused
+        border = palette.color(QPalette.ColorRole.Link if chosen else QPalette.ColorRole.Mid)
+        if hovered and not chosen:
+            border = palette.color(QPalette.ColorRole.Highlight)
         painter.setPen(border)
         painter.setBrush(palette.color(QPalette.ColorRole.Base))
-        painter.drawRoundedRect(rect, 8, 8)
-        if selected and widget_focused and focused:
-            painter.setPen(palette.color(QPalette.ColorRole.Highlight))
-            painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 7, 7)
+        painter.drawRoundedRect(rect, 10, 10)
+        if chosen and focused:
+            painter.setPen(palette.color(QPalette.ColorRole.Link))
+            painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 9, 9)
 
         inner = rect.adjusted(12, 10, -12, -10)
         metrics = opt.fontMetrics
@@ -100,23 +118,26 @@ class _CardDelegate(QStyledItemDelegate):
         y = inner.y()
         stale = index.data(STALE_ROLE)
         if stale:
-            badge_font = opt.font
+            badge_font = QFont(opt.font)  # a copy: the title must keep its size
             badge_font.setPointSizeF(max(7.5, badge_font.pointSizeF() - 1.5))
             painter.setFont(badge_font)
-            painter.setPen(QColor(STALE_COLOR))
-            painter.drawText(QRect(inner.x(), y, inner.width(), line), align, RLM + stale)
+            painter.setPen(QColor(colors().warning))
+            painter.drawText(
+                QRect(inner.x(), y, inner.width(), line), align, strings.DIRECTION_MARK + stale
+            )
             y += line + 6
         font = opt.font
         font.setWeight(font.Weight.DemiBold)
         painter.setFont(font)
         painter.setPen(palette.color(QPalette.ColorRole.Text))
-        title = metrics.elidedText(
-            RLM + str(index.data(Qt.ItemDataRole.DisplayRole) or ""),
-            Qt.TextElideMode.ElideRight,
-            inner.width(),
+        title_lines = self._title_lines(opt, index)
+        title_box = QRect(inner.x(), y, inner.width(), line * title_lines + 2)
+        painter.drawText(
+            title_box,
+            int(align | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap),
+            strings.DIRECTION_MARK + _clip(str(index.data(Qt.ItemDataRole.DisplayRole) or ""), 70),
         )
-        painter.drawText(QRect(inner.x(), y, inner.width(), line + 2), align, title)
-        y += line + 6
+        y += line * title_lines + 6
         font.setWeight(font.Weight.Normal)
         painter.setFont(font)
         painter.setPen(palette.color(QPalette.ColorRole.PlaceholderText))
@@ -124,7 +145,7 @@ class _CardDelegate(QStyledItemDelegate):
         if next_action:
             box = QRect(inner.x(), y, inner.width(), line * 2 + 2)
             flags = align | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap
-            painter.drawText(box, int(flags), RLM + _clip(next_action))
+            painter.drawText(box, int(flags), strings.DIRECTION_MARK + _clip(next_action))
         painter.restore()
 
 
@@ -151,6 +172,7 @@ class _Column(QListWidget):
         self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setSpacing(2)
+        self.setMouseTracking(True)  # cards lift on hover
         self.itemDoubleClicked.connect(lambda item: self.open_card.emit(int(item.data(ID_ROLE))))
 
     def current_id(self) -> int | None:
@@ -216,6 +238,7 @@ class BoardPage(QWidget):
 
     def __init__(self, workspace: Workspace, events: AppEvents) -> None:
         super().__init__()
+        self.nav_title = strings.BOARD_TITLE
         self._ws = workspace
         self._events = events
         self._episodes: dict[int, Episode] = {}
@@ -223,10 +246,11 @@ class BoardPage(QWidget):
         root.setContentsMargins(32, 24, 32, 24)
         root.setSpacing(12)
         header = QHBoxLayout()
-        header.addWidget(QLabel(strings.BOARD_TITLE, objectName="pageTitle"))
+        header.setSpacing(10)
+        title = QLabel(strings.BOARD_TITLE, objectName="pageTitle")
+        title.setToolTip(strings.BOARD_HINT)
+        header.addWidget(title)
         header.addStretch(1)
-        hint = QLabel(strings.BOARD_HINT, objectName="muted")
-        header.addWidget(hint)
         self.primary = QPushButton(strings.EPISODE_NEW, objectName="primary")
         self.primary.setToolTip("Ctrl+N")
         self.primary.clicked.connect(self.primary_action)
@@ -241,15 +265,20 @@ class BoardPage(QWidget):
         self._counts: list[QLabel] = []
         for status in PIPELINE:
             frame = QFrame(objectName="boardFrame")
+            frame.setProperty("status", status.value)  # its pastel: theme.STATUS_INKS
             frame.setMinimumWidth(COLUMN_WIDTH)
             col = QVBoxLayout(frame)
-            col.setContentsMargins(8, 10, 8, 8)
-            col.setSpacing(6)
+            col.setContentsMargins(8, 12, 8, 8)
+            col.setSpacing(8)
             head = QHBoxLayout()
             head.setContentsMargins(6, 0, 6, 0)
+            head.setSpacing(8)
+            dot = QLabel(objectName="statusDot")
+            dot.setProperty("status", status.value)
+            head.addWidget(dot)
             head.addWidget(QLabel(strings.STATUS_LABELS[status], objectName="columnTitle"))
             head.addStretch(1)
-            count = QLabel(objectName="muted")
+            count = QLabel(objectName="countPill")
             head.addWidget(count)
             col.addLayout(head)
             column = _Column(status)
@@ -261,12 +290,18 @@ class BoardPage(QWidget):
             row.addWidget(frame, 1)
             self.columns.append(column)
             self._counts.append(count)
-        scroll = QScrollArea(objectName="boardScroll")
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setWidget(host)
-        root.addWidget(scroll, 1)
+        self.scroll = QScrollArea(objectName="boardScroll")
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll.setWidget(host)
+        root.addWidget(self.scroll, 1)
+        # Six empty columns say nothing; one sentence does.
+        self.empty = QLabel(strings.BOARD_EMPTY, objectName="emptyHint")
+        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty.setWordWrap(True)
+        self.empty.hide()
+        root.addWidget(self.empty, 1)
         QShortcut(QKeySequence.StandardKey.New, self, activated=self.primary_action)
 
     # data -------------------------------------------------------------------------------
@@ -278,6 +313,8 @@ class BoardPage(QWidget):
             return
         now = datetime.now(UTC)
         self._episodes = {e.id: e for e in episodes if e.id is not None}
+        self.empty.setVisible(not episodes)
+        self.scroll.setVisible(bool(episodes))
         keep = focus_id
         if keep is None:
             focused = QApplication.focusWidget()
@@ -287,14 +324,16 @@ class BoardPage(QWidget):
         for column, count in zip(self.columns, self._counts, strict=True):
             column.clear()
             cards = [e for e in episodes if e.status is column.status]
-            count.setText(fa_digits(len(cards)) if cards else "")
+            count.setText(local_digits(len(cards)) if cards else "")
             for episode in cards:  # list_all is newest-updated first
                 item = QListWidgetItem(episode.title)
                 item.setData(ID_ROLE, episode.id)
                 item.setData(NEXT_ROLE, episode.next_action)
                 stale = ""
                 if is_stale(episode, now):
-                    stale = strings.STALE_BADGE.format(days=fa_digits(days_untouched(episode, now)))
+                    stale = strings.STALE_BADGE.format(
+                        days=local_digits(days_untouched(episode, now))
+                    )
                 item.setData(STALE_ROLE, stale)
                 if stale:
                     item.setToolTip(strings.STALE_TOOLTIP)
@@ -306,6 +345,24 @@ class BoardPage(QWidget):
             column.setCurrentItem(item)
             if focus_id is not None or self.isVisible():
                 column.setFocus()
+
+    # navigation state -------------------------------------------------------------------
+    def nav_state(self) -> tuple[int | None, int]:
+        """The card in hand and how far the board is scrolled sideways."""
+        focused = QApplication.focusWidget()
+        current = focused.current_id() if isinstance(focused, _Column) else None
+        if current is None:
+            current = next(
+                (c.current_id() for c in self.columns if c.currentItem() is not None), None
+            )
+        return current, self.scroll.horizontalScrollBar().value()
+
+    def restore_nav_state(self, state: object) -> None:
+        if not isinstance(state, tuple) or len(state) != 2:
+            return
+        episode_id, scroll = state
+        self.refresh(focus_id=episode_id if isinstance(episode_id, int) else None)
+        self.scroll.horizontalScrollBar().setValue(int(scroll))
 
     def focus_main(self) -> None:
         for column in self.columns:

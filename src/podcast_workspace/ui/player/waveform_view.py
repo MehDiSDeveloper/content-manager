@@ -142,17 +142,17 @@ class WaveformView(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         palette = self.palette()
-        accent = palette.color(QPalette.ColorRole.Highlight)
         muted = palette.color(QPalette.ColorRole.PlaceholderText)
         text = palette.color(QPalette.ColorRole.Text)
-        rest = QColor(muted)
-        rest.setAlphaF(0.45)
+        strong = palette.color(QPalette.ColorRole.Link)  # the pastel Highlight is for fills only
+        rest = QColor(strong)
+        rest.setAlphaF(0.3)
 
         frame = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         border = QColor(muted)
         border.setAlphaF(0.35)
         focused = self.hasFocus()
-        painter.setPen(QPen(accent if focused else border, 1.5 if focused else 1))
+        painter.setPen(QPen(strong if focused else border, 1.5 if focused else 1))
         painter.setBrush(palette.color(QPalette.ColorRole.Base))
         painter.drawRoundedRect(frame, 8, 8)
 
@@ -174,7 +174,7 @@ class WaveformView(QWidget):
         painter.drawPath(self._path)
         painter.save()
         painter.setClipRect(QRectF(0, 0, cursor_x, self.height()))
-        painter.setBrush(accent)
+        painter.setBrush(strong)
         painter.drawPath(self._path)
         painter.restore()
 
@@ -183,7 +183,7 @@ class WaveformView(QWidget):
         for note_id, position in self._markers:
             x = self._x_for(position)
             active = note_id in self._active
-            painter.setBrush(accent if active else muted)
+            painter.setBrush(strong if active else muted)
             size = 5.0 if active else 3.5
             tri = QPainterPath(QPointF(x, base_y - size * 1.6))
             tri.lineTo(x - size, base_y)

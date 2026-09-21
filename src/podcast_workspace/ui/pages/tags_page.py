@@ -1,6 +1,16 @@
-"""Tag manager: create, rename (F2), recolor, nest, unnest, merge, delete."""
+"""Tag manager: create, rename (F2), recolor, nest, unnest, merge, delete.
 
-from PySide6.QtCore import QEvent, QObject, Qt
+Layout (RTL): filter + tag tree on the right, and on the left the items that carry the
+selected tag — a tag is only worth having if you can see what it gathers, and from here
+you can jump straight to any of them. Jumping is a one-way door without a way home, so
+the page hands its whole standing — filter text, selected tag, the row of the uses list,
+both scroll positions — to `ui/navigation.py` on the way out.
+"""
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QKeyEvent, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -9,7 +19,11 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
     QPushButton,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -17,27 +31,52 @@ from PySide6.QtWidgets import (
 )
 
 from podcast_workspace.domain.entities import Tag
+from podcast_workspace.domain.search import SearchKind
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
-from podcast_workspace.ui.support import AppEvents, confirm, fa_digits, show_error
+from podcast_workspace.ui.pages.base import SUBTITLE_ROLE, TwoLineDelegate
+from podcast_workspace.ui.support import AppEvents, confirm, local_digits, show_error
 from podcast_workspace.ui.widgets.tag_dialogs import NewTagDialog, TagPickerDialog
 from podcast_workspace.ui.widgets.tag_widgets import color_dot
 
 ID_ROLE = Qt.ItemDataRole.UserRole
+# Qt stores item data as a QVariant, which hands a Python enum back as the plain str or
+# int behind it — so what goes in here is the SearchKind's number, and what comes out is
+# put back through SearchKind(). Never compare the raw value with `is`.
+KIND_ROLE = Qt.ItemDataRole.UserRole + 3
+TREE_WIDTH = 460
+USES_LIMIT = 200
+
+
+@dataclass(frozen=True)
+class TagsPageState:
+    """What this page looked like when the user navigated away from it."""
+
+    filter_text: str = ""
+    tag_id: int | None = None
+    uses_row: int = -1
+    tree_scroll: int = 0
+    uses_scroll: int = 0
 
 
 class TagsPage(QWidget):
+    open_episode = Signal(int)
+    open_voice = Signal(int)
+    open_idea = Signal(int)
+
     def __init__(self, workspace: Workspace, events: AppEvents) -> None:
         super().__init__()
+        self.nav_title = strings.TAGS_TITLE
         self._ws = workspace
         self._events = events
         self._items: dict[int, QTreeWidgetItem] = {}
         self._filling = False
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(32, 24, 32, 24)
-        root.setSpacing(16)
+        root.setContentsMargins(32, 22, 32, 22)
+        root.setSpacing(14)
         header = QHBoxLayout()
+        header.setSpacing(10)
         header.addWidget(QLabel(strings.TAGS_TITLE, objectName="pageTitle"))
         header.addStretch(1)
         self.primary = QPushButton(strings.TAG_NEW, objectName="primary")
@@ -46,11 +85,29 @@ class TagsPage(QWidget):
         header.addWidget(self.primary)
         root.addLayout(header)
 
+        body = QHBoxLayout()
+        body.setSpacing(22)
+
+        left = QVBoxLayout()
+        left.setSpacing(10)
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(8)
         self.filter = QLineEdit(placeholderText=strings.TAG_FILTER_PLACEHOLDER)
+        self.filter.setToolTip(strings.TAG_FILTER_TOOLTIP)
         self.filter.setClearButtonEnabled(True)
         self.filter.textChanged.connect(self._apply_filter)
         self.filter.installEventFilter(self)
-        root.addWidget(self.filter)
+        filter_row.addWidget(self.filter, 1)
+        # Six verbs in a row taught nothing; one menu (and the right-click menu on the
+        # row itself) keeps the same actions where the tag is.
+        self.actions_button = QToolButton(objectName="chromeButton")
+        self.actions_button.setText(strings.TAG_ACTIONS + "  ⌄")
+        self.actions_button.setToolTip(strings.TAG_ACTIONS_TOOLTIP)
+        self.actions_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.actions_menu = QMenu(self.actions_button)
+        self.actions_button.setMenu(self.actions_menu)
+        filter_row.addWidget(self.actions_button)
+        left.addLayout(filter_row)
 
         self.tree = QTreeWidget(objectName="tagTree")
         self.tree.setColumnCount(2)
@@ -60,18 +117,44 @@ class TagsPage(QWidget):
         self.tree.header().setStretchLastSection(False)
         self.tree.setEditTriggers(QAbstractItemView.EditTrigger.EditKeyPressed)  # F2
         self.tree.itemChanged.connect(self._on_item_changed)
-        self.tree.currentItemChanged.connect(lambda *_: self._update_actions())
+        self.tree.currentItemChanged.connect(lambda *_: self._on_selection_changed())
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
         self.tree.installEventFilter(self)
-        root.addWidget(self.tree, 1)
+        left.addWidget(self.tree, 1)
 
         self.empty = QLabel(strings.TAG_EMPTY, objectName="emptyHint")
         self.empty.setWordWrap(True)
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        root.addWidget(self.empty)
+        left.addWidget(self.empty)
+        tree_side = QWidget()
+        tree_side.setLayout(left)
+        tree_side.setMaximumWidth(TREE_WIDTH)
+        body.addWidget(tree_side, 2)
 
-        buttons = QHBoxLayout()
-        self._actions: list[tuple[QAction, QPushButton]] = []
+        uses = QVBoxLayout()
+        uses.setSpacing(10)
+        uses_head = QHBoxLayout()
+        uses_head.setSpacing(8)
+        self.uses_title = QLabel(strings.TAG_USES_TITLE, objectName="sectionTitle")
+        uses_head.addWidget(self.uses_title)
+        self.uses_count = QLabel(objectName="countPill")
+        uses_head.addWidget(self.uses_count)
+        uses_head.addStretch(1)
+        uses.addLayout(uses_head)
+        self.uses = QListWidget(objectName="usesList")
+        self.uses.setItemDelegate(TwoLineDelegate(self.uses))
+        self.uses.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.uses.setToolTip(strings.TAG_OPEN_ITEM)
+        self.uses.itemActivated.connect(self._open_use)
+        self.uses.itemDoubleClicked.connect(self._open_use)
+        uses.addWidget(self.uses, 1)
+        self.uses_hint = QLabel(objectName="muted")
+        self.uses_hint.setWordWrap(True)
+        uses.addWidget(self.uses_hint)
+        body.addLayout(uses, 3)
+        root.addLayout(body, 1)
+
+        self._actions: list[tuple[QAction, None]] = []
         for label, shortcut, handler in (
             (strings.TAG_RENAME, "F2", self.rename_tag),
             (strings.TAG_RECOLOR, "Ctrl+Shift+C", self.recolor_tag),
@@ -85,13 +168,8 @@ class TagsPage(QWidget):
             action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             action.triggered.connect(handler)
             self.tree.addAction(action)
-            button = QPushButton(label, objectName="danger" if handler == self.delete_tag else "")
-            button.setToolTip(shortcut)
-            button.clicked.connect(handler)
-            buttons.addWidget(button)
-            self._actions.append((action, button))
-        buttons.addStretch(1)
-        root.addLayout(buttons)
+            self.actions_menu.addAction(action)
+            self._actions.append((action, None))
 
         new_action = QAction(self, shortcut=QKeySequence.StandardKey.New)
         new_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -109,7 +187,7 @@ class TagsPage(QWidget):
         self._items = {}
         for tag in tags:
             assert tag.id is not None
-            item = QTreeWidgetItem([tag.name, fa_digits(usage.get(tag.id, 0))])
+            item = QTreeWidgetItem([tag.name, local_digits(usage.get(tag.id, 0))])
             item.setIcon(0, color_dot(tag.color))
             item.setData(0, ID_ROLE, tag.id)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
@@ -133,7 +211,7 @@ class TagsPage(QWidget):
         if target is not None:
             self.tree.setCurrentItem(target)
         self._apply_filter(self.filter.text())
-        self._update_actions()
+        self._on_selection_changed()
 
     def current_id(self) -> int | None:
         item = self.tree.currentItem()
@@ -146,19 +224,122 @@ class TagsPage(QWidget):
     def focus_main(self) -> None:
         self.tree.setFocus()
 
+    def focus_filter(self) -> None:
+        """Ctrl+F, same as the filter box on the list pages."""
+        self.filter.setFocus()
+        self.filter.selectAll()
+
     def select(self, tag_id: int) -> None:
         self.filter.clear()
         self.refresh(select_id=tag_id)
         self.tree.setFocus()
 
+    # navigation state ------------------------------------------------------------------
+    def nav_state(self) -> TagsPageState:
+        return TagsPageState(
+            filter_text=self.filter.text(),
+            tag_id=self.current_id(),
+            uses_row=self.uses.currentRow(),
+            tree_scroll=self.tree.verticalScrollBar().value(),
+            uses_scroll=self.uses.verticalScrollBar().value(),
+        )
+
+    def restore_nav_state(self, state: object) -> None:
+        if not isinstance(state, TagsPageState):
+            return
+        self.filter.blockSignals(True)
+        self.filter.setText(state.filter_text)
+        self.filter.blockSignals(False)
+        self.refresh(select_id=state.tag_id)  # also reruns the filter and the uses list
+        self.tree.verticalScrollBar().setValue(state.tree_scroll)
+        if 0 <= state.uses_row < self.uses.count():
+            self.uses.setCurrentRow(state.uses_row)
+        self.uses.verticalScrollBar().setValue(state.uses_scroll)
+
     def _update_actions(self) -> None:
         tag = self.current_tag()
-        for action, button in self._actions:
+        for action, _ in self._actions:
             enabled = tag is not None
             if action.text() == strings.TAG_UNNEST:
                 enabled = tag is not None and tag.parent_id is not None
             action.setEnabled(enabled)
-            button.setEnabled(enabled)
+        self.actions_button.setEnabled(tag is not None)
+
+    def _on_selection_changed(self) -> None:
+        self._update_actions()
+        self._show_uses()
+
+    def _show_uses(self) -> None:
+        """Everything carrying the selected tag, newest first, ready to open."""
+        self.uses.clear()
+        tag = self.current_tag()
+        if tag is None or tag.id is None:
+            self.uses_count.setText("")
+            self.uses_count.hide()
+            self.uses_hint.setText(strings.TAG_USES_NONE)
+            self.uses_hint.show()
+            return
+        tag_id = tag.id
+        rows: list[tuple[SearchKind, int, str, str]] = []
+        try:
+            for episode in self._ws.episodes.list_all():
+                if tag_id in episode.tag_ids and episode.id is not None:
+                    rows.append(
+                        (
+                            SearchKind.EPISODE,
+                            episode.id,
+                            episode.title,
+                            strings.KIND_LABELS[SearchKind.EPISODE]
+                            + "  ·  "
+                            + strings.STATUS_LABELS[episode.status],
+                        )
+                    )
+            for voice in self._ws.voices.list_all():
+                if tag_id in voice.tag_ids and voice.id is not None:
+                    rows.append(
+                        (
+                            SearchKind.VOICE,
+                            voice.id,
+                            Path(voice.file_path).name,
+                            strings.KIND_LABELS[SearchKind.VOICE] + "  ·  " + voice.format.upper(),
+                        )
+                    )
+            for idea in self._ws.ideas.list_all():
+                if tag_id in idea.tag_ids and idea.id is not None:
+                    text = idea.text.strip().splitlines()[0] if idea.text.strip() else ""
+                    rows.append(
+                        (
+                            SearchKind.IDEA_NOTE,
+                            idea.id,
+                            text[:80],
+                            strings.KIND_LABELS[SearchKind.IDEA_NOTE],
+                        )
+                    )
+        except Exception as exc:
+            show_error(self, exc)
+            return
+        for kind, item_id, title, subtitle in rows[:USES_LIMIT]:
+            item = QListWidgetItem(title)
+            item.setData(ID_ROLE, item_id)
+            item.setData(KIND_ROLE, int(kind))
+            item.setData(SUBTITLE_ROLE, subtitle)
+            item.setToolTip(title)
+            self.uses.addItem(item)
+        self.uses_count.setText(local_digits(len(rows)))
+        self.uses_count.setVisible(bool(rows))
+        self.uses_hint.setText("" if rows else strings.TAG_USES_EMPTY)
+        self.uses_hint.setVisible(not rows)
+
+    def _open_use(self, item: QListWidgetItem) -> None:
+        kind = SearchKind(int(item.data(KIND_ROLE)))
+        item_id = int(item.data(ID_ROLE))
+        match kind:
+            case SearchKind.EPISODE:
+                self.open_episode.emit(item_id)
+            case SearchKind.VOICE:
+                self.open_voice.emit(item_id)
+            case SearchKind.IDEA_NOTE:
+                self.open_idea.emit(item_id)
 
     def _apply_filter(self, text: str) -> None:
         if not text.strip():
@@ -306,7 +487,9 @@ class TagsPage(QWidget):
         if tag is None or tag.id is None:
             return
         uses = self._ws.tags.usage_counts().get(tag.id, 0)
-        if not confirm(self, strings.TAG_DELETE_CONFIRM.format(name=tag.name, n=fa_digits(uses))):
+        if not confirm(
+            self, strings.TAG_DELETE_CONFIRM.format(name=tag.name, n=local_digits(uses))
+        ):
             return
         try:
             self._ws.tags.delete(tag.id)
