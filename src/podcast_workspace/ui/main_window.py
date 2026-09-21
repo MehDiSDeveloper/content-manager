@@ -1,7 +1,7 @@
 """Main window: sidebar (right in RTL, left in LTR) holding search + navigation, and the
 page stack.
 
-Nav pages: Episodes, Board, Voices, Audio folder, Ideas, Tags (Ctrl+1..6). Off-nav pages:
+Nav pages: Episodes, Board, Voices, Audio folder, Ideas, Tags, Trash (Ctrl+1..7). Off-nav pages:
 the startup resume screen and search results. An episode is always shown in one place — the Episodes
 page, beside its list — whether it is reached from there, the board, a tag, a search hit
 or the resume screen.
@@ -53,6 +53,7 @@ from PySide6.QtWidgets import (
 )
 
 from podcast_workspace.audio.engine import Player
+from podcast_workspace.domain.lifecycle import TRASH_DAYS, ArchiveScope
 from podcast_workspace.domain.search import SearchHit, SearchKind
 from podcast_workspace.services.bale_bot import BotStatus, ItemKind, ItemRef
 from podcast_workspace.services.history import Change, ChangeKind, Target, TargetKind
@@ -75,6 +76,7 @@ from podcast_workspace.ui.icons import (
     sidebar_icon,
     tags_icon,
     theme_icon,
+    trash_icon,
     voices_icon,
 )
 from podcast_workspace.ui.idea_inbox import IdeaInbox
@@ -85,6 +87,7 @@ from podcast_workspace.ui.pages.resume_page import ResumePage
 from podcast_workspace.ui.pages.search_page import SearchPage
 from podcast_workspace.ui.pages.source_page import SourcePage
 from podcast_workspace.ui.pages.tags_page import TagsPage
+from podcast_workspace.ui.pages.trash_page import TrashPage
 from podcast_workspace.ui.player.transcript_panel import TranscriptionJobs
 from podcast_workspace.ui.settings_dialog import (
     TAB_DATA,
@@ -115,11 +118,19 @@ SEARCH_DEBOUNCE_MS = 90
 WARM_UP_DELAY_MS = 1500
 COUNTS_DELAY_MS = 250
 BACKUP_CHECK_DELAY_MS = 1200  # after the window has settled, not in the way of startup
+PURGE_INTERVAL_MS = 60 * 60 * 1000  # the 30-day trash is emptied hourly while the app is open
 IDEA_HOTKEY_ID = 0xB0B1
 # Changes worth a toast: the ones that take something away, where noticing late is the
 # whole problem. Everything else is visible on the page as it happens.
 UNDO_OFFERED = frozenset(
-    {ChangeKind.DELETE, ChangeKind.TAGS_REMOVED, ChangeKind.UNLINKED, ChangeKind.MERGE}
+    {
+        ChangeKind.DELETE,
+        ChangeKind.TAGS_REMOVED,
+        ChangeKind.UNLINKED,
+        ChangeKind.MERGE,
+        ChangeKind.ARCHIVE,
+        ChangeKind.TRASH,
+    }
 )
 
 
@@ -291,6 +302,7 @@ class MainWindow(QMainWindow):
         self.source_page = SourcePage(workspace, self.events, self.player)
         self.ideas_page = IdeasPage(workspace, self.events)
         self.tags_page = TagsPage(workspace, self.events)
+        self.trash_page = TrashPage(workspace, self.events)
         self.workspace_page = self.episodes_page.workspace  # lives inside the Episodes page
         self.resume_page = ResumePage()
         self.search_page = SearchPage()
@@ -301,9 +313,11 @@ class MainWindow(QMainWindow):
             self.source_page,
             self.ideas_page,
             self.tags_page,
+            self.trash_page,
         ]
 
         self.search_page.open_hit.connect(self._open_hit)
+        self.search_page.scope_changed.connect(self._run_search)
         self.episodes_page.open_voice.connect(self.open_voice)
         self.episodes_page.open_idea.connect(self.open_idea)
         self.episodes_page.record_requested.connect(self._record)
@@ -355,6 +369,11 @@ class MainWindow(QMainWindow):
         if app is not None:
             app.focusChanged.connect(self._watch_for_history_keys)
         self._warm_timer.start()
+        # Items 30 days in the trash go before anything is counted or shown.
+        self._auto_purged = self._purge_trash()
+        self._purge_timer = QTimer(self, interval=PURGE_INTERVAL_MS)
+        self._purge_timer.timeout.connect(self._on_purge_timer)
+        self._purge_timer.start()
         self._refresh_counts()
 
         self._install_shortcuts()
@@ -428,6 +447,7 @@ class MainWindow(QMainWindow):
             (strings.NAV_SOURCE, folder_icon, "source"),
             (strings.NAV_IDEAS, ideas_icon, "ideas"),
             (strings.NAV_TAGS, tags_icon, "tags"),
+            (strings.NAV_TRASH, trash_icon, "trash"),
         )
         for index, (label, _painter, section) in enumerate(entries):
             button = NavButton(label, index, section)
@@ -594,10 +614,11 @@ class MainWindow(QMainWindow):
             counts = [
                 len(self._ws.episodes.list_all()),
                 None,  # the board shows the same episodes
-                len(self._ws.voices.list_all()),
+                len(self._ws.voices.list_all(ArchiveScope.ACTIVE)),
                 self.source_page.pending_count(),  # files waiting to be reviewed
-                len(self._ws.ideas.list_all()),
+                len(self._ws.ideas.list_all(ArchiveScope.ACTIVE)),
                 len(self._ws.tags.list_all()),
+                self._ws.trash.count() or None,  # an empty trash shows no number
             ]
         except Exception:
             return  # decoration only; never break the window over it
@@ -742,6 +763,7 @@ class MainWindow(QMainWindow):
     def _leave_search(self) -> None:
         """Esc, or Back from the results: put the user down where they started searching."""
         entry = self._before_search or NavEntry(self._pages[0])
+        self.search_page.reset_scope()  # the next search starts on «active» again
         self.search.clear()
         self.show_page(entry.page, focus=True, remember=False)
         entry.restore()
@@ -787,7 +809,10 @@ class MainWindow(QMainWindow):
             return
         self.events.tags_changed.emit()
         self.events.data_changed.emit()
-        self._reveal(change.target)
+        if change.kind is ChangeKind.TRASH and forward:
+            self.show_page(self.trash_page, remember=False)
+        else:
+            self._reveal(change.target)
         self._last_change = history.peek_undo()
         template = strings.REDO_DONE if forward else strings.UNDO_DONE
         self.toast.show_message(template.format(action=describe_change(change)))
@@ -879,7 +904,7 @@ class MainWindow(QMainWindow):
                 self._leave_search()
             return
         try:
-            result = self._ws.search.search(query)
+            result = self._ws.search.search(query, scope=self.search_page.scope())
         except Exception as exc:
             show_error(self, exc)
             return
@@ -900,6 +925,7 @@ class MainWindow(QMainWindow):
         if self._before_search is not None:
             self._history.push_entry(self._before_search)
             self._before_search = None
+        self.search_page.reset_scope()
         match hit.kind:
             case SearchKind.EPISODE:
                 self.show_page(self.episodes_page, remember=False)
@@ -994,6 +1020,24 @@ class MainWindow(QMainWindow):
             self._ws.backup.snooze_reminder(days=1, now=datetime.now(UTC))
         # "Later" (or closing the box) asks again next time the app opens.
 
+    def _purge_trash(self) -> int:
+        """Delete for good what has spent the full period in the trash."""
+        try:
+            return len(self._ws.trash.purge_expired())
+        except Exception:
+            return 0  # tried again within the hour; never break the window over it
+
+    def _on_purge_timer(self) -> None:
+        purged = self._purge_trash()
+        if purged:
+            self.events.data_changed.emit()
+            self._announce_purge(purged)
+
+    def _announce_purge(self, purged: int) -> None:
+        self.toast.show_message(
+            strings.TRASH_AUTO_PURGED.format(n=local_digits(purged), days=local_digits(TRASH_DAYS))
+        )
+
     def flush_pages(self) -> None:
         """Write pending autosaves (before export/import)."""
         self.ideas_page.flush()
@@ -1068,6 +1112,9 @@ class MainWindow(QMainWindow):
             self.hotkey.register(int(self.winId()), *IDEA_HOTKEY)
             self.bot.restart()  # quietly does nothing unless enabled with a token
             QTimer.singleShot(BACKUP_CHECK_DELAY_MS, self._check_backup)
+            if self._auto_purged:
+                purged = self._auto_purged
+                QTimer.singleShot(0, lambda: self._announce_purge(purged))
             if self.stack.currentWidget() is self.resume_page:
                 QTimer.singleShot(0, self.resume_page.focus_main)
 

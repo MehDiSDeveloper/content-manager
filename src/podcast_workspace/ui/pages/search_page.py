@@ -1,4 +1,8 @@
-"""Global search results. Fed by the search bar in the main window."""
+"""Global search results. Fed by the search bar in the main window.
+
+The archive switch in the header decides whether archived voices and ideas are searched
+too; it is back on «active» every time a search starts.
+"""
 
 import html
 
@@ -13,10 +17,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from podcast_workspace.domain.lifecycle import ArchiveScope
 from podcast_workspace.domain.search import SearchHit, SearchResult
 from podcast_workspace.domain.text import find_spans, query_terms
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.support import local_digits
+from podcast_workspace.ui.widgets.scope_switch import ScopeSwitch
 
 HIT_ROLE = Qt.ItemDataRole.UserRole
 RESULTS_MAX_WIDTH = 880
@@ -81,6 +87,7 @@ class HitWidget(QWidget):
 
 class SearchPage(QWidget):
     open_hit = Signal(object)  # SearchHit
+    scope_changed = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -101,6 +108,9 @@ class SearchPage(QWidget):
         header.addStretch(1)
         self.count = QLabel(objectName="muted")
         header.addWidget(self.count)
+        self.scope_switch = ScopeSwitch(strings.SEARCH_SCOPE_TOOLTIP)
+        self.scope_switch.scope_changed.connect(lambda _s: self.scope_changed.emit())
+        header.addWidget(self.scope_switch)
         root.addLayout(header)
         self.corrections = QLabel(objectName="muted")
         root.addWidget(self.corrections)
@@ -138,6 +148,12 @@ class SearchPage(QWidget):
         )
         self.corrections.setText(strings.SEARCH_CORRECTED.format(pairs=pairs) if pairs else "")
         self.corrections.setVisible(bool(pairs))
+
+    def scope(self) -> ArchiveScope:
+        return self.scope_switch.scope()
+
+    def reset_scope(self) -> None:
+        self.scope_switch.set_scope(ArchiveScope.ACTIVE)
 
     def open_current(self) -> None:
         item = self.results.currentItem()

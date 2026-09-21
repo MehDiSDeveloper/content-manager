@@ -1,4 +1,4 @@
-# Podcast Workspace — architecture (v1.5)
+# Podcast Workspace — architecture (v1.6)
 
 Local-first Windows desktop workspace for a solo Persian podcaster: episodes, voices, ideas,
 tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3.12, PySide6.
@@ -20,15 +20,15 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 ## Data model
 - Episode: title, status, next_action, season_id (nullable), created_at, updated_at, last_opened_at; tags; linked voices + ideas
 - Season: title, created_at. Ordered by id (season one first). Deleting one keeps its episodes, seasonless
-- Voice: file_path (referenced in place, never copied/moved/deleted), duration_ms, format, imported_at; ≤15 tags
-- IdeaNote: free text, created/updated; ≤15 tags. Raw material, no timestamp
+- Voice: file_path (referenced in place, never copied/moved/deleted), duration_ms, format, imported_at, archived_at, deleted_at; ≤15 tags
+- IdeaNote: free text, created/updated, archived_at, deleted_at; ≤15 tags. Raw material, no timestamp
 - TimestampNote: voice_id, position_ms, text. Separate entity from IdeaNote, never merge
 - EpisodeNote: episode_id, title, body (unlimited per episode)
 - Transcript: voice_id (unique: one per voice, re-run replaces), segments [(start_ms, end_ms, text)] as JSON, joined text column for FTS, model, language
 - Tag: name (unique, NOCASE), color, parent_id (hierarchy)
 - Link tables: episode_tags, voice_tags, idea_note_tags, episode_voices, episode_idea_notes. `settings` = key → JSON
 - Status pipeline: idea → outline → recorded → script_ready → edited → published
-- Migrations: 5c0bcd4c8144 schema · a7f3c2d91e10 FTS · c41e8b7d2f05 status remap · e5a91d3c7b28 transcripts · b8d4e6f1a320 seasons
+- Migrations: 5c0bcd4c8144 schema · a7f3c2d91e10 FTS · c41e8b7d2f05 status remap · e5a91d3c7b28 transcripts · b8d4e6f1a320 seasons · d2c7f9a4b615 archive/trash
 
 ## Where things live
 - Rules: `domain/rules.py` (15-tag limit, names, colors, hierarchy), `entities.py` (Taggable mixin enforces limit)
@@ -42,6 +42,7 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 - Recorder handoff: `services/recording.py` (os.startfile of the configured program); Ctrl+R is a MainWindow shortcut, so it works on every page
 - Audio folder (review before import): `services/source_folder.py` (scan, add), `ui/pages/source_page.py` (QFileSystemWatcher on the folder + subfolders, 400 ms debounce). Setting `voices.source_folder`
 - Seasons: `SeasonService` in `services/content_services.py`, `EpisodeService.set_season`; the season box over the Episodes list (`ui/pages/content_pages.py`, choice kept in `ui.episode_season_filter`) and beside the status in the workspace; name prompts in `ui/seasons.py`
+- Archive / trash: rules in `domain/lifecycle.py` (ArchiveScope, 30-day period, tested in `test_archive_trash.py`); `set_archived` / `delete` (= move to trash) in `IdeaService` / `VoiceService`; `services/trash.py` (list, restore, purge, purge_expired); `ShelfListPage` in `ui/pages/content_pages.py`; switch widget `ui/widgets/scope_switch.py`; `ui/pages/trash_page.py`; hourly purge timer in MainWindow
 - Bale bot: `integrations/bale_api.py` (HTTP), `domain/bot_input.py` (hashtag/tag-list parsing), `services/bale_bot.py` (worker + conversation), `ui/bot_controller.py` (Qt relay)
 - Transcription: `services/transcription.py`, `ui/player/transcript_panel.py` (`TranscriptionJobs` + panel)
 - Export/import: `services/backup.py`, `repositories/maintenance.py` (snapshot, wipe)
@@ -154,6 +155,25 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 - Export = one zip: `data.json` (all entities, ids kept) + `audio/<id>_<name>` stored uncompressed. Settings not exported (per machine, bot token is a secret)
 - Import = full restore, not merge: validate every entity first, extract audio, snapshot DB to `backups/before-import_*.db`, then wipe + insert in one transaction. Voice keeps its original path if a same-size file is still there, else points into `library/`
 
+- Archive and trash (v1.6):
+  - Timestamps, not flags: `archived_at` / `deleted_at` on voices and ideas only (episodes keep
+    their hard delete with undo). The purge counts 30 days from `deleted_at`
+  - Archived = put away: out of the default («فعال») list, search, smart links and the link
+    picker; still shown where it is already linked (with a badge) and on the tags page. The
+    three-way switch starts on «فعال» every run; search's own switch resets when a search ends.
+    Anything reached from elsewhere widens the page switch to «همه» rather than stay hidden
+  - Trashed = gone from everywhere except the trash page: repos' `list_all()` leave it out
+    unless `include_trashed` (export, the audio folder's known-files check, restoring episode
+    links), tag usage counts skip it, `SearchRepository.hidden` drops it along with its
+    timestamp notes and transcript. Everything it carries stays in the database until purge
+  - Delete on Voices/Ideas asks nothing: it is a move to the trash with an undo toast. The
+    trash page asks before "delete forever" / "empty". Restore and purge are not on the undo
+    stack (restore is undone by deleting again; purge is final)
+  - Purge = real row delete; the CASCADEs take tag links, timestamp notes, transcript and
+    episode links. Tags themselves stay (shared). Runs at startup and hourly
+  - Importing the file of a trashed voice brings that voice back out of the trash
+  - Exports carry both timestamps (older exports import with neither)
+
 ## Gotchas
 - New migration: set `PODCAST_WORKSPACE_HOME=<tmp>` before `alembic revision --autogenerate`, else it diffs your real DB. Replace autogenerated `UTCDateTime()` with `sa.DateTime()`; keep `render_as_batch=True`; `alembic check` must stay clean (env.py ignores `search_*`)
 - NEVER batch-alter `episodes`, `voices`, `idea_notes` or `tags`: the rebuild drops the old table under foreign_keys=ON and every CASCADE child goes with it (tag links, notes, transcripts). Add columns with a plain `ALTER TABLE … ADD COLUMN` and no foreign key (see b8d4e6f1a320); keep the reference valid in the repository
@@ -203,6 +223,8 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
   HighlightedText (unreadable in dark). Lines/focus/markers use the Link role (accent_strong)
 
 ## Status
+- v1.6: archive (active/all/archived switch on Voices, Ideas and search) and a 30-day trash
+  page (select, restore, delete forever, restore all, empty, search inside the trash)
 - v1.5: Ctrl+R opens the recorder from anywhere. Audio folder page: the recording folder read
   live, files played and reviewed without being stored, added one at a time («افزودن به فضای
   کاری», Ctrl+Enter; the next file takes its place) — tags and notes only once added. Seasons:

@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
 )
 
 from podcast_workspace.domain.entities import Episode, EpisodeNote, EpisodeStatus
+from podcast_workspace.domain.lifecycle import ArchiveScope
 from podcast_workspace.domain.pipeline import days_untouched, is_stale
 from podcast_workspace.domain.smart_links import LinkKind, SmartLink
 from podcast_workspace.domain.text import normalize_for_match
@@ -935,7 +936,8 @@ class EpisodeWorkspacePage(QWidget):
                 (
                     vid,
                     Path(voice.file_path).name,
-                    f"{format_duration(voice.duration_ms)}  ·  {voice.format.upper()}",
+                    (strings.ARCHIVED_BADGE + "  ·  " if voice.archived else "")
+                    + f"{format_duration(voice.duration_ms)}  ·  {voice.format.upper()}",
                 )
             )
         self.materials.show_linked(LinkKind.VOICE, voice_rows)
@@ -946,6 +948,8 @@ class EpisodeWorkspacePage(QWidget):
             if idea.id is None:
                 continue
             tag_names = [t.name for t in self._ws.tags.by_ids(idea.tag_ids)]
+            if idea.archived:
+                tag_names.insert(0, strings.ARCHIVED_BADGE)
             idea_rows.append(
                 (idea.id, _first_line(idea.text), strings.LIST_SEPARATOR.join(tag_names))
             )
@@ -979,7 +983,7 @@ class EpisodeWorkspacePage(QWidget):
             title = strings.WS_PICK_VOICE
             rows = [
                 (v.id, Path(v.file_path).name, format_duration(v.duration_ms))
-                for v in self._ws.voices.list_all()
+                for v in self._ws.voices.list_all(ArchiveScope.ACTIVE)
                 if v.id is not None and v.id not in episode.voice_ids
             ]
         else:
@@ -990,7 +994,7 @@ class EpisodeWorkspacePage(QWidget):
                     _first_line(i.text),
                     strings.LIST_SEPARATOR.join(t.name for t in self._ws.tags.by_ids(i.tag_ids)),
                 )
-                for i in self._ws.ideas.list_all()
+                for i in self._ws.ideas.list_all(ArchiveScope.ACTIVE)
                 if i.id is not None and i.id not in episode.idea_note_ids
             ]
         dialog = PickerDialog(self, title, rows)
