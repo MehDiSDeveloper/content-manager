@@ -64,7 +64,7 @@ EPISODE_STATUS = "Status"
 EPISODE_NEXT_ACTION = "Next step"
 EPISODE_NEXT_ACTION_PLACEHOLDER = "One sentence: what is the next thing to do for this episode?"
 EPISODE_EMPTY = "No episodes yet. Start with “New episode”."
-EPISODE_DELETE_CONFIRM = "Delete episode “{title}”? Linked voices and ideas are kept."
+EPISODE_DELETE_CONFIRM = "Delete episode “{title}”? Linked audio and text ideas are kept."
 LIST_HIDE = "Hide the list — more room to write  (Ctrl+L)"
 LIST_SHOW = "Show the episode list  (Ctrl+L)"
 EPISODE_DELETE = "Delete episode"
@@ -108,9 +108,9 @@ SOURCE_HINT = (
 )
 SOURCE_FILTER_PLACEHOLDER = "Filter by file name…"
 SOURCE_ADD = "Add to workspace"
-SOURCE_ADD_TOOLTIP = "Adds it to Voices; the file stays where it is  (Ctrl+Enter)"
+SOURCE_ADD_TOOLTIP = "Adds it to audio ideas; the file stays where it is  (Ctrl+Enter)"
 SOURCE_ADD_OPEN = "Add and open"
-SOURCE_ADD_OPEN_TOOLTIP = "Add it, then go to Voices to tag it and take notes"
+SOURCE_ADD_OPEN_TOOLTIP = "Add it, then go to Ideas to tag it and take notes"
 SOURCE_ADDING = "Adding…"
 SOURCE_ADDED = "“{name}” was added to audio ideas"
 SOURCE_IN_SUBFOLDER = "in {folder}"
@@ -135,7 +135,7 @@ VOICE_NOTE_COUNT = "{n} notes"
 IDEAS_TITLE = "Ideas"
 IDEA_NEW = "Write idea"
 IDEA_PLACEHOLDER = "Write your idea… (saved automatically)"
-IDEA_UNSAVED = "New idea (not saved yet)"
+IDEA_UNSAVED = "New text idea (not saved yet)"
 
 ARCHIVE_SCOPES = {
     "active": "Active",
@@ -164,8 +164,8 @@ TRASH_FILTER_PLACEHOLDER = "Search the trash…"
 TRASH_FILTER_TOOLTIP = "Search the text, names and tags of deleted items  (Ctrl+F)"
 TRASH_KINDS = {
     "all": "All",
-    "voice": "Voices",
-    "idea": "Ideas",
+    "voice": "Audio",
+    "idea": "Text",
 }
 TRASH_RESTORE = "Restore"
 TRASH_RESTORE_TOOLTIP = "Put the selected items back where they were  (Enter)"
@@ -274,7 +274,7 @@ TS_PLACEHOLDER = "A note at this moment…  (Insert)"
 TS_ADD = "Add"
 TS_CAPTURE_TOOLTIP = "The note's time; click to take the current moment"
 TS_GOTO_TOOLTIP = "Go to this moment (Enter)"
-TS_EMPTY = "No notes for this voice yet. Press Insert while it plays and start typing."
+TS_EMPTY = "No notes for this audio yet. Press Insert while it plays and start typing."
 TS_EDIT = "Edit (F2)"
 TS_DELETE = "Delete (Delete)"
 TS_DELETE_CONFIRM = "Delete note “{text}”?"
@@ -297,34 +297,34 @@ WS_NOTE_DELETE_CONFIRM = "Delete note “{title}”?"
 WS_LINK_ADD = "Add…"
 WS_LINKED_EMPTY = "—"
 WS_VOICES_EMPTY = (
-    "No voices are linked to this episode yet. Click “Add…” or pick from the suggestions tab."
+    "No audio ideas are linked to this episode yet. Click “Add…” or pick from the suggestions tab."
 )
 WS_IDEAS_EMPTY = (
-    "No ideas are linked to this episode yet. Click “Add…” or pick from the suggestions tab."
+    "No text ideas are linked to this episode yet. Click “Add…” or pick from the suggestions tab."
 )
 WS_UNLINK = "Unlink (Delete)"
 WS_OPEN = "Open (Enter)"
 WS_MATERIALS = "Episode material"
-WS_TAB_VOICES = "Voices"
-WS_TAB_IDEAS = "Ideas"
+WS_TAB_VOICES = "Audio"
+WS_TAB_IDEAS = "Text"
 WS_TAB_SMART = "Suggested"
 WS_TAB_COUNT = "{label} {n}"
 WS_SMART = "Same-tag suggestions"
-WS_SMART_NO_TAGS = "Tag the episode and voices and ideas with the same tags show up here."
-WS_SMART_NONE = "No voice or idea shares a tag with this episode."
+WS_SMART_NO_TAGS = "Tag the episode and audio and text ideas with the same tags show up here."
+WS_SMART_NONE = "No idea shares a tag with this episode."
 WS_SMART_SUBTITLE = "{kind}, {n} shared tags: {names}"
 WS_SMART_LINKED = "Linked ✓"
 WS_LINK = "Link"
 WS_UNLINK_SHORT = "Unlink"
 WS_RECORD = "Record"
 WS_RECORD_TOOLTIP = "Launch your recording program — from anywhere in the app (Ctrl+R)"
-WS_PICK_VOICE = "Add voices to the episode"
-WS_PICK_IDEA = "Add ideas to the episode"
+WS_PICK_VOICE = "Add audio ideas to the episode"
+WS_PICK_IDEA = "Add text ideas to the episode"
 WS_PICK_FILTER = "Filter…"
 WS_PICK_ADD = "Add"
 WS_PICK_EMPTY = "Nothing left to add."
-KIND_VOICE = "Voice"
-KIND_IDEA = "Idea"
+KIND_VOICE = "Audio idea"
+KIND_IDEA = "Text idea"
 
 RESUME_EYEBROW = "Pick up where you left off"
 RESUME_NEXT_ACTION = "Next step"
@@ -334,7 +334,7 @@ RESUME_NO_NOTE = "No notes yet."
 RESUME_CONTINUE = "Continue"
 RESUME_SKIP = "All episodes (Esc)"
 
-INBOX_TITLE = "New idea"
+INBOX_TITLE = "New text idea"
 INBOX_PLACEHOLDER = "Write the idea…"
 INBOX_HINT = "Enter saves · Shift+Enter new line · Esc closes"
 
@@ -359,7 +359,7 @@ SETTINGS_TAB_BOT = "Bale bot"
 SETTINGS_TAB_TRANSCRIPTION = "Transcription"
 SETTINGS_TAB_DATA = "Data"
 
-BOT_ENABLE = "Receive ideas and voices from a Bale bot"
+BOT_ENABLE = "Receive text and audio ideas from a Bale bot"
 BOT_TOKEN = "Bot token"
 BOT_TOKEN_PLACEHOLDER = "The token @botfather gave you in Bale"
 BOT_TOKEN_SHOW = "Show"
@@ -370,8 +370,8 @@ BOT_TOKEN_BAD = "The token was rejected."
 BOT_TOKEN_OFFLINE = "Could not reach Bale; check your internet connection."
 BOT_HELP = (
     "Message @botfather in Bale, create a bot and paste its token here. "
-    "Every text message to the bot becomes an idea and every voice message a voice in this "
-    "workspace; messages sent while the app is closed arrive when it opens."
+    "Every text message to the bot becomes a text idea and every voice message an audio idea "
+    "in this workspace; messages sent while the app is closed arrive when it opens."
 )
 BOT_OWNER = "Bot owner: {name}"
 BOT_OWNER_NONE = "Nobody has messaged the bot yet; the first private chat becomes its owner."
@@ -384,34 +384,36 @@ BOT_STATUS = {
     "unauthorized": "token rejected",
 }
 BOT_SIDEBAR = "Bale: {status}"
-BOT_RECEIVED_IDEA = "A new idea arrived from Bale"
-BOT_RECEIVED_VOICE = "A new voice arrived from Bale"
+BOT_RECEIVED_IDEA = "A new text idea arrived from Bale"
+BOT_RECEIVED_VOICE = "A new audio idea arrived from Bale"
 
 TR_TAB_NOTES = "Notes"
 TR_TAB_TRANSCRIPT = "Transcript"
 TR_RUN = "Transcribe"
 TR_RERUN = "Transcribe again"
-TR_RUN_TOOLTIP = "Turn this voice's speech into Persian text, offline"
+TR_RUN_TOOLTIP = "Turn this audio's speech into Persian text, offline"
 TR_CANCEL = "Cancel"
 TR_COPY = "Copy text"
 TR_COPIED = "Text copied"
-TR_EMPTY = "No transcript yet. “Transcribe” turns this voice into text, on this computer."
-TR_NO_SPEECH = "No speech was found in this voice."
+TR_EMPTY = "No transcript yet. “Transcribe” turns this audio into text, on this computer."
+TR_NO_SPEECH = "No speech was found in this audio."
 TR_RUNNING = "Transcribing… {percent}%"
 TR_LOADING_MODEL = "Preparing the model…"
-TR_BUSY_ELSEWHERE = "Another voice is being transcribed."
-TR_QUEUED = "This voice is waiting in the “Transcribe all” queue."
+TR_BUSY_ELSEWHERE = "Another audio is being transcribed."
+TR_QUEUED = "This audio is waiting in the “Transcribe all” queue."
 TR_ALL = "Transcribe all"
 TR_ALL_STOP = "Stop transcribing all"
-TR_ALL_TOOLTIP = "Queue the voices in this list with no transcript and transcribe them one by one"
-TR_ALL_NONE = "Every voice in this list already has a transcript."
+TR_ALL_TOOLTIP = (
+    "Queue the audio ideas in this list with no transcript and transcribe them one by one"
+)
+TR_ALL_NONE = "Every audio idea in this list already has a transcript."
 TR_ALL_CONFIRM = (
-    "{n} voices have no transcript. Transcribe them one by one in the background?\n"
+    "{n} audio ideas have no transcript. Transcribe them one by one in the background?\n"
     "Depending on their length this can take a long time; you can keep using the app meanwhile."
 )
 TR_ALL_START = "Start transcribing"
-TR_ALL_DONE = "Transcribe all finished: {ok} of {total} voices transcribed."
-TR_ALL_STOPPED = "Transcribe all stopped: {ok} of {total} voices transcribed."
+TR_ALL_DONE = "Transcribe all finished: {ok} of {total} audio ideas transcribed."
+TR_ALL_STOPPED = "Transcribe all stopped: {ok} of {total} audio ideas transcribed."
 TR_ALL_SIDEBAR = "Transcribing all: {n} of {total}"
 TR_ALL_SIDEBAR_PERCENT = "Transcribing all: {n} of {total}  ·  {percent}%"
 TR_META = "{n} segments, {model}, {when}"
@@ -464,12 +466,14 @@ DATA_IMPORT_HELP = (
 )
 DATA_IMPORT_DIALOG = "Choose an export file"
 DATA_IMPORT_CONFIRM = (
-    "Replace all current episodes, voices, ideas and tags with this file's contents?\n"
+    "Replace all current episodes, audio and text ideas and tags with this file's contents?\n"
     "A backup of the current state is saved in the backups folder."
 )
 DATA_IMPORT_ACTION = "Replace"
 DATA_IMPORTING = "Restoring… {percent}%"
-DATA_IMPORT_DONE = "Restored: {episodes} episodes, {voices} voices, {ideas} ideas, {tags} tags."
+DATA_IMPORT_DONE = (
+    "Restored: {episodes} episodes, {voices} audio ideas, {ideas} text ideas, {tags} tags."
+)
 DATA_IMPORT_BAD_FILE = "This file is not an export of this app, or it is damaged."
 DATA_FOLDER = "Data folder"
 DATA_OPEN_FOLDER = "Open folder"
@@ -485,7 +489,7 @@ BACKUP_REMINDER_TITLE = "Backup reminder"
 BACKUP_REMINDER_BODY = "It has been {days} days since your last backup."
 BACKUP_REMINDER_NEVER = "You have not backed up your data yet."
 BACKUP_REMINDER_HINT = (
-    "One export file keeps every episode, note, idea and voice. "
+    "One export file keeps every episode, note, and audio and text idea. "
     "Keep it on another disk or in cloud storage."
 )
 BACKUP_NOW = "Back up now"
@@ -518,8 +522,8 @@ UNDO_OFFER = "Done: {action}"
 UNDO_TARGETS = {
     "episode": "episode",
     "season": "season",
-    "voice": "voice",
-    "idea": "idea",
+    "voice": "audio idea",
+    "idea": "text idea",
     "tag": "tag",
     "episode_note": "note",
     "timestamp_note": "timestamped note",

@@ -229,7 +229,8 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
   subtags), all ANDed (`domain/list_filter.FacetFilter`), plus «در محتوا» for idea text and
   transcripts. Global search reads titles only unless «در محتوا» is on (idea first line indexed
   as its title, migration f3a8c1e5d907), counts what the content would add, and has kind tabs
-  with counts
+  with counts. One vocabulary everywhere (UI, episode workspace, trash, undo, Bale bot):
+  «ایدهٔ صوتی» / «ایدهٔ متنی» (audio idea / text idea); «صوت» for the recording itself
 - v1.7: «Transcribe all» queue on the Voices page, progress in the sidebar
 - v1.6: archive (active/all/archived switch on Voices, Ideas and search) and a 30-day trash
   page (select, restore, delete forever, restore all, empty, search inside the trash)
