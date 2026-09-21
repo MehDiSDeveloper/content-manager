@@ -36,6 +36,7 @@ from podcast_workspace.ui.support import (
     run_async,
     show_error,
 )
+from podcast_workspace.ui.widgets.key_hint import add_key_hint
 
 WATCH_DELAY_MS = 400  # a recorder writes in bursts; settle before reading the folder
 
@@ -73,13 +74,14 @@ class SourcePage(ListPage):
         record = QPushButton(strings.WS_RECORD, objectName="recordButton")
         record.setToolTip(strings.WS_RECORD_TOOLTIP)
         record.clicked.connect(self.record_requested)
-        header = self._header_layout()
+        header = self.header
         header.insertWidget(header.indexOf(self.primary), record)
+        add_key_hint(header, record, "Ctrl+R")
 
         # One elided line (the folder is reference information), copied on click.
         self.folder_label = PathLabel()
         side = self.list_side.layout()
-        side.insertWidget(1, self.folder_label)
+        side.insertWidget(side.indexOf(self.status), self.folder_label)
 
         col = QVBoxLayout(self.editor)
         col.setContentsMargins(0, 0, 0, 0)
@@ -101,6 +103,7 @@ class SourcePage(ListPage):
         self.add_button.setToolTip(strings.SOURCE_ADD_TOOLTIP)
         self.add_button.clicked.connect(lambda: self.add_current(open_after=False))
         actions.addWidget(self.add_button)
+        add_key_hint(actions, self.add_button, "Ctrl+Enter")
         self.add_open_button = QPushButton(strings.SOURCE_ADD_OPEN)
         self.add_open_button.setToolTip(strings.SOURCE_ADD_OPEN_TOOLTIP)
         self.add_open_button.clicked.connect(lambda: self.add_current(open_after=True))
@@ -121,11 +124,6 @@ class SourcePage(ListPage):
         self._reread.timeout.connect(self._on_folder_changed)
         events.data_changed.connect(self._on_data_changed)
         self._watch()
-
-    def _header_layout(self) -> QHBoxLayout:
-        layout = self.list_side.layout().itemAt(0).layout()
-        assert isinstance(layout, QHBoxLayout)
-        return layout
 
     # the folder --------------------------------------------------------------------------
     def _watch(self) -> None:

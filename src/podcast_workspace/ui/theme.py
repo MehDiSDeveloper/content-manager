@@ -341,6 +341,12 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     }}
     QToolButton#toggleChip:focus {{ border: 1px dashed {c.accent_strong}; }}
     #hint {{ color: {c.muted}; font-size: 8.5pt; padding: 0 4px; }}
+    /* Keycaps (widgets/key_hint.py): quiet enough to sit beside every main control. */
+    QLabel#keyHint {{
+        color: {c.muted}; background: transparent; border: 1px solid {c.border};
+        border-bottom-width: 2px; border-radius: 5px; padding: 0 5px;
+        font-size: 8pt; font-weight: 500;
+    }}
     QPushButton#linkButton {{
         background: transparent; border: none; color: {c.accent_strong};
         padding: 2px 4px; font-weight: 600;

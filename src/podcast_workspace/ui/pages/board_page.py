@@ -44,6 +44,7 @@ from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.support import AppEvents, local_digits, show_error
 from podcast_workspace.ui.theme import TEXT_WEIGHT, colors
+from podcast_workspace.ui.widgets.key_hint import add_key_hint
 
 ID_ROLE = Qt.ItemDataRole.UserRole
 NEXT_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -252,9 +253,9 @@ class BoardPage(QWidget):
         header.addWidget(title)
         header.addStretch(1)
         self.primary = QPushButton(strings.EPISODE_NEW, objectName="primary")
-        self.primary.setToolTip("Ctrl+N")
         self.primary.clicked.connect(self.primary_action)
         header.addWidget(self.primary)
+        add_key_hint(header, self.primary, "Ctrl+N")
         root.addLayout(header)
 
         host = QWidget(objectName="boardHost")

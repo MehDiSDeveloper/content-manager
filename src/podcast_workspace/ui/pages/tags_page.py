@@ -36,6 +36,7 @@ from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.pages.base import SUBTITLE_ROLE, TwoLineDelegate
 from podcast_workspace.ui.support import AppEvents, confirm, local_digits, show_error
+from podcast_workspace.ui.widgets.key_hint import add_key_hint, attach_key_hint
 from podcast_workspace.ui.widgets.tag_dialogs import NewTagDialog, TagPickerDialog
 from podcast_workspace.ui.widgets.tag_widgets import color_dot
 
@@ -80,9 +81,10 @@ class TagsPage(QWidget):
         header.addWidget(QLabel(strings.TAGS_TITLE, objectName="pageTitle"))
         header.addStretch(1)
         self.primary = QPushButton(strings.TAG_NEW, objectName="primary")
-        self.primary.setToolTip("Ctrl+N")
-        self.primary.clicked.connect(self.create_tag)
+        self.primary.clicked.connect(lambda: self.create_tag())
         header.addWidget(self.primary)
+        # Ctrl+N works here too, but Ctrl+T works everywhere: that is the one to learn.
+        add_key_hint(header, self.primary, "Ctrl+T")
         root.addLayout(header)
 
         body = QHBoxLayout()
@@ -97,6 +99,7 @@ class TagsPage(QWidget):
         self.filter.setClearButtonEnabled(True)
         self.filter.textChanged.connect(self._apply_filter)
         self.filter.installEventFilter(self)
+        attach_key_hint(self.filter, "Ctrl+F")
         filter_row.addWidget(self.filter, 1)
         # Six verbs in a row taught nothing; one menu (and the right-click menu on the
         # row itself) keeps the same actions where the tag is.
@@ -173,7 +176,7 @@ class TagsPage(QWidget):
 
         new_action = QAction(self, shortcut=QKeySequence.StandardKey.New)
         new_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        new_action.triggered.connect(self.create_tag)
+        new_action.triggered.connect(lambda: self.create_tag())
         self.addAction(new_action)
         events.tags_changed.connect(self.refresh)
 
@@ -353,19 +356,22 @@ class TagsPage(QWidget):
             self.refresh(select_id=select_id)
 
     # actions ---------------------------------------------------------------------------
-    def create_tag(self) -> None:
-        dialog = NewTagDialog(self._ws.tags, self)
-        dialog.name_edit.setText(self.filter.text().strip())
+    def create_tag(self, name: str | None = None) -> int | None:
+        """Ask for a new tag's name — by default whatever the filter box is looking for —
+        and return the new tag's id, or None when nothing was made."""
+        dialog = NewTagDialog(self._ws.tags, self.window())
+        dialog.name_edit.setText(self.filter.text().strip() if name is None else name)
         dialog.name_edit.textEdited.emit(dialog.name_edit.text())
         if not dialog.exec():
-            return
+            return None
         try:
             tag = self._ws.tags.create(dialog.name_edit.text(), allow_similar=True)
         except Exception as exc:
-            show_error(self, exc)
-            return
+            show_error(self.window(), exc)
+            return None
         self.filter.clear()
         self._changed(tag.id)
+        return tag.id
 
     def rename_tag(self) -> None:
         item = self.tag_list.currentItem()

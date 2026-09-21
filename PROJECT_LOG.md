@@ -40,6 +40,7 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 - Workspace/board/resume: `ui/pages/{episode_workspace,board_page,resume_page}.py`; smart links `domain/smart_links.py`; stale `domain/pipeline.py`
 - Idea inbox hotkey: `ui/hotkey.py` (RegisterHotKey, Ctrl+Alt+I), `ui/idea_inbox.py`
 - Recorder handoff: `services/recording.py` (os.startfile of the configured program); Ctrl+R is a MainWindow shortcut, so it works on every page
+- Shortcuts: app-wide ones in `MainWindow._install_shortcuts`, shown as keycaps (`ui/widgets/key_hint.py`: `KeyHint` beside a button, `attach_key_hint` inside an empty line edit, `NavButton(keys=…)` in the sidebar)
 - Audio folder (review before import): `services/source_folder.py` (scan, add), `ui/pages/source_page.py` (QFileSystemWatcher on the folder + subfolders, 400 ms debounce). Setting `voices.source_folder`
 - Seasons: `SeasonService` in `services/content_services.py`, `EpisodeService.set_season`; the season box over the Episodes list (`ui/pages/content_pages.py`, choice kept in `ui.episode_season_filter`) and beside the status in the workspace; name prompts in `ui/seasons.py`
 - Archive / trash: rules in `domain/lifecycle.py` (ArchiveScope, 30-day period, tested in `test_archive_trash.py`); `set_archived` / `delete` (= move to trash) in `IdeaService` / `VoiceService`; `services/trash.py` (list, restore, purge, purge_expired); `ShelfListPage` in `ui/pages/content_pages.py`; switch widget `ui/widgets/scope_switch.py`; `ui/pages/trash_page.py`; hourly purge timer in MainWindow
@@ -103,6 +104,21 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
   - Search results and the startup resume screen are never recorded. Search has its own way home
     (`_before_search`), and opening a hit hands that snapshot to the history, so Back after a hit
     returns to where the search started rather than nowhere
+- Keyboard shortcuts (v1.9):
+  - Seen, not hidden: every everyday shortcut sits as a keycap beside its control — sidebar
+    search Ctrl+K, pages Ctrl+1…6, Back Alt+←, undo Ctrl+Z, «new» buttons Ctrl+N, filter boxes
+    Ctrl+F, Ideas search Ctrl+I, «برچسب تازه» Ctrl+T, recorder Ctrl+R, add file Ctrl+Enter.
+    A tooltip teaches nothing; a keycap seen a hundred times does
+  - App-wide: Ctrl+K search everything, Ctrl+I the Ideas page's search, Ctrl+T new tag (a
+    dialog over the current page; only a tag actually made moves to the Tags page), Ctrl+1…6
+    pages, Ctrl+Shift+T theme (moved off Ctrl+T)
+  - Nothing Windows keeps for itself: no Win key, Alt+Tab/Space/F4, Ctrl+Esc,
+    Ctrl+Shift+Esc, Ctrl+Alt (= AltGr on many layouts), bare Ctrl+Shift / Alt+Shift (layout
+    switch). The one Ctrl+Alt is the global inbox hotkey, registered on purpose
+  - Where a page shortcut and an app-wide one do the same thing (Ctrl+N / Ctrl+T on the Tags
+    page, Ctrl+F / Ctrl+I on Ideas) the keycap shows the app-wide one: one key to learn
+  - A list column's width floor is a spacer, not a fixed minimum, so a header with keycaps
+    widens the column instead of clipping the page title
 - Filtering a list (v1.3):
   - Two different jobs, deliberately not merged: Ctrl+K searches everything written in the
     workspace and answers on its own page; Ctrl+F narrows the list already in front of you, by
@@ -224,7 +240,9 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 
 ## Status
 - v1.9: tags are flat — the parent/child hierarchy is gone everywhere (model, migration
-  a9e2d5c8f314, services, undo, export, tags page, pickers, idea tag filter)
+  a9e2d5c8f314, services, undo, export, tags page, pickers, idea tag filter). Keycaps beside
+  the main controls; Ctrl+I (Ideas search) and Ctrl+T (new tag) from anywhere. Emptying the
+  sidebar search keeps the caret in it
 - v1.8: Voices and Ideas merged into one «ایده‌ها» page (`ui/pages/ideas_page.py`; rows keyed by
   `IdeaKey(kind, id)`, kind switch همه/صوتی/متنی, one editor pane per kind). Its search is a
   `FacetSearchBar`: phrases kept as chips with Enter, required tag chips, all ANDed (`domain/list_filter.FacetFilter`), plus «در محتوا» for idea text and

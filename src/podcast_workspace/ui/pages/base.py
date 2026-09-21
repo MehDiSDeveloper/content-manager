@@ -40,6 +40,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMenu,
     QPushButton,
+    QSizePolicy,
+    QSpacerItem,
     QStackedWidget,
     QStyle,
     QStyledItemDelegate,
@@ -52,6 +54,7 @@ from podcast_workspace.domain.list_filter import ListFilter, parse_list_filter
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.support import direction_mark, local_digits
 from podcast_workspace.ui.theme import TEXT_WEIGHT
+from podcast_workspace.ui.widgets.key_hint import add_key_hint, attach_key_hint
 
 
 def _rtl(text: str) -> str:
@@ -211,20 +214,24 @@ class ListPage(QWidget):
         # The filter belongs to the list, so it sits in the same column and carries the
         # same width limits; the column, not the list, is what the layout stretches.
         list_side = self.list_side = QWidget()
-        list_side.setMinimumWidth(LIST_MIN_WIDTH)
         list_side.setMaximumWidth(LIST_MAX_WIDTH)
         side = QVBoxLayout(list_side)
         side.setContentsMargins(0, 0, 0, 0)
         side.setSpacing(10)
+        # The floor as a spacer, not a fixed minimum: a header that needs more (title,
+        # buttons, keycaps) widens the column instead of clipping the title.
+        side.addItem(QSpacerItem(LIST_MIN_WIDTH, 0, QSizePolicy.Policy.Fixed))
 
         header = self.header = QHBoxLayout()
         header.setSpacing(10)
-        header.addWidget(QLabel(title, objectName="pageTitle"))
+        title_label = QLabel(title, objectName="pageTitle")
+        title_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+        header.addWidget(title_label)
         header.addStretch(1)
         self.primary = QPushButton(primary_label, objectName="primary")
-        self.primary.setToolTip("Ctrl+N")
         self.primary.clicked.connect(self.primary_action)
         header.addWidget(self.primary)
+        self.primary_keys = add_key_hint(header, self.primary, "Ctrl+N")
         side.addLayout(header)
         self.status = _StatusLabel()
         side.addWidget(self.status)
@@ -241,6 +248,7 @@ class ListPage(QWidget):
             self.filter.setClearButtonEnabled(True)
             self.filter.textChanged.connect(self._on_filter_changed)
             self.filter.installEventFilter(self)
+            attach_key_hint(self.filter, "Ctrl+F")
             filter_row.addWidget(self.filter, 1)
             # The count is the promise that nothing was lost, only hidden.
             filter_row.addWidget(self.filter_count)

@@ -112,6 +112,7 @@ from podcast_workspace.ui.theme import (
     set_native_dark_title_bar,
 )
 from podcast_workspace.ui.toast import Toast
+from podcast_workspace.ui.widgets.key_hint import KeyHint, attach_key_hint
 
 SIDEBAR_WIDTH = 240
 SIDEBAR_COMPACT_WIDTH = 68
@@ -137,14 +138,15 @@ UNDO_OFFERED = frozenset(
 
 
 class NavButton(QPushButton):
-    """Sidebar entry: icon, label, and the section's item count on the far edge.
+    """Sidebar entry: icon, label, and on the far edge the section's item count and the
+    keycap of its shortcut.
 
-    The three parts are child labels in a layout rather than the button's own text and
-    icon, so RTL puts them in reading order and the count lands against the far edge.
-    Mouse events pass through the children, keeping the whole row clickable.
+    The parts are child labels in a layout rather than the button's own text and icon,
+    so RTL puts them in reading order and the count lands against the far edge. Mouse
+    events pass through the children, keeping the whole row clickable.
     """
 
-    def __init__(self, label: str, index: int, section: str = "") -> None:
+    def __init__(self, label: str, index: int, section: str = "", keys: str = "") -> None:
         super().__init__(objectName="navButton")
         self.index = index
         self.setCheckable(True)
@@ -167,6 +169,9 @@ class NavButton(QPushButton):
         count_font.setPointSizeF(max(7.5, count_font.pointSizeF() - 1.5))
         self.count.setFont(count_font)
         row.addWidget(self.count)
+        self.keys = KeyHint(keys)
+        self.keys.setVisible(bool(keys))
+        row.addWidget(self.keys)
         for child in (self.glyph, self.label, self.count):
             child.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.toggled.connect(self._restyle)
@@ -190,6 +195,7 @@ class NavButton(QPushButton):
         """Icon only, centred on the rail; the label moves into the tooltip."""
         self.label.setVisible(not compact)
         self.count.setVisible(not compact)
+        self.keys.setVisible(not compact and bool(self.keys.text()))
         # Folded, equal margins centre the glyph tile on the rail.
         self.layout().setContentsMargins(*((9, 4, 9, 4) if compact else (6, 4, 12, 4)))
 
@@ -208,6 +214,8 @@ class NavButton(QPushButton):
         row = self.layout()
         margins = row.contentsMargins()
         taken = margins.left() + margins.right() + row.spacing() + self.glyph.width()
+        if self.keys.isVisibleTo(self):
+            taken += row.spacing() + self.keys.sizeHint().width()
         room = max(40, self.width() - taken - 4)
         self.label.setText(
             self.label.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, room)
@@ -421,6 +429,7 @@ class MainWindow(QMainWindow):
             search_icon(self.palette().color(QPalette.ColorRole.PlaceholderText)),
             QLineEdit.ActionPosition.LeadingPosition,
         )
+        attach_key_hint(self.search, "Ctrl+K")
         col.addWidget(self.search)
         # Folded, search is a button that unfolds the rail and puts the caret in the box.
         self.search_button = QToolButton(objectName="chromeButton")
@@ -434,7 +443,7 @@ class MainWindow(QMainWindow):
         # Back sits with the other ways of moving, above the destinations it competes
         # with. It stays in place when there is nowhere to go (disabled, like undo)
         # rather than appearing and disappearing under the user's pointer.
-        self.back_button = NavButton(strings.NAV_BACK, -1)
+        self.back_button = NavButton(strings.NAV_BACK, -1, keys="Alt+←")
         self.back_button.setCheckable(False)
         self.back_button.clicked.connect(self.go_back)
         col.addWidget(self.back_button)
@@ -451,7 +460,7 @@ class MainWindow(QMainWindow):
             (strings.NAV_TRASH, trash_icon, "trash"),
         )
         for index, (label, _painter, section) in enumerate(entries):
-            button = NavButton(label, index, section)
+            button = NavButton(label, index, section, keys=f"Ctrl+{index + 1}")
             button.setToolTip(strings.NAV_TOOLTIP.format(label=label, keys=f"Ctrl+{index + 1}"))
             self.nav.addButton(button, index)
             self.nav_buttons.append(button)
@@ -464,7 +473,7 @@ class MainWindow(QMainWindow):
         # the change it would take back in its tooltip.
         history = self._history_row = QBoxLayout(QBoxLayout.Direction.LeftToRight)
         history.setSpacing(4)
-        self.undo_button = NavButton(strings.UNDO, -1)
+        self.undo_button = NavButton(strings.UNDO, -1, keys="Ctrl+Z")
         self.undo_button.setCheckable(False)
         self.undo_button.clicked.connect(self.undo)
         history.addWidget(self.undo_button, 1)
@@ -634,7 +643,11 @@ class MainWindow(QMainWindow):
             button.set_count(count)
 
     def _install_shortcuts(self) -> None:
-        QShortcut(QKeySequence("Ctrl+T"), self, activated=self._theme.toggle)
+        # The everyday moves, from any page: none of them is taken by Windows itself (no
+        # Win, Alt+Tab/Space/F4, Ctrl+Esc, Ctrl+Alt — AltGr — or a bare Ctrl+Shift).
+        QShortcut(QKeySequence("Ctrl+T"), self, activated=self.new_tag)
+        QShortcut(QKeySequence("Ctrl+I"), self, activated=self.find_ideas)
+        QShortcut(QKeySequence("Ctrl+Shift+T"), self, activated=self._theme.toggle)
         QShortcut(QKeySequence.StandardKey.Quit, self, activated=self.close)
         QShortcut(QKeySequence("Ctrl+W"), self, activated=self.close)
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.focus_search)
@@ -757,6 +770,22 @@ class MainWindow(QMainWindow):
             self.toggle_sidebar()
         self.search.setFocus()
         self.search.selectAll()
+
+    def find_ideas(self) -> None:
+        """Ctrl+I: the Ideas page with the caret in its search, from anywhere."""
+        self.show_page(self.ideas_page)
+        self.ideas_page.focus_filter()
+
+    def new_tag(self) -> None:
+        """Ctrl+T: name a new tag from anywhere, without leaving the page — only a tag
+        actually made takes the user to the Tags page, to show it."""
+        if self.stack.currentWidget() is self.tags_page:
+            self.tags_page.create_tag()
+            return
+        tag_id = self.tags_page.create_tag(name="")
+        if tag_id is not None:
+            self.show_page(self.tags_page)
+            self.tags_page.select(tag_id)
 
     def focus_page_filter(self) -> None:
         """Ctrl+F narrows what is already in front of the user; Ctrl+K goes looking

@@ -54,6 +54,7 @@ from podcast_workspace.ui.support import (
     local_digits,
     show_error,
 )
+from podcast_workspace.ui.widgets.key_hint import attach_key_hint
 
 KEY_ROLE = ID_ROLE  # (TrashKind value, item id)
 _KINDS: tuple[str, ...] = ("all", TrashKind.VOICE.value, TrashKind.IDEA.value)
@@ -105,6 +106,7 @@ class TrashPage(QWidget):
         self.filter.setClearButtonEnabled(True)
         self.filter.textChanged.connect(self._on_filter_changed)
         self.filter.installEventFilter(self)
+        attach_key_hint(self.filter, "Ctrl+F")
         filter_row.addWidget(self.filter, 1)
         self.filter_count = QLabel(objectName="countPill")
         self.filter_count.hide()

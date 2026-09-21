@@ -70,6 +70,7 @@ from podcast_workspace.ui.support import (
 )
 from podcast_workspace.ui.theme import section_ink
 from podcast_workspace.ui.widgets.facet_search import FacetSearchBar, FacetState
+from podcast_workspace.ui.widgets.key_hint import attach_key_hint
 from podcast_workspace.ui.widgets.scope_switch import ChoiceSwitch, ScopeSwitch
 from podcast_workspace.ui.widgets.tag_input import TagInput
 
@@ -581,6 +582,9 @@ class IdeasPage(ShelfListPage):
         self.facets = FacetSearchBar(workspace.tags, events)
         self.facets.changed.connect(self._on_facets_changed)
         self.facets.leave_requested.connect(self.focus_main)
+        # Ctrl+F finds here as on every page, Ctrl+I from anywhere: show the one that
+        # always works.
+        attach_key_hint(self.facets.edit, "Ctrl+I")
         side.insertWidget(side.indexOf(self.list), self.facets)
         # The count shares a line with «clear all», under the chips: the search's status.
         self.facets.footer.insertWidget(0, self.filter_count)

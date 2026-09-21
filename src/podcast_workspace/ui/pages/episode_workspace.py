@@ -57,6 +57,7 @@ from podcast_workspace.ui.support import (
     local_digits,
     show_error,
 )
+from podcast_workspace.ui.widgets.key_hint import add_key_hint
 from podcast_workspace.ui.widgets.tag_input import TagInput
 
 AUTOSAVE_DELAY_MS = 700
@@ -487,6 +488,7 @@ class EpisodeWorkspacePage(QWidget):
         record.setToolTip(strings.WS_RECORD_TOOLTIP)
         record.clicked.connect(self.record_requested.emit)
         header.addWidget(record)
+        add_key_hint(header, record, "Ctrl+R")
         self.new_note_button = QPushButton(strings.WS_NOTE_NEW, objectName="primary")
         self.new_note_button.setToolTip("Ctrl+N")
         self.new_note_button.clicked.connect(self.new_note)
