@@ -768,13 +768,19 @@ class MainWindow(QMainWindow):
         else:
             self.focus_search()
 
-    def _leave_search(self) -> None:
-        """Esc, or Back from the results: put the user down where they started searching."""
+    def _leave_search(self, keep_typing: bool = False) -> None:
+        """Esc, or Back from the results: put the user down where they started searching.
+
+        `keep_typing`: the box was emptied by hand, which is a pause while retyping, not a
+        goodbye — the page comes back behind the box but the caret stays in it.
+        """
         entry = self._before_search or NavEntry(self._pages[0])
         self.search_page.reset_scope()  # the next search starts on «active» again
         self.search.clear()
-        self.show_page(entry.page, focus=True, remember=False)
+        self.show_page(entry.page, focus=not keep_typing, remember=False)
         entry.restore()
+        if keep_typing:
+            self.search.setFocus()  # restoring the page may have taken it
         self._sync_back()
 
     def _cycle_pane_focus(self) -> None:
@@ -909,7 +915,7 @@ class MainWindow(QMainWindow):
         query = self.search.text()
         if not query.strip():
             if self.stack.currentWidget() is self.search_page:
-                self._leave_search()
+                self._leave_search(keep_typing=self.focusWidget() is self.search)
             return
         try:
             result = self._ws.search.search(
