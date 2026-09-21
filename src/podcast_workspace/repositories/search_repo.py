@@ -9,10 +9,14 @@ from sqlalchemy.orm import Session
 from podcast_workspace.domain.lifecycle import ArchiveScope
 from podcast_workspace.domain.search import SearchKind, decode_rowid
 
+# An idea's title is its first line (migration f3a8c1e5d907 indexes it the same way).
+_LEAD = "ltrim(text, ' ' || char(9, 10, 13))"
+_FIRST_LINE = f"substr({_LEAD}, 1, instr({_LEAD} || char(10), char(10)) - 1)"
+
 # Each source as (id, t = title, b = body, o = owner id).
 _SOURCE_SQL: dict[SearchKind, str] = {
     SearchKind.EPISODE: "SELECT id, title AS t, next_action AS b, NULL AS o FROM episodes",
-    SearchKind.IDEA_NOTE: "SELECT id, '' AS t, text AS b, NULL AS o FROM idea_notes",
+    SearchKind.IDEA_NOTE: f"SELECT id, {_FIRST_LINE} AS t, text AS b, NULL AS o FROM idea_notes",
     SearchKind.EPISODE_NOTE: "SELECT id, title AS t, body AS b, episode_id AS o FROM episode_notes",
     SearchKind.TIMESTAMP_NOTE: "SELECT id, '' AS t, text AS b, voice_id AS o FROM timestamp_notes",
     SearchKind.TAG: "SELECT id, name AS t, '' AS b, NULL AS o FROM tags",
@@ -63,7 +67,9 @@ class SearchRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def _match(self, table: str, expression: str, limit: int) -> list[Match]:
+    def _match(self, table: str, expression: str, limit: int, titles_only: bool) -> list[Match]:
+        if titles_only:
+            expression = f"title : ({expression})"
         rows = self.session.execute(
             text(
                 f"SELECT rowid, bm25({table}, 4.0, 1.0) AS rank FROM {table} "
@@ -73,13 +79,17 @@ class SearchRepository:
         )
         return [(*decode_rowid(rowid), rank) for rowid, rank in rows]
 
-    def word_matches(self, expression: str, limit: int = 200) -> list[Match]:
+    def word_matches(
+        self, expression: str, limit: int = 200, titles_only: bool = False
+    ) -> list[Match]:
         """`expression` is an FTS5 query over the unicode61 (word) index."""
-        return self._match("search_word", expression, limit)
+        return self._match("search_word", expression, limit, titles_only)
 
-    def substring_matches(self, expression: str, limit: int = 200) -> list[Match]:
+    def substring_matches(
+        self, expression: str, limit: int = 200, titles_only: bool = False
+    ) -> list[Match]:
         """`expression` is an FTS5 query over the trigram (substring) index."""
-        return self._match("search_sub", expression, limit)
+        return self._match("search_sub", expression, limit, titles_only)
 
     def vocabulary(self) -> list[str]:
         return list(self.session.scalars(text("SELECT term FROM search_vocab")))

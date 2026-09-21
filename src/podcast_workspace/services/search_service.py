@@ -30,7 +30,7 @@ from podcast_workspace.repositories.db import WriteCounter
 from podcast_workspace.repositories.search_repo import Match, fts_phrase
 from podcast_workspace.repositories.unit_of_work import UnitOfWork
 
-MAX_HITS = 60
+MAX_HITS = 150  # enough for the per-kind counts to mean something
 TYPO_PASS_BELOW = 5  # run the typo pass when fewer hits than this
 MIN_TYPO_TERM = 4
 MIN_SUBSTRING_TERM = 3  # trigram tokenizer cannot match shorter strings
@@ -89,11 +89,59 @@ class SearchService:
             self._vocabulary(uow)
 
     def search(
-        self, query: str, limit: int = MAX_HITS, scope: ArchiveScope = ArchiveScope.ACTIVE
+        self,
+        query: str,
+        limit: int = MAX_HITS,
+        scope: ArchiveScope = ArchiveScope.ACTIVE,
+        in_content: bool = False,
     ) -> SearchResult:
+        """Titles only unless `in_content`: episode, note and tag names, voice file names
+        and each idea's first line. What the content alone would add is counted, so the
+        results can say how much more there is one switch away."""
         terms = query_terms(query)
         if not terms:
             return SearchResult(query, [], {})
+        with UnitOfWork(self._sf) as uow:
+            repo = uow.search
+            best, corrections = self._rank(uow, terms, scope, titles_only=not in_content)
+            more = 0
+            if not in_content:
+                everywhere, _ = self._rank(uow, terms, scope, titles_only=False)
+                more = len(everywhere.keys() - best.keys())
+            ordered = sorted(best.items(), key=lambda kv: (kv[1][0], kv[1][1]))[:limit]
+            texts = repo.source_texts(key for key, _ in ordered)
+
+        highlight = terms + list(corrections.values())
+        hits: list[SearchHit] = []
+        for (kind, source_id), (quality, rank, via_tag) in ordered:
+            if (kind, source_id) not in texts:
+                continue
+            title, body, owner = texts[(kind, source_id)]
+            if kind in (SearchKind.VOICE, SearchKind.TRANSCRIPT):
+                title = PureWindowsPath(title).name
+            elif kind is SearchKind.IDEA_NOTE or (not title.strip() and body.strip()):
+                # ideas and untitled notes: the first line, shortened, as the title
+                first = body.strip().splitlines()[0]
+                title = first if len(first) <= 70 else first[:70].rstrip() + "…"
+            hits.append(
+                SearchHit(
+                    kind=kind,
+                    source_id=source_id,
+                    title=title,
+                    snippet=make_snippet(body, highlight) if body else "",
+                    quality=quality,
+                    rank=rank,
+                    owner_id=owner,
+                    via_tag=via_tag,
+                )
+            )
+        return SearchResult(query, hits, corrections, more)
+
+    def _rank(
+        self, uow: UnitOfWork, terms: list[str], scope: ArchiveScope, titles_only: bool
+    ) -> tuple[dict[Key, tuple[MatchQuality, float, str | None]], dict[str, str]]:
+        """Every visible hit with how it was found, and the spelling fixes used."""
+        repo = uow.search
         best: dict[Key, tuple[MatchQuality, float, str | None]] = {}
 
         def add(matches: list[Match], quality: MatchQuality) -> None:
@@ -109,74 +157,49 @@ class SearchService:
                 del best[key]
 
         corrections: dict[str, str] = {}
-        with UnitOfWork(self._sf) as uow:
-            repo = uow.search
+        add(
+            repo.word_matches(
+                " AND ".join(f"{fts_phrase(t)}*" for t in terms), titles_only=titles_only
+            ),
+            MatchQuality.WORD,
+        )
+        if all(len(t) >= MIN_SUBSTRING_TERM for t in terms):
             add(
-                repo.word_matches(" AND ".join(f"{fts_phrase(t)}*" for t in terms)),
-                MatchQuality.WORD,
+                repo.substring_matches(
+                    " AND ".join(fts_phrase(t) for t in terms), titles_only=titles_only
+                ),
+                MatchQuality.SUBSTRING,
             )
-            if all(len(t) >= MIN_SUBSTRING_TERM for t in terms):
+        drop_hidden(final=False)  # before counting: hidden hits must not suppress the typo pass
+
+        if len(best) < TYPO_PASS_BELOW:
+            vocab = self._vocabulary(uow)
+            groups: list[str] = []
+            for term in terms:
+                alternatives = [term]
+                if len(term) >= MIN_TYPO_TERM and not _is_known(vocab, term):
+                    fixes = corrections_for(term, vocab)
+                    if fixes:
+                        corrections[term] = fixes[0]
+                    alternatives += fixes
+                groups.append("(" + " OR ".join(f"{fts_phrase(a)}*" for a in alternatives) + ")")
+            if corrections:
                 add(
-                    repo.substring_matches(" AND ".join(fts_phrase(t) for t in terms)),
-                    MatchQuality.SUBSTRING,
+                    repo.word_matches(" AND ".join(groups), titles_only=titles_only),
+                    MatchQuality.TYPO,
                 )
-            drop_hidden(final=False)  # before counting: hidden hits must not suppress the typo pass
 
-            if len(best) < TYPO_PASS_BELOW:
-                vocab = self._vocabulary(uow)
-                groups: list[str] = []
-                for term in terms:
-                    alternatives = [term]
-                    if len(term) >= MIN_TYPO_TERM and not _is_known(vocab, term):
-                        fixes = corrections_for(term, vocab)
-                        if fixes:
-                            corrections[term] = fixes[0]
-                        alternatives += fixes
-                    groups.append(
-                        "(" + " OR ".join(f"{fts_phrase(a)}*" for a in alternatives) + ")"
-                    )
-                if corrections:
-                    add(repo.word_matches(" AND ".join(groups)), MatchQuality.TYPO)
-
-            tag_names: dict[int, str] = {}
-            tag_keys = [key for key in best if key[0] is SearchKind.TAG]
-            if tag_keys:
-                texts = repo.source_texts(tag_keys)
-                tag_names = {key[1]: texts[key][0] for key in tag_keys if key in texts}
-                for kind, item_id, tag_id in repo.items_tagged(tag_names):
-                    key = (kind, item_id)
-                    tag_rank = best[(SearchKind.TAG, tag_id)][1]
-                    if key not in best or best[key][0] > MatchQuality.TAGGED:
-                        best[key] = (MatchQuality.TAGGED, tag_rank, tag_names[tag_id])
-            drop_hidden(final=True)
-
-            ordered = sorted(best.items(), key=lambda kv: (kv[1][0], kv[1][1]))[:limit]
-            texts = repo.source_texts(key for key, _ in ordered)
-
-        highlight = terms + list(corrections.values())
-        hits: list[SearchHit] = []
-        for (kind, source_id), (quality, rank, via_tag) in ordered:
-            if (kind, source_id) not in texts:
-                continue
-            title, body, owner = texts[(kind, source_id)]
-            if kind in (SearchKind.VOICE, SearchKind.TRANSCRIPT):
-                title = PureWindowsPath(title).name
-            elif not title.strip() and body.strip():  # ideas/notes: first line as title
-                first = body.strip().splitlines()[0]
-                title = first if len(first) <= 70 else first[:70].rstrip() + "…"
-            hits.append(
-                SearchHit(
-                    kind=kind,
-                    source_id=source_id,
-                    title=title,
-                    snippet=make_snippet(body, highlight) if body else "",
-                    quality=quality,
-                    rank=rank,
-                    owner_id=owner,
-                    via_tag=via_tag,
-                )
-            )
-        return SearchResult(query, hits, corrections)
+        tag_keys = [key for key in best if key[0] is SearchKind.TAG]
+        if tag_keys:
+            texts = repo.source_texts(tag_keys)
+            tag_names = {key[1]: texts[key][0] for key in tag_keys if key in texts}
+            for kind, item_id, tag_id in repo.items_tagged(tag_names):
+                key = (kind, item_id)
+                tag_rank = best[(SearchKind.TAG, tag_id)][1]
+                if key not in best or best[key][0] > MatchQuality.TAGGED:
+                    best[key] = (MatchQuality.TAGGED, tag_rank, tag_names[tag_id])
+        drop_hidden(final=True)
+        return best, corrections
 
     def rebuild_index(self) -> None:
         with UnitOfWork(self._sf) as uow:

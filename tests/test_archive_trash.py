@@ -69,6 +69,9 @@ def ws(tmp_path):
 class _Counter:
     value = 0
 
+    def bump(self) -> None:
+        self.value += 1
+
 
 def _voice(ws, path: str = "a.wav") -> Voice:
     with UnitOfWork(ws.factory) as uow:
@@ -81,7 +84,8 @@ def _voice(ws, path: str = "a.wav") -> Voice:
 
 
 def _search_ids(ws, query: str, scope=ArchiveScope.ACTIVE) -> set[tuple[SearchKind, int]]:
-    return {(h.kind, h.source_id) for h in ws.search.search(query, scope=scope).hits}
+    hits = ws.search.search(query, scope=scope, in_content=True).hits
+    return {(h.kind, h.source_id) for h in hits}
 
 
 def test_archived_ideas_leave_the_default_list_and_search(ws) -> None:
@@ -204,3 +208,30 @@ def test_importing_a_trashed_file_again_brings_it_back(ws, tmp_path) -> None:
     report = ws.voices.import_files([audio])
     assert [v.id for v in report.imported] == [voice.id]
     assert [v.id for v in ws.voices.list_all()] == [voice.id]
+
+
+# titles only, unless the content is asked for ----------------------------------------------
+def _titles(ws, query: str) -> set[tuple[SearchKind, int]]:
+    return {(h.kind, h.source_id) for h in ws.search.search(query).hits}
+
+
+def test_search_reads_titles_until_the_content_is_asked_for(ws) -> None:
+    idea = ws.ideas.create("سفر به شمال\nبا پدر و برادرم رفتیم")
+    voice = _voice(ws, "C:/rec/پدر-بزرگ.wav")
+
+    assert _titles(ws, "شمال") == {(SearchKind.IDEA_NOTE, idea.id)}  # the first line
+    assert _titles(ws, "برادرم") == set()  # further down: content
+    assert (SearchKind.IDEA_NOTE, idea.id) in _search_ids(ws, "برادرم")
+    assert (SearchKind.VOICE, voice.id) in _titles(ws, "پدر")  # a file name is a title
+    assert _titles(ws, "دنیا") == set()  # transcript
+    assert ws.search.search("برادرم").more_in_content == 1
+    assert ws.search.search("پدر").more_in_content == 1  # the idea's second line
+
+
+def test_an_idea_edit_moves_its_title(ws) -> None:
+    idea = ws.ideas.create("اول\nدوم")
+    ws.ideas.update_text(idea.id, "دوم\nاول")
+    assert _titles(ws, "دوم") == {(SearchKind.IDEA_NOTE, idea.id)}
+    assert _titles(ws, "اول") == set()
+    ws.search.rebuild_index()  # the rebuild indexes titles the way the triggers do
+    assert _titles(ws, "دوم") == {(SearchKind.IDEA_NOTE, idea.id)}

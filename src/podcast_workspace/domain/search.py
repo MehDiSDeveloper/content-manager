@@ -55,3 +55,4 @@ class SearchResult:
     query: str
     hits: list[SearchHit]
     corrections: dict[str, str]  # misspelled term -> vocabulary term used instead
+    more_in_content: int = 0  # hits a titles-only search left for the content to find
