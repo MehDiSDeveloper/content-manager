@@ -33,6 +33,12 @@ def normalize_for_index(text: str | None) -> str:
     return _base(text).replace(ZWNJ, "")
 
 
+def flatten_for_filter(text: str | None) -> str:
+    """`normalize_for_index` with every run of separators turned into one space, so a
+    quoted phrase matches across punctuation and line breaks."""
+    return " ".join(term for term in _SEPARATORS.split(normalize_for_index(text)) if term)
+
+
 def query_terms(query: str) -> list[str]:
     """Split a search query into normalized, de-duplicated terms, order preserved."""
     seen: dict[str, None] = {}

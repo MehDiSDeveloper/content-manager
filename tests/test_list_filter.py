@@ -2,7 +2,8 @@
 
 import pytest
 
-from podcast_workspace.domain.list_filter import ListFilter, parse_list_filter
+from podcast_workspace.domain.list_filter import FacetFilter, ListFilter, parse_list_filter
+from podcast_workspace.domain.text import flatten_for_filter
 
 
 def keeps(query: str, title: str, *tags: str) -> bool:
@@ -63,3 +64,65 @@ def test_mixing_a_tag_term_with_a_free_term(query: str) -> None:
 
 def test_explicit_filter_is_reusable_without_parsing() -> None:
     assert ListFilter(free_terms=("abc",)).matches("xabcx")
+
+
+def test_quotes_keep_words_together() -> None:
+    assert keeps('"پدر بزرگ"', "خاطرهٔ پدر بزرگ")
+    assert keeps('"پدر بزرگ"', "پدر، بزرگ")  # punctuation is not a word
+    assert not keeps('"پدر بزرگ"', "بزرگ شدن پدر")
+    assert keeps("پدر بزرگ", "بزرگ شدن پدر")  # unquoted: each on its own
+
+
+def test_an_unclosed_quote_still_filters() -> None:
+    assert keeps('"پدر بز', "خاطرهٔ پدر بزرگ")
+
+
+def test_content_is_read_only_when_handed_over() -> None:
+    assert not keeps("کودکی", "ضبط دوم")
+    assert parse_list_filter("کودکی").matches("ضبط دوم", (), "از کودکی گفت")
+
+
+# FacetFilter: the Ideas page's pinned queries, tag chips and the content switch -----------
+
+
+def facet(*queries: str, tags: tuple[frozenset[int], ...] = (), content: bool = False):
+    return FacetFilter(tuple(parse_list_filter(q) for q in queries), tags, content)
+
+
+def test_empty_facets_keep_everything() -> None:
+    assert facet().is_empty
+    assert facet("", "  ").is_empty
+    assert facet(content=True).is_empty
+    assert facet().matches("هر چیزی")
+
+
+def test_each_pinned_query_narrows_further() -> None:
+    both = facet("پدر", "برادر")
+    assert both.matches("پدر و برادر")
+    assert not both.matches("پدر و مادر")
+    assert facet("پدر").matches("پدر و مادر")
+
+
+def test_a_query_also_reads_the_item_tags() -> None:
+    # "شه" is nowhere in the title, only in the tag «شهر»: still a match
+    assert facet("شه").matches("ضبط دوم", ("شهر",))
+
+
+def test_every_tag_chip_is_required() -> None:
+    episode, deep, city = frozenset({1}), frozenset({2}), frozenset({3})
+    chips = facet("شه", tags=(episode, deep))
+    assert chips.matches("شهرداری", (), (1, 2))
+    assert not chips.matches("شهربازی", (), (2,))  # no «episode» tag
+    assert not chips.matches("کتاب", (), (1, 2))  # the word is missing
+    assert facet(tags=(city,)).matches("هر چیزی", (), (3, 9))
+
+
+def test_a_tag_chip_accepts_any_tag_beneath_it() -> None:
+    travel = frozenset({10, 11, 12})  # «سفر» and its children
+    assert facet(tags=(travel,)).matches("x", (), (12,))
+
+
+def test_content_switch_opens_the_body() -> None:
+    body = flatten_for_filter("از کودکی و پدرش گفت")
+    assert not facet("کودکی").matches("ضبط دوم", content=body)
+    assert facet("کودکی", content=True).matches("ضبط دوم", content=body)
