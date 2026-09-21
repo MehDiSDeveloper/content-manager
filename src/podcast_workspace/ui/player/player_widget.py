@@ -5,11 +5,14 @@ whichever voice is open and drives the player for it.
 """
 
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal
-from PySide6.QtGui import QAction, QActionGroup, QPalette
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
+    QAbstractButton,
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -17,6 +20,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QToolButton,
     QVBoxLayout,
+    QWidget,
 )
 
 from podcast_workspace.audio.engine import SPEEDS, Player, PlayerState
@@ -32,6 +36,34 @@ from podcast_workspace.ui.player.waveform_view import WaveformView
 from podcast_workspace.ui.support import format_clock, local_digits
 
 SKIP_MS = 10_000
+
+
+def install_player_keys(
+    page: QWidget, player: Player, extra: tuple[tuple[str, Callable[[], None]], ...] = ()
+) -> None:
+    """Player keys that work anywhere on `page`. A focused line edit keeps Space, arrows
+    and printable keys for itself (Qt gives it first claim through ShortcutOverride)."""
+
+    def space() -> None:
+        focus = QApplication.focusWidget()
+        if isinstance(focus, QAbstractButton):
+            focus.animateClick()  # Space still presses a focused button
+        else:
+            player.toggle()
+
+    bindings: tuple[tuple[str, Callable[[], None]], ...] = (
+        ("Space", space),
+        ("Ctrl+Space", player.toggle),
+        ("Right", lambda: player.skip(SKIP_MS)),
+        ("Left", lambda: player.skip(-SKIP_MS)),
+        ("-", lambda: player.step_speed(-1)),
+        ("=", lambda: player.step_speed(1)),
+        ("+", lambda: player.step_speed(1)),
+        *extra,
+    )
+    context = Qt.ShortcutContext.WidgetWithChildrenShortcut
+    for keys, handler in bindings:
+        QShortcut(QKeySequence(keys), page, activated=handler, context=context)
 
 
 def speed_label(speed: float) -> str:

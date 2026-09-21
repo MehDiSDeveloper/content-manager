@@ -1,4 +1,4 @@
-# Podcast Workspace — architecture (v1.3)
+# Podcast Workspace — architecture (v1.5)
 
 Local-first Windows desktop workspace for a solo Persian podcaster: episodes, voices, ideas,
 tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3.12, PySide6.
@@ -18,7 +18,8 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 - Off the UI thread: voice import, search warm-up, waveform, playback engine (own QThread), transcription (thread pool), export/import (thread pool), model download (daemon thread), Bale polling (daemon thread)
 
 ## Data model
-- Episode: title, status, next_action, created_at, updated_at, last_opened_at; tags; linked voices + ideas
+- Episode: title, status, next_action, season_id (nullable), created_at, updated_at, last_opened_at; tags; linked voices + ideas
+- Season: title, created_at. Ordered by id (season one first). Deleting one keeps its episodes, seasonless
 - Voice: file_path (referenced in place, never copied/moved/deleted), duration_ms, format, imported_at; ≤15 tags
 - IdeaNote: free text, created/updated; ≤15 tags. Raw material, no timestamp
 - TimestampNote: voice_id, position_ms, text. Separate entity from IdeaNote, never merge
@@ -27,7 +28,7 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 - Tag: name (unique, NOCASE), color, parent_id (hierarchy)
 - Link tables: episode_tags, voice_tags, idea_note_tags, episode_voices, episode_idea_notes. `settings` = key → JSON
 - Status pipeline: idea → outline → recorded → script_ready → edited → published
-- Migrations: 5c0bcd4c8144 schema · a7f3c2d91e10 FTS · c41e8b7d2f05 status remap · e5a91d3c7b28 transcripts
+- Migrations: 5c0bcd4c8144 schema · a7f3c2d91e10 FTS · c41e8b7d2f05 status remap · e5a91d3c7b28 transcripts · b8d4e6f1a320 seasons
 
 ## Where things live
 - Rules: `domain/rules.py` (15-tag limit, names, colors, hierarchy), `entities.py` (Taggable mixin enforces limit)
@@ -38,7 +39,9 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 - Player: `audio/engine.py`, `audio/waveform.py`, `ui/player/{player_widget,waveform_view,timestamp_panel,transcript_panel}.py`; activation window `domain/activation.py`
 - Workspace/board/resume: `ui/pages/{episode_workspace,board_page,resume_page}.py`; smart links `domain/smart_links.py`; stale `domain/pipeline.py`
 - Idea inbox hotkey: `ui/hotkey.py` (RegisterHotKey, Ctrl+Alt+I), `ui/idea_inbox.py`
-- Recorder handoff: `services/recording.py` (os.startfile of the configured program)
+- Recorder handoff: `services/recording.py` (os.startfile of the configured program); Ctrl+R is a MainWindow shortcut, so it works on every page
+- Audio folder (review before import): `services/source_folder.py` (scan, add), `ui/pages/source_page.py` (QFileSystemWatcher on the folder + subfolders, 400 ms debounce). Setting `voices.source_folder`
+- Seasons: `SeasonService` in `services/content_services.py`, `EpisodeService.set_season`; the season box over the Episodes list (`ui/pages/content_pages.py`, choice kept in `ui.episode_season_filter`) and beside the status in the workspace; name prompts in `ui/seasons.py`
 - Bale bot: `integrations/bale_api.py` (HTTP), `domain/bot_input.py` (hashtag/tag-list parsing), `services/bale_bot.py` (worker + conversation), `ui/bot_controller.py` (Qt relay)
 - Transcription: `services/transcription.py`, `ui/player/transcript_panel.py` (`TranscriptionJobs` + panel)
 - Export/import: `services/backup.py`, `repositories/maintenance.py` (snapshot, wipe)
@@ -52,6 +55,16 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 - Tests (essential only): tag_matching, tag_limit, activation_window, smart_link_ranking, undo_history, list_filter, navigation_history
 
 ## Key decisions (why)
+- Audio folder (v1.5): the folder is read, never mirrored into the database. A file becomes a
+  Voice only when added, so auditioning a bad take leaves nothing behind; the list is "files
+  here minus voices already imported" (paths compared resolved + normcase), which is also why
+  a voice removed from the workspace reappears there. No tagging before adding, on purpose:
+  that page is for deciding, the Voices page for working. Rows use per-session int ids keyed
+  by path; the player gets negative ids so they never collide with a voice's
+- Seasons (v1.5): a flat, optional grouping — one season per episode, no numbering stored.
+  The Episodes list filters by season rather than growing section headers, so selection,
+  filter box and Back keep working unchanged; an episode opened from elsewhere switches the
+  box to its season so it is never hidden. Filing an episode counts as touching it (stale)
 - Entities are plain dataclasses, separate from ORM rows: UI gets detached objects, no lazy loads across threads
 - Relations held as id sets on entities; repos resolve ids and raise NotFoundError on unknown ids
 - 15-tag limit checked in the entity AND again in the repository (callers can mutate `tag_ids` in place)
@@ -143,6 +156,7 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 
 ## Gotchas
 - New migration: set `PODCAST_WORKSPACE_HOME=<tmp>` before `alembic revision --autogenerate`, else it diffs your real DB. Replace autogenerated `UTCDateTime()` with `sa.DateTime()`; keep `render_as_batch=True`; `alembic check` must stay clean (env.py ignores `search_*`)
+- NEVER batch-alter `episodes`, `voices`, `idea_notes` or `tags`: the rebuild drops the old table under foreign_keys=ON and every CASCADE child goes with it (tag links, notes, transcripts). Add columns with a plain `ALTER TABLE … ADD COLUMN` and no foreign key (see b8d4e6f1a320); keep the reference valid in the repository
 - Every connection that writes needs `pw_norm()` (only engines from `repositories/db.create_sqlite_engine`). Batch-altering an indexed table drops its FTS triggers: recreate them in the same migration. A new FTS kind needs: SearchKind value, trigger migration, `_SOURCE_SQL` entry, `KIND_LABELS`, MainWindow `_open_hit`
 - `SqlRepository.add` keeps a preset id (restore relies on it); new entities must have `id=None`
 - TagService cache is shared with the bot thread; guarded by an RLock. After raw writes call `tags.invalidate()` / `writes.bump()`
@@ -189,6 +203,13 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
   HighlightedText (unreadable in dark). Lines/focus/markers use the Link role (accent_strong)
 
 ## Status
+- v1.5: Ctrl+R opens the recorder from anywhere. Audio folder page: the recording folder read
+  live, files played and reviewed without being stored, added one at a time («افزودن به فضای
+  کاری», Ctrl+Enter; the next file takes its place) — tags and notes only once added. Seasons:
+  one optional season per episode, a season box over the Episodes list (all / a season / no
+  season, with counts; «اپیزود تازه» lands in the season shown) and a season picker in the
+  workspace; create/rename/delete and moves are undoable. Exports carry seasons (older exports
+  import with none)
 - v1.4: Visual pass — pastel lavender theme (light + dark), bundled Vazirmatn, a hue per
   sidebar section (glyph tiles) and per pipeline stage (tinted board columns + dot), soft
   selections instead of solid accent fills, pill tabs, lifted board cards. All colours live in

@@ -22,6 +22,7 @@ from podcast_workspace.domain.entities import (
     EpisodeNote,
     EpisodeStatus,
     IdeaNote,
+    Season,
     Tag,
     TimestampNote,
     Transcript,
@@ -95,6 +96,7 @@ class _Snapshot:
     episode_notes: list[EpisodeNote]
     timestamp_notes: list[TimestampNote]
     transcripts: list[Transcript]
+    seasons: list[Season]
 
     def counts(self) -> dict[str, int]:
         return {
@@ -105,6 +107,7 @@ class _Snapshot:
             "episode_notes": len(self.episode_notes),
             "timestamp_notes": len(self.timestamp_notes),
             "transcripts": len(self.transcripts),
+            "seasons": len(self.seasons),
         }
 
 
@@ -169,6 +172,7 @@ class BackupService:
                 episode_notes=episode_notes,
                 timestamp_notes=timestamp_notes,
                 transcripts=transcripts,
+                seasons=uow.seasons.list_all(),
             )
 
     def export(self, target: Path, progress: Progress | None = None) -> ExportReport:
@@ -249,10 +253,15 @@ class BackupService:
                 }
                 for i in snap.ideas
             ],
+            "seasons": [
+                {"id": s.id, "title": s.title, "created_at": _dt(s.created_at)}
+                for s in snap.seasons
+            ],
             "episodes": [
                 {
                     "id": e.id,
                     "title": e.title,
+                    "season_id": e.season_id,
                     "status": e.status.value,
                     "next_action": e.next_action,
                     "created_at": _dt(e.created_at),
@@ -328,6 +337,8 @@ class BackupService:
                 uow.voices.add(voice)
             for idea in snap.ideas:
                 uow.idea_notes.add(idea)
+            for season in snap.seasons:
+                uow.seasons.add(season)
             for episode in snap.episodes:
                 uow.episodes.add(episode)
             for note in snap.episode_notes:
@@ -411,6 +422,7 @@ class BackupService:
                     title=e["title"],
                     status=EpisodeStatus(e["status"]),
                     next_action=e.get("next_action") or "",
+                    season_id=e.get("season_id"),
                     created_at=_req_dt(e["created_at"]),
                     updated_at=_req_dt(e["updated_at"]),
                     last_opened_at=_parse_dt(e.get("last_opened_at")),
@@ -453,6 +465,11 @@ class BackupService:
                     ],
                 )
                 for t in data.get("transcripts", [])
+            ],
+            # Exports made before seasons existed simply have none.
+            seasons=[
+                Season(id=s["id"], title=s["title"], created_at=_req_dt(s["created_at"]))
+                for s in data.get("seasons") or ()
             ],
         )
 

@@ -87,6 +87,7 @@ SECTION_INKS: dict[str, tuple[str, str]] = {
     "episodes": ("#7462d6", "#c3b8fb"),
     "board": ("#2f9471", "#9ddfc5"),
     "voices": ("#cf6f47", "#f7bea3"),
+    "source": ("#3f8fce", "#a9d2f5"),
     "ideas": ("#b1850f", "#f1d98a"),
     "tags": ("#c9577f", "#f4b0ca"),
 }

@@ -83,6 +83,14 @@ class TagRow(Base):
     )
 
 
+class SeasonRow(Base):
+    __tablename__ = "seasons"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
 class EpisodeRow(Base):
     __tablename__ = "episodes"
 
@@ -90,6 +98,8 @@ class EpisodeRow(Base):
     title: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), index=True)
     next_action: Mapped[str] = mapped_column(Text, default="")
+    # No foreign key on purpose (see migration b8d4e6f1a320); SeasonRepository keeps it valid.
+    season_id: Mapped[int | None] = mapped_column(Integer, index=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime)
     last_opened_at: Mapped[datetime | None] = mapped_column(UTCDateTime)

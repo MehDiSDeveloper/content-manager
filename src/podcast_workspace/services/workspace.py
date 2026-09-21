@@ -20,12 +20,14 @@ from podcast_workspace.services.content_services import (
     EpisodeNoteService,
     EpisodeService,
     IdeaService,
+    SeasonService,
     TimestampNoteService,
     VoiceService,
 )
 from podcast_workspace.services.history import HistoryService
 from podcast_workspace.services.search_service import SearchService
 from podcast_workspace.services.settings_service import SettingsService
+from podcast_workspace.services.source_folder import SourceFolderService
 from podcast_workspace.services.tag_service import TagService
 from podcast_workspace.services.transcription import TranscriptionService
 
@@ -39,10 +41,12 @@ class Workspace:
         self.history = HistoryService()
         self.settings = SettingsService(session_factory)
         self.episodes = EpisodeService(session_factory, self.history)
+        self.seasons = SeasonService(session_factory, self.history)
         self.episode_notes = EpisodeNoteService(session_factory, self.history)
         self.ideas = IdeaService(session_factory, self.history)
         self.voices = VoiceService(session_factory, self.history)
         self.timestamp_notes = TimestampNoteService(session_factory, self.history)
+        self.source = SourceFolderService(self.settings, self.voices)
         self.tags = TagService(session_factory, self.history)
         self.search = SearchService(session_factory, self.writes)
         self.transcripts = TranscriptionService(session_factory, self.settings)

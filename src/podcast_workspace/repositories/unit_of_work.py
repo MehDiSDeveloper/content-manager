@@ -10,6 +10,7 @@ from podcast_workspace.repositories.repos import (
     EpisodeNoteRepository,
     EpisodeRepository,
     IdeaNoteRepository,
+    SeasonRepository,
     SettingsRepository,
     TagRepository,
     TimestampNoteRepository,
@@ -22,6 +23,7 @@ from podcast_workspace.repositories.search_repo import SearchRepository
 class UnitOfWork:
     session: Session
     episodes: EpisodeRepository
+    seasons: SeasonRepository
     voices: VoiceRepository
     idea_notes: IdeaNoteRepository
     timestamp_notes: TimestampNoteRepository
@@ -38,6 +40,7 @@ class UnitOfWork:
     def __enter__(self) -> Self:
         self.session = self._session_factory()
         self.episodes = EpisodeRepository(self.session)
+        self.seasons = SeasonRepository(self.session)
         self.voices = VoiceRepository(self.session)
         self.idea_notes = IdeaNoteRepository(self.session)
         self.timestamp_notes = TimestampNoteRepository(self.session)

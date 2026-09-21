@@ -72,6 +72,53 @@ LIST_SHOW = "Show the episode list  (Ctrl+L)"
 EPISODE_DELETE = "Delete episode"
 EPISODE_MORE = "More actions"
 
+SEASON_ALL = "All seasons"
+SEASON_NONE = "No season"
+SEASON_ITEM = "{title}  ({n})"
+SEASON_LABEL = "Season"
+SEASON_FILTER_TOOLTIP = "Show the episodes of one season"
+SEASON_ACTIONS_TOOLTIP = "Season actions"
+SEASON_NEW = "New season…"
+SEASON_NEW_TITLE = "New season"
+SEASON_NAME_PROMPT = "Season name:"
+SEASON_DEFAULT_TITLE = "Season {n}"
+SEASON_RENAME = "Rename this season…"
+SEASON_RENAME_TITLE = "Rename season"
+SEASON_DELETE = "Delete this season"
+SEASON_DELETE_CONFIRM = (
+    "Delete the season “{title}”? Its episodes are kept; they just belong to no season."
+)
+SEASON_EMPTY = "This season has no episodes yet. “New episode” creates one right in it."
+SEASON_NONE_EMPTY = "Every episode belongs to a season."
+
+NAV_SOURCE = "Audio folder"
+SOURCE_TITLE = "Audio folder"
+SOURCE_CHOOSE = "Folder…"
+SOURCE_CHOOSE_TOOLTIP = "Choose the folder your recording program saves into"
+SOURCE_DIALOG = "Audio files folder"
+SOURCE_FOLDER_MISSING = "This folder was not found: {path}"
+SOURCE_NO_FOLDER = (
+    "No folder chosen yet.\n"
+    "Press “Folder…” and pick the folder your recordings are saved in. "
+    "Every file in it shows up here on its own, to listen to and, if you want, "
+    "add to the workspace."
+)
+SOURCE_EMPTY = "No new files in this folder; everything is in the workspace."
+SOURCE_HINT = (
+    "This file is not in the workspace yet and nothing about it is stored. "
+    "Once added, you can tag it and take notes on it."
+)
+SOURCE_FILTER_PLACEHOLDER = "Filter by file name…"
+SOURCE_ADD = "Add to workspace"
+SOURCE_ADD_TOOLTIP = "Adds it to Voices; the file stays where it is  (Ctrl+Enter)"
+SOURCE_ADD_OPEN = "Add and open"
+SOURCE_ADD_OPEN_TOOLTIP = "Add it, then go to Voices to tag it and take notes"
+SOURCE_ADDING = "Adding…"
+SOURCE_ADDED = "“{name}” was added to Voices"
+SOURCE_IN_SUBFOLDER = "in {folder}"
+SIZE_MB = "{n} MB"
+SIZE_KB = "{n} KB"
+
 VOICES_TITLE = "Voices"
 VOICE_IMPORT = "Import audio"
 VOICE_IMPORT_DIALOG = "Choose audio files"
@@ -223,7 +270,7 @@ WS_SMART_LINKED = "Linked ✓"
 WS_LINK = "Link"
 WS_UNLINK_SHORT = "Unlink"
 WS_RECORD = "Record"
-WS_RECORD_TOOLTIP = "Launch your recording program (Ctrl+R)"
+WS_RECORD_TOOLTIP = "Launch your recording program — from anywhere in the app (Ctrl+R)"
 WS_PICK_VOICE = "Add voices to the episode"
 WS_PICK_IDEA = "Add ideas to the episode"
 WS_PICK_FILTER = "Filter…"
@@ -409,6 +456,7 @@ UNDO_OFFER = "Done: {action}"
 
 UNDO_TARGETS = {
     "episode": "episode",
+    "season": "season",
     "voice": "voice",
     "idea": "idea",
     "tag": "tag",
@@ -421,6 +469,7 @@ UNDO_ACTIONS = {
     "edit": "Edit {target} {quoted}",
     "rename": "Rename tag {other} to {quoted}",
     "status": "Change status of {target} {other} to {quoted}",
+    "season": "Move {target} {other} to {quoted}",
     "tags_added": "Add tag {quoted} to {target}",
     "tags_removed": "Remove tag {quoted} from {target}",
     "linked": "Link {quoted} to {target}",

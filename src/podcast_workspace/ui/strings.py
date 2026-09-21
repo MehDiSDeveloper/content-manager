@@ -78,6 +78,50 @@ LIST_SHOW = "نمایش فهرست اپیزودها  (Ctrl+L)"
 EPISODE_DELETE = "حذف اپیزود"
 EPISODE_MORE = "کارهای بیشتر"
 
+SEASON_ALL = "همهٔ فصل‌ها"
+SEASON_NONE = "بدون فصل"
+SEASON_ITEM = "{title}  ({n})"
+SEASON_LABEL = "فصل"
+SEASON_FILTER_TOOLTIP = "نمایش اپیزودهای یک فصل"
+SEASON_ACTIONS_TOOLTIP = "کارهای فصل"
+SEASON_NEW = "فصل تازه…"
+SEASON_NEW_TITLE = "فصل تازه"
+SEASON_NAME_PROMPT = "نام فصل:"
+SEASON_DEFAULT_TITLE = "فصل {n}"
+SEASON_RENAME = "تغییر نام این فصل…"
+SEASON_RENAME_TITLE = "تغییر نام فصل"
+SEASON_DELETE = "حذف این فصل"
+SEASON_DELETE_CONFIRM = "فصل «{title}» حذف شود؟ اپیزودهایش حذف نمی‌شوند؛ فقط بدون فصل می‌مانند."
+SEASON_EMPTY = "این فصل هنوز اپیزودی ندارد. «اپیزود تازه» را بزنید تا در همین فصل ساخته شود."
+SEASON_NONE_EMPTY = "همهٔ اپیزودها فصل دارند."
+
+NAV_SOURCE = "پوشهٔ صدا"
+SOURCE_TITLE = "پوشهٔ صدا"
+SOURCE_CHOOSE = "پوشه…"
+SOURCE_CHOOSE_TOOLTIP = "انتخاب پوشه‌ای که برنامهٔ ضبط فایل‌هایش را در آن ذخیره می‌کند"
+SOURCE_DIALOG = "پوشهٔ فایل‌های صوتی"
+SOURCE_FOLDER_MISSING = "این پوشه پیدا نشد: {path}"
+SOURCE_NO_FOLDER = (
+    "هنوز پوشه‌ای انتخاب نشده.\n"
+    "«پوشه…» را بزنید و پوشه‌ای را که صداهایتان در آن ذخیره می‌شود انتخاب کنید. "
+    "هر فایلی که آنجا باشد خودبه‌خود اینجا می‌آید تا گوشش کنید و اگر خواستید به فضای کاری بیاوریدش."
+)
+SOURCE_EMPTY = "فایل تازه‌ای در این پوشه نیست؛ همه‌چیز در فضای کاری است."
+SOURCE_HINT = (
+    "این فایل هنوز در فضای کاری نیست و چیزی از آن ذخیره نشده. "
+    "بعد از افزودن می‌توانید برچسب و یادداشت بگذارید."
+)
+SOURCE_FILTER_PLACEHOLDER = "پالایش بر پایهٔ نام فایل…"
+SOURCE_ADD = "افزودن به فضای کاری"
+SOURCE_ADD_TOOLTIP = "به صداها اضافه می‌شود؛ فایل سر جایش می‌ماند  (Ctrl+Enter)"
+SOURCE_ADD_OPEN = "افزودن و باز کردن"
+SOURCE_ADD_OPEN_TOOLTIP = "افزودن، و رفتن به صداها برای برچسب و یادداشت"
+SOURCE_ADDING = "در حال افزودن…"
+SOURCE_ADDED = "«{name}» به صداها اضافه شد"
+SOURCE_IN_SUBFOLDER = "در {folder}"
+SIZE_MB = "{n} مگابایت"
+SIZE_KB = "{n} کیلوبایت"
+
 VOICES_TITLE = "صداها"
 VOICE_IMPORT = "وارد کردن صدا"
 VOICE_IMPORT_DIALOG = "انتخاب فایل‌های صوتی"
@@ -232,7 +276,7 @@ WS_SMART_LINKED = "پیوندشده ✓"
 WS_LINK = "پیوند دادن"
 WS_UNLINK_SHORT = "برداشتن پیوند"
 WS_RECORD = "ضبط"
-WS_RECORD_TOOLTIP = "اجرای برنامهٔ ضبط شما (Ctrl+R)"
+WS_RECORD_TOOLTIP = "اجرای برنامهٔ ضبط شما — از هر جای برنامه (Ctrl+R)"
 WS_PICK_VOICE = "افزودن صدا به اپیزود"
 WS_PICK_IDEA = "افزودن ایده به اپیزود"
 WS_PICK_FILTER = "فیلتر…"
@@ -420,6 +464,7 @@ UNDO_OFFER = "{action} انجام شد"
 
 UNDO_TARGETS = {
     "episode": "اپیزود",
+    "season": "فصل",
     "voice": "صدا",
     "idea": "ایده",
     "tag": "برچسب",
@@ -432,6 +477,7 @@ UNDO_ACTIONS = {
     "edit": "ویرایش {target} {quoted}",
     "rename": "تغییر نام برچسب {other} به {quoted}",
     "status": "تغییر وضعیت {target} {other} به {quoted}",
+    "season": "انتقال {target} {other} به {quoted}",
     "tags_added": "افزودن برچسب {quoted} به {target}",
     "tags_removed": "برداشتن برچسب {quoted} از {target}",
     "linked": "پیوند {quoted} به {target}",

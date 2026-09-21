@@ -75,10 +75,26 @@ class Tag:
 
 
 @dataclass(eq=False)
+class Season:
+    """A run of episodes. Episodes belong to at most one; deleting a season keeps them."""
+
+    title: str
+    created_at: datetime = field(default_factory=utcnow)
+    id: int | None = None
+
+    def __post_init__(self) -> None:
+        self.title = normalize_persian(ensure_non_empty(self.title, "Season title"))
+
+    def rename(self, title: str) -> None:
+        self.title = normalize_persian(ensure_non_empty(title, "Season title"))
+
+
+@dataclass(eq=False)
 class Episode(Taggable):
     title: str
     status: EpisodeStatus = EpisodeStatus.IDEA
     next_action: str = ""
+    season_id: int | None = None
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
     last_opened_at: datetime | None = None

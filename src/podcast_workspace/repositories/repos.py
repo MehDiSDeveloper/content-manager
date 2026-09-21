@@ -11,6 +11,7 @@ from podcast_workspace.domain.entities import (
     EpisodeNote,
     EpisodeStatus,
     IdeaNote,
+    Season,
     Tag,
     TimestampNote,
     Transcript,
@@ -28,6 +29,7 @@ from podcast_workspace.repositories.models import (
     EpisodeNoteRow,
     EpisodeRow,
     IdeaNoteRow,
+    SeasonRow,
     SettingRow,
     TagRow,
     TimestampNoteRow,
@@ -210,6 +212,7 @@ class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
             title=row.title,
             status=EpisodeStatus(row.status),
             next_action=row.next_action,
+            season_id=row.season_id,
             created_at=row.created_at,
             updated_at=row.updated_at,
             last_opened_at=row.last_opened_at,
@@ -222,6 +225,9 @@ class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
         row.title = entity.title
         row.status = entity.status.value
         row.next_action = entity.next_action
+        if entity.season_id is not None and self.session.get(SeasonRow, entity.season_id) is None:
+            raise NotFoundError("Season", entity.season_id)
+        row.season_id = entity.season_id
         row.created_at = entity.created_at
         row.updated_at = entity.updated_at
         row.last_opened_at = entity.last_opened_at
@@ -256,6 +262,45 @@ class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
     def list_all(self) -> list[Episode]:
         rows = self.session.scalars(select(EpisodeRow).order_by(EpisodeRow.updated_at.desc()))
         return [self._to_domain(row) for row in rows]
+
+    def ids_in_season(self, season_id: int) -> set[int]:
+        query = select(EpisodeRow.id).where(EpisodeRow.season_id == season_id)
+        return set(self.session.scalars(query))
+
+    def move_to_season(self, episode_ids: set[int], season_id: int | None) -> None:
+        """Put episodes into a season (or none) without touching them: filing is not editing."""
+        for episode_id in episode_ids:
+            row = self.session.get(EpisodeRow, episode_id)
+            if row is not None:
+                row.season_id = season_id
+        self.session.flush()
+
+
+class SeasonRepository(SqlRepository[Season, SeasonRow]):
+    row_type = SeasonRow
+    entity_name = "Season"
+
+    def _to_domain(self, row: SeasonRow) -> Season:
+        return Season(id=row.id, title=row.title, created_at=row.created_at)
+
+    def _apply(self, entity: Season, row: SeasonRow) -> None:
+        row.title = entity.title
+        row.created_at = entity.created_at
+
+    def delete(self, entity_id: int) -> None:
+        """The season goes; its episodes stay, belonging to no season.
+
+        Done here rather than by the database: `episodes.season_id` has no foreign key
+        (migration b8d4e6f1a320 says why).
+        """
+        row = self._row(entity_id)
+        self.session.execute(
+            text("UPDATE episodes SET season_id = NULL WHERE season_id = :season"),
+            {"season": entity_id},
+        )
+        self.session.delete(row)
+        self.session.flush()
+        self.session.expire_all()
 
 
 class VoiceRepository(SqlRepository[Voice, VoiceRow]):

@@ -23,6 +23,7 @@ from podcast_workspace.domain.entities import (
     EpisodeNote,
     EpisodeStatus,
     IdeaNote,
+    Season,
     TimestampNote,
     Transcript,
     Voice,
@@ -92,9 +93,9 @@ class EpisodeService:
             episode.mark_opened()
             return uow.episodes.update(episode)
 
-    def create(self, title: str) -> Episode:
+    def create(self, title: str, season_id: int | None = None) -> Episode:
         with UnitOfWork(self._sf) as uow:
-            episode = uow.episodes.add(Episode(title=title))
+            episode = uow.episodes.add(Episode(title=title, season_id=season_id))
         assert episode.id is not None
         snapshot = deepcopy(episode)
         self._history.record(
@@ -117,6 +118,7 @@ class EpisodeService:
                 title=title,
                 status=status,
                 next_action=next_action,
+                season_id=current.season_id,
                 created_at=current.created_at,
                 updated_at=current.updated_at,
                 last_opened_at=current.last_opened_at,
@@ -185,6 +187,28 @@ class EpisodeService:
             undo=lambda: self._set_status(episode_id, before, stamp),
             redo=lambda: self._set_status(episode_id, status, touched),
             details=(status.value, title),
+            weight=len(title),
+        )
+        return saved
+
+    def set_season(self, episode_id: int, season_id: int | None) -> Episode:
+        """File the episode under a season (None: no season). Counts as touching it."""
+        with UnitOfWork(self._sf) as uow:
+            episode = uow.episodes.get(episode_id)
+            if episode.season_id == season_id:
+                return episode
+            before, stamp = episode.season_id, episode.updated_at
+            episode.season_id = season_id
+            episode.touch()
+            saved = uow.episodes.update(episode)
+            season = uow.seasons.find(season_id) if season_id is not None else None
+        touched, title = saved.updated_at, saved.title
+        self._history.record(
+            ChangeKind.SEASON,
+            Target(TargetKind.EPISODE, episode_id),
+            undo=lambda: self._set_season(episode_id, before, stamp),
+            redo=lambda: self._set_season(episode_id, season_id, touched),
+            details=(season.title if season is not None else "", title),
             weight=len(title),
         )
         return saved
@@ -289,6 +313,15 @@ class EpisodeService:
             episode.updated_at = updated_at
             uow.episodes.update(episode)
 
+    def _set_season(self, episode_id: int, season_id: int | None, updated_at: datetime) -> None:
+        with UnitOfWork(self._sf) as uow:
+            episode = uow.episodes.get(episode_id)
+            if season_id is not None and uow.seasons.find(season_id) is None:
+                season_id = None  # the season itself is gone
+            episode.season_id = season_id
+            episode.updated_at = updated_at
+            uow.episodes.update(episode)
+
     def _set_link(
         self, episode_id: int, kind: LinkKind, item_id: int, linked: bool, updated_at: datetime
     ) -> None:
@@ -311,6 +344,8 @@ class EpisodeService:
         with UnitOfWork(self._sf) as uow:
             restored = deepcopy(episode)
             restored.tag_ids = _known_tags(uow, restored.tag_ids)
+            if restored.season_id is not None and uow.seasons.find(restored.season_id) is None:
+                restored.season_id = None
             restored.voice_ids &= {v.id for v in uow.voices.list_all()}
             restored.idea_note_ids &= {i.id for i in uow.idea_notes.list_all()}
             uow.episodes.add(restored)
@@ -322,6 +357,87 @@ class EpisodeService:
             return
         with UnitOfWork(self._sf) as uow:
             uow.episodes.delete(episode_id)
+
+
+class SeasonService:
+    """Seasons group episodes. Removing one never removes an episode."""
+
+    def __init__(self, session_factory: sessionmaker[Session], history: HistoryService) -> None:
+        self._sf = session_factory
+        self._history = history
+
+    def list_all(self) -> list[Season]:
+        """In the order they were made: season one first."""
+        with UnitOfWork(self._sf) as uow:
+            return uow.seasons.list_all()
+
+    def create(self, title: str) -> Season:
+        with UnitOfWork(self._sf) as uow:
+            season = uow.seasons.add(Season(title=title))
+        assert season.id is not None
+        snapshot = deepcopy(season)
+        self._history.record(
+            ChangeKind.CREATE,
+            Target(TargetKind.SEASON, season.id),
+            undo=lambda: self._erase(snapshot.id),
+            redo=lambda: self._restore(snapshot, frozenset()),
+            details=(season.title,),
+            weight=len(season.title),
+        )
+        return season
+
+    def rename(self, season_id: int, title: str) -> Season:
+        with UnitOfWork(self._sf) as uow:
+            season = uow.seasons.get(season_id)
+            before = season.title
+            season.rename(title)
+            if season.title == before:
+                return season
+            saved = uow.seasons.update(season)
+        after = saved.title
+        self._history.record(
+            ChangeKind.EDIT,
+            Target(TargetKind.SEASON, season_id),
+            undo=lambda: self._set_title(season_id, before),
+            redo=lambda: self._set_title(season_id, after),
+            details=(after,),
+            weight=len(after),
+        )
+        return saved
+
+    def delete(self, season_id: int) -> None:
+        """Its episodes stay, in no season; undo files them back under it."""
+        with UnitOfWork(self._sf) as uow:
+            season = deepcopy(uow.seasons.get(season_id))
+            episodes = frozenset(uow.episodes.ids_in_season(season_id))
+            uow.seasons.delete(season_id)
+        self._history.record(
+            ChangeKind.DELETE,
+            Target(TargetKind.SEASON, season_id),
+            undo=lambda: self._restore(season, episodes),
+            redo=lambda: self._erase(season_id),
+            details=(season.title,),
+            weight=len(season.title),
+        )
+
+    # inverses ---------------------------------------------------------------------------
+    def _set_title(self, season_id: int, title: str) -> None:
+        with UnitOfWork(self._sf) as uow:
+            season = uow.seasons.get(season_id)
+            season.rename(title)
+            uow.seasons.update(season)
+
+    def _restore(self, season: Season, episodes: frozenset[int]) -> None:
+        with UnitOfWork(self._sf) as uow:
+            restored = uow.seasons.add(deepcopy(season))
+            assert restored.id is not None
+            uow.episodes.move_to_season(set(episodes), restored.id)
+
+    def _erase(self, season_id: int | None) -> None:
+        if season_id is None:
+            return
+        with UnitOfWork(self._sf) as uow:
+            uow.seasons.delete(season_id)
 
 
 @dataclass(frozen=True)

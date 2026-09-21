@@ -62,6 +62,24 @@ def voices_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+def folder_icon(color: QColor) -> QIcon:
+    """A folder with a small waveform inside: the audio source folder."""
+    pixmap, p = _canvas()
+    _stroke(p, color)
+    path = QPainterPath(QPointF(2.5, 14.5))
+    path.lineTo(2.5, 4.2)
+    path.lineTo(6.8, 4.2)
+    path.lineTo(8.3, 5.8)
+    path.lineTo(15.5, 5.8)
+    path.lineTo(15.5, 14.5)
+    path.closeSubpath()
+    p.drawPath(path)
+    for x, half in ((6.6, 1.2), (9.0, 2.4), (11.4, 1.2)):
+        p.drawLine(QPointF(x, 10.2 - half), QPointF(x, 10.2 + half))
+    p.end()
+    return QIcon(pixmap)
+
+
 def ideas_icon(color: QColor) -> QIcon:
     """A lamp: the idea inbox."""
     pixmap, p = _canvas()

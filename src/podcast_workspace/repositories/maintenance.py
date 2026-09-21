@@ -17,6 +17,7 @@ USER_TABLES = (
     "timestamp_notes",
     "episode_notes",
     "episodes",
+    "seasons",
     "idea_notes",
     "voices",
     "tags",

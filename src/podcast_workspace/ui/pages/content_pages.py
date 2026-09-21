@@ -1,7 +1,7 @@
 """Episodes, Voices and Ideas pages: create, list, edit (autosave), delete."""
 
 import subprocess
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
 
@@ -15,20 +15,23 @@ from PySide6.QtGui import (
     QShortcut,
 )
 from PySide6.QtWidgets import (
-    QAbstractButton,
     QApplication,
+    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QStackedWidget,
     QTabBar,
+    QToolButton,
     QVBoxLayout,
 )
 
 from podcast_workspace.audio.engine import Player
-from podcast_workspace.domain.entities import Episode, IdeaNote, Voice
+from podcast_workspace.domain.entities import Episode, IdeaNote, Season, Voice
 from podcast_workspace.domain.rules import MAX_TAGS_PER_ITEM
 from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS
 from podcast_workspace.services.content_services import ImportReport
@@ -37,9 +40,10 @@ from podcast_workspace.ui import strings
 from podcast_workspace.ui.icons import NAV_ICON_SIZE, list_pane_icon, more_icon
 from podcast_workspace.ui.pages.base import ListPage, ListPageState, Row
 from podcast_workspace.ui.pages.episode_workspace import EpisodeWorkspacePage, stale_text
-from podcast_workspace.ui.player.player_widget import SKIP_MS, PlayerWidget
+from podcast_workspace.ui.player.player_widget import PlayerWidget, install_player_keys
 from podcast_workspace.ui.player.timestamp_panel import TimestampPanel
 from podcast_workspace.ui.player.transcript_panel import TranscriptionJobs, TranscriptPanel
+from podcast_workspace.ui.seasons import create_season, rename_season
 from podcast_workspace.ui.support import (
     AppEvents,
     confirm,
@@ -52,6 +56,7 @@ from podcast_workspace.ui.support import (
 from podcast_workspace.ui.widgets.tag_input import TagInput
 
 AUTOSAVE_DELAY_MS = 700
+SEASON_ALL, SEASON_NONE = "all", "none"  # the season box's two fixed entries
 MINI_LIST_HEIGHT = 208
 
 
@@ -80,7 +85,7 @@ def _tag_labels(
     return tuple(name for name in (known.get(i) for i in tag_ids) if name)
 
 
-class _PathLabel(QLabel):
+class PathLabel(QLabel):
     """One muted line showing a file path, elided in the middle, copied on click."""
 
     def __init__(self) -> None:
@@ -141,12 +146,15 @@ class EpisodesPage(ListPage):
         self._pending: tuple[int, int | None, bool] | None = None
         # One accent button per screen: here that is the workspace's "New note".
         self.primary.setObjectName("")
+        self._seasons: list[Season] = []
+        self._season = workspace.settings.season_filter()
+        self._build_season_row()
 
         col = QVBoxLayout(self.editor)
         col.setContentsMargins(0, 0, 0, 0)
         self.workspace = EpisodeWorkspacePage(workspace, events)
         col.addWidget(self.workspace)
-        self.workspace.episode_saved.connect(lambda e: self.update_row(self._row(e)))
+        self.workspace.episode_saved.connect(self._on_episode_saved)
         self.workspace.episode_gone.connect(lambda: QTimer.singleShot(0, self.refresh))
         self.workspace.delete_requested.connect(self.delete_item)
         self.workspace.list_toggle_requested.connect(self.toggle_list)
@@ -220,18 +228,169 @@ class EpisodesPage(ListPage):
         else:
             self.primary_action()
 
+    # seasons ---------------------------------------------------------------------------
+    def _build_season_row(self) -> None:
+        """Which season the list shows, and the season's own actions beside it."""
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        self.season_box = QComboBox()
+        self.season_box.setToolTip(strings.SEASON_FILTER_TOOLTIP)
+        self.season_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.season_box.activated.connect(self._on_season_chosen)
+        row.addWidget(self.season_box, 1)
+        self.season_more = QToolButton(objectName="chromeButton")
+        self.season_more.setToolTip(strings.SEASON_ACTIONS_TOOLTIP)
+        self.season_more.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.season_more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.season_menu = QMenu(self.season_more)
+        self.season_menu.aboutToShow.connect(self._fill_season_menu)
+        self.season_more.setMenu(self.season_menu)
+        row.addWidget(self.season_more)
+        side = self.list_side.layout()
+        assert isinstance(side, QVBoxLayout)
+        side.insertLayout(2, row)  # under the title and status, over the filter box
+
+    def _fill_seasons(self, episodes: list[Episode] | None = None) -> None:
+        """Rebuild the season box: all, each season with its count, then the unfiled."""
+        try:
+            self._seasons = self._ws.seasons.list_all()
+            if episodes is None:
+                episodes = self._ws.episodes.list_all()
+        except Exception:
+            return
+        counts: dict[int | None, int] = {}
+        for episode in episodes:
+            counts[episode.season_id] = counts.get(episode.season_id, 0) + 1
+        known = {s.id for s in self._seasons}
+        if self._season not in (SEASON_ALL, SEASON_NONE) and int(self._season) not in known:
+            self._season = SEASON_ALL  # the season was deleted (or undone) meanwhile
+        box = self.season_box
+        box.blockSignals(True)
+        box.clear()
+        box.addItem(strings.SEASON_ALL, SEASON_ALL)
+        for season in self._seasons:
+            n = local_digits(counts.get(season.id, 0))
+            box.addItem(strings.SEASON_ITEM.format(title=season.title, n=n), str(season.id))
+        if self._seasons:
+            n = local_digits(counts.get(None, 0))
+            box.addItem(strings.SEASON_ITEM.format(title=strings.SEASON_NONE, n=n), SEASON_NONE)
+        box.setCurrentIndex(max(0, box.findData(self._season)))
+        box.blockSignals(False)
+
+    def _fill_season_menu(self) -> None:
+        menu = self.season_menu
+        menu.clear()
+        menu.addAction(strings.SEASON_NEW, self._new_season)
+        season = self._current_season()
+        if season is not None:
+            menu.addSeparator()
+            menu.addAction(strings.SEASON_RENAME, lambda: self._rename_season(season))
+            menu.addAction(strings.SEASON_DELETE, lambda: self._delete_season(season))
+
+    def _current_season(self) -> Season | None:
+        if self._season in (SEASON_ALL, SEASON_NONE):
+            return None
+        return next((s for s in self._seasons if str(s.id) == self._season), None)
+
+    def _season_id(self) -> int | None:
+        """The season a new episode goes into: the one being shown, if any."""
+        season = self._current_season()
+        return None if season is None else season.id
+
+    def _set_season(self, value: str, remember: bool = True) -> None:
+        self._season = value
+        if remember:
+            self._ws.settings.set_season_filter(value)
+
+    def _on_season_chosen(self, _index: int) -> None:
+        self._set_season(str(self.season_box.currentData()))
+        self.refresh()
+
+    def show_season(self, season_id: int) -> None:
+        """Bring a season into view (after an undo touched it); all of them if it is gone."""
+        known = {s.id for s in self._ws.seasons.list_all()}
+        self._set_season(str(season_id) if season_id in known else SEASON_ALL)
+        self.clear_filter(reload=False)
+        self.refresh()
+
+    def _new_season(self) -> None:
+        season = create_season(self, self._ws)
+        if season is None or season.id is None:
+            return
+        self._set_season(str(season.id))
+        self._events.data_changed.emit()
+        self.refresh()
+
+    def _rename_season(self, season: Season) -> None:
+        if rename_season(self, self._ws, season):
+            self._events.data_changed.emit()
+            self._fill_seasons()
+            self.update_rows()
+
+    def _delete_season(self, season: Season) -> None:
+        if season.id is None:
+            return
+        if not confirm(self, strings.SEASON_DELETE_CONFIRM.format(title=season.title)):
+            return
+        try:
+            self._ws.seasons.delete(season.id)
+        except Exception as exc:
+            show_error(self, exc)
+            return
+        self._set_season(SEASON_ALL)
+        self._events.data_changed.emit()
+        self.refresh()
+        self.workspace.reload()
+
+    def _reveal_episode(self, episode_id: int) -> None:
+        """An episode reached from elsewhere must not sit in a season that is not shown."""
+        if self._season == SEASON_ALL:
+            return
+        try:
+            episode = self._ws.episodes.get(episode_id)
+        except Exception:
+            return
+        if not self._in_season(episode):
+            wanted = SEASON_NONE if episode.season_id is None else str(episode.season_id)
+            self._set_season(wanted)
+
+    def _in_season(self, episode: Episode) -> bool:
+        if self._season == SEASON_ALL:
+            return True
+        if self._season == SEASON_NONE:
+            return episode.season_id is None
+        return str(episode.season_id) == self._season
+
+    def update_rows(self) -> None:
+        """Season names changed: redraw the subtitles without reloading the episode."""
+        self.refresh(load=False)
+
+    def select(self, item_id: int) -> None:
+        self._reveal_episode(item_id)
+        super().select(item_id)
+
     # opening ---------------------------------------------------------------------------
     def open_episode(self, episode_id: int, note_id: int | None = None) -> None:
         """Show an episode from elsewhere in the app (board, tags, search, resume), with
         the caret inside it, ready to write."""
         self.clear_filter(reload=False)
+        self._reveal_episode(episode_id)
         self._pending = (episode_id, note_id, True)
         self.refresh(select_id=episode_id)
         self._pending = None
 
+    def _on_episode_saved(self, episode: Episode) -> None:
+        self.update_row(self._row(episode))
+        self._fill_seasons()  # its season may have changed, and with it the counts
+
     def _row(self, episode: Episode, tags: dict[int, str] | None = None) -> Row:
         assert episode.id is not None
         subtitle = strings.STATUS_LABELS[episode.status]
+        if self._season == SEASON_ALL and episode.season_id is not None:
+            # Across all seasons, each row says which one it belongs to.
+            season = next((s for s in self._seasons if s.id == episode.season_id), None)
+            if season is not None:
+                subtitle = season.title + "  ·  " + subtitle
         badge = stale_text(episode)
         if badge:
             subtitle = badge + "  ·  " + subtitle
@@ -242,7 +401,13 @@ class EpisodesPage(ListPage):
 
     def rows(self) -> list[Row]:
         tags = _tag_map(self._ws)
-        return [self._row(e, tags) for e in self._ws.episodes.list_all()]
+        episodes = self._ws.episodes.list_all()
+        self._fill_seasons(episodes)
+        self._empty_text = {
+            SEASON_ALL: strings.EPISODE_EMPTY,
+            SEASON_NONE: strings.SEASON_NONE_EMPTY,
+        }.get(self._season, strings.SEASON_EMPTY)
+        return [self._row(e, tags) for e in episodes if self._in_season(e)]
 
     def show_item(self, item_id: int) -> None:
         note_id, focus = None, False
@@ -263,9 +428,12 @@ class EpisodesPage(ListPage):
 
     # navigation state ------------------------------------------------------------------
     def nav_state(self) -> ListPageState:
-        return replace(super().nav_state(), extra={"workspace": self.workspace.nav_state()})
+        extra = {"workspace": self.workspace.nav_state(), "season": self._season}
+        return replace(super().nav_state(), extra=extra)
 
     def restore_nav_state(self, state: object) -> None:
+        if isinstance(state, ListPageState):
+            self._set_season(str(state.extra.get("season", self._season)))
         super().restore_nav_state(state)
         if isinstance(state, ListPageState):
             self.workspace.restore_nav_state(state.extra.get("workspace"))
@@ -274,11 +442,16 @@ class EpisodesPage(ListPage):
     def primary_action(self) -> None:
         self.clear_filter(reload=False)  # what you just made has to be what you see
         try:
-            episode = self._ws.episodes.create(strings.EPISODE_DEFAULT_TITLE)
+            # Made while a season is shown, it belongs to that season.
+            episode = self._ws.episodes.create(
+                strings.EPISODE_DEFAULT_TITLE, season_id=self._season_id()
+            )
         except Exception as exc:
             show_error(self, exc)
             return
         assert episode.id is not None
+        if not self._in_season(episode):  # "no season" was shown
+            self._set_season(SEASON_ALL)
         self._events.data_changed.emit()
         self.refresh(select_id=episode.id)
         self.workspace.title_edit.setFocus()
@@ -339,7 +512,7 @@ class VoicesPage(ListPage):
         meta_row.addStretch(1)
         # The full path is reference information, not something to read every time:
         # one muted, elided line that copies itself on click.
-        self.path = _PathLabel()
+        self.path = PathLabel()
         meta_row.addWidget(self.path, 2)
         col.addLayout(meta_row)
 
@@ -395,30 +568,11 @@ class VoicesPage(ListPage):
         self._install_player_keys()
 
     def _install_player_keys(self) -> None:
-        """Player keys work anywhere on this page. A focused line edit keeps Space, arrows and
-        printable keys for itself (Qt gives it first claim through ShortcutOverride)."""
-        context = Qt.ShortcutContext.WidgetWithChildrenShortcut
-        player = self.player.player
-        bindings: list[tuple[str, Callable[[], None]]] = [
-            ("Space", self._space),
-            ("Ctrl+Space", player.toggle),
-            ("Right", lambda: player.skip(SKIP_MS)),
-            ("Left", lambda: player.skip(-SKIP_MS)),
-            ("-", lambda: player.step_speed(-1)),
-            ("=", lambda: player.step_speed(1)),
-            ("+", lambda: player.step_speed(1)),
-            ("Insert", self.notes.begin_note),
-            ("Ctrl+Return", self.notes.begin_note),
-        ]
-        for keys, handler in bindings:
-            QShortcut(QKeySequence(keys), self, activated=handler, context=context)
-
-    def _space(self) -> None:
-        focus = QApplication.focusWidget()
-        if isinstance(focus, QAbstractButton):
-            focus.animateClick()  # Space still presses a focused button
-        else:
-            self.player.player.toggle()
+        install_player_keys(
+            self,
+            self.player.player,
+            (("Insert", self.notes.begin_note), ("Ctrl+Return", self.notes.begin_note)),
+        )
 
     def _row(self, voice: Voice, tags: dict[int, str] | None = None) -> Row:
         assert voice.id is not None

@@ -37,6 +37,7 @@ class ChangeKind(StrEnum):
     EDIT = "edit"
     RENAME = "rename"
     STATUS = "status"
+    SEASON = "season"
     TAGS_ADDED = "tags_added"
     TAGS_REMOVED = "tags_removed"
     LINKED = "linked"
@@ -50,6 +51,7 @@ class TargetKind(StrEnum):
     """What it was done to; the UI opens the matching page."""
 
     EPISODE = "episode"
+    SEASON = "season"
     VOICE = "voice"
     IDEA = "idea"
     TAG = "tag"

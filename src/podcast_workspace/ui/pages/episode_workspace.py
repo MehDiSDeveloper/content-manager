@@ -47,6 +47,7 @@ from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.icons import NAV_ICON_SIZE
 from podcast_workspace.ui.pages.base import SUBTITLE_ROLE, TwoLineDelegate
+from podcast_workspace.ui.seasons import create_season
 from podcast_workspace.ui.support import (
     AppEvents,
     confirm,
@@ -58,6 +59,7 @@ from podcast_workspace.ui.support import (
 from podcast_workspace.ui.widgets.tag_input import TagInput
 
 AUTOSAVE_DELAY_MS = 700
+NEW_SEASON = "new"  # the season box's last entry: make one and file the episode there
 SIDE_PANEL_MIN_WIDTH = 280
 SIDE_PANEL_MAX_WIDTH = 380
 ID_ROLE = Qt.ItemDataRole.UserRole
@@ -455,7 +457,6 @@ class EpisodeWorkspacePage(QWidget):
         # from in here), so it is not bound on this widget.
         context = Qt.ShortcutContext.WidgetWithChildrenShortcut
         for keys, handler in (
-            (QKeySequence("Ctrl+R"), self.record_requested.emit),
             (QKeySequence("Ctrl+Tab"), lambda: self._cycle_note(1)),
             (QKeySequence("Ctrl+Shift+Tab"), lambda: self._cycle_note(-1)),
         ):
@@ -532,6 +533,10 @@ class EpisodeWorkspacePage(QWidget):
         for status in EpisodeStatus:
             self.status_box.addItem(strings.STATUS_LABELS[status], status)
         self.status_box.activated.connect(lambda _i: self._save_fields())
+        self.season_box = QComboBox()
+        self.season_box.setToolTip(strings.SEASON_LABEL)
+        self.season_box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.season_box.activated.connect(lambda _i: self._save_season())
         self.next_action = QLineEdit(objectName="nextAction")
         self.next_action.setPlaceholderText(strings.EPISODE_NEXT_ACTION_PLACEHOLDER)
         self.next_action.editingFinished.connect(self._save_fields)
@@ -550,6 +555,9 @@ class EpisodeWorkspacePage(QWidget):
         stage = QHBoxLayout()
         stage.setSpacing(10)
         stage.addWidget(self.status_box)
+        stage.addSpacing(10)
+        stage.addWidget(label(strings.SEASON_LABEL))
+        stage.addWidget(self.season_box)
         stage.addSpacing(10)
         stage.addWidget(label(strings.EPISODE_NEXT_ACTION))
         stage.addWidget(self.next_action, 1)
@@ -709,6 +717,7 @@ class EpisodeWorkspacePage(QWidget):
         self.title_edit.setCursorPosition(0)  # show where the title starts, not where it ends
         self.status_box.setCurrentIndex(self.status_box.findData(episode.status))
         self.next_action.setText(episode.next_action)
+        self._fill_seasons(episode.season_id)
         self.tag_input.set_tag_ids(episode.tag_ids)
         badge = stale_text(episode)
         self.stale.setText(badge)
@@ -748,6 +757,41 @@ class EpisodeWorkspacePage(QWidget):
             self._fill_fields()
             self.episode_saved.emit(saved)
             self._changed()
+
+    def _fill_seasons(self, current: int | None) -> None:
+        box = self.season_box
+        box.blockSignals(True)
+        box.clear()
+        box.addItem(strings.SEASON_NONE, None)
+        try:
+            seasons = self._ws.seasons.list_all()
+        except Exception:
+            seasons = []
+        for season in seasons:
+            box.addItem(season.title, season.id)
+        box.insertSeparator(box.count())
+        box.addItem(strings.SEASON_NEW, NEW_SEASON)
+        box.setCurrentIndex(max(0, box.findData(current)))
+        box.blockSignals(False)
+
+    def _save_season(self) -> None:
+        episode = self._episode
+        if episode is None or episode.id is None:
+            return
+        season_id = self.season_box.currentData()
+        if season_id == NEW_SEASON:
+            season = create_season(self, self._ws)
+            if season is None:
+                self._fill_seasons(episode.season_id)
+                return
+            season_id = season.id
+        try:
+            self._episode = self._ws.episodes.set_season(episode.id, season_id)
+        except Exception as exc:
+            show_error(self, exc)
+        self._fill_fields()
+        self.episode_saved.emit(self._episode)
+        self._changed()
 
     def _save_tags(self, tag_ids: list[int]) -> None:
         episode = self._episode

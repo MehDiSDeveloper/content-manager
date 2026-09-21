@@ -1,8 +1,8 @@
 """Main window: sidebar (right in RTL, left in LTR) holding search + navigation, and the
 page stack.
 
-Nav pages: Episodes, Board, Voices, Ideas, Tags (Ctrl+1..5). Off-nav pages: the startup
-resume screen and search results. An episode is always shown in one place — the Episodes
+Nav pages: Episodes, Board, Voices, Audio folder, Ideas, Tags (Ctrl+1..6). Off-nav pages:
+the startup resume screen and search results. An episode is always shown in one place — the Episodes
 page, beside its list — whether it is reached from there, the board, a tag, a search hit
 or the resume screen.
 
@@ -67,6 +67,7 @@ from podcast_workspace.ui.icons import (
     back_icon,
     board_icon,
     episodes_icon,
+    folder_icon,
     history_icon,
     ideas_icon,
     search_icon,
@@ -82,6 +83,7 @@ from podcast_workspace.ui.pages.board_page import BoardPage
 from podcast_workspace.ui.pages.content_pages import EpisodesPage, IdeasPage, VoicesPage
 from podcast_workspace.ui.pages.resume_page import ResumePage
 from podcast_workspace.ui.pages.search_page import SearchPage
+from podcast_workspace.ui.pages.source_page import SourcePage
 from podcast_workspace.ui.pages.tags_page import TagsPage
 from podcast_workspace.ui.player.transcript_panel import TranscriptionJobs
 from podcast_workspace.ui.settings_dialog import (
@@ -286,6 +288,7 @@ class MainWindow(QMainWindow):
         self.episodes_page = EpisodesPage(workspace, self.events)
         self.board_page = BoardPage(workspace, self.events)
         self.voices_page = VoicesPage(workspace, self.events, self.player, self.transcription_jobs)
+        self.source_page = SourcePage(workspace, self.events, self.player)
         self.ideas_page = IdeasPage(workspace, self.events)
         self.tags_page = TagsPage(workspace, self.events)
         self.workspace_page = self.episodes_page.workspace  # lives inside the Episodes page
@@ -295,6 +298,7 @@ class MainWindow(QMainWindow):
             self.episodes_page,
             self.board_page,
             self.voices_page,
+            self.source_page,
             self.ideas_page,
             self.tags_page,
         ]
@@ -307,6 +311,8 @@ class MainWindow(QMainWindow):
         self.tags_page.open_episode.connect(lambda i: self.open_episode(i, None))
         self.tags_page.open_voice.connect(self.open_voice)
         self.tags_page.open_idea.connect(self.open_idea)
+        self.source_page.open_voice.connect(self.open_voice)
+        self.source_page.record_requested.connect(self._record)
         self.voices_page.settings_requested.connect(lambda: self.open_settings(TAB_TRANSCRIPTION))
         self.bot.status_changed.connect(self._on_bot_status)
         self.bot.item_received.connect(self._on_bot_item)
@@ -336,6 +342,7 @@ class MainWindow(QMainWindow):
         self.events.data_changed.connect(self._warm_timer.start)
         self.events.tags_changed.connect(self._warm_timer.start)
         self.events.data_changed.connect(self._counts_timer.start)
+        self.source_page.pending_changed.connect(self._counts_timer.start)
         self.events.tags_changed.connect(self._counts_timer.start)
         self.events.data_changed.connect(self._on_history_touched)
         self.events.tags_changed.connect(self._on_history_touched)
@@ -418,6 +425,7 @@ class MainWindow(QMainWindow):
             (strings.NAV_EPISODES, episodes_icon, "episodes"),
             (strings.NAV_BOARD, board_icon, "board"),
             (strings.NAV_VOICES, voices_icon, "voices"),
+            (strings.NAV_SOURCE, folder_icon, "source"),
             (strings.NAV_IDEAS, ideas_icon, "ideas"),
             (strings.NAV_TAGS, tags_icon, "tags"),
         )
@@ -587,6 +595,7 @@ class MainWindow(QMainWindow):
                 len(self._ws.episodes.list_all()),
                 None,  # the board shows the same episodes
                 len(self._ws.voices.list_all()),
+                self.source_page.pending_count(),  # files waiting to be reviewed
                 len(self._ws.ideas.list_all()),
                 len(self._ws.tags.list_all()),
             ]
@@ -601,6 +610,8 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+W"), self, activated=self.close)
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.focus_search)
         QShortcut(QKeySequence("Ctrl+B"), self, activated=self.toggle_sidebar)
+        # The recorder is one key away wherever the user is, not only inside an episode.
+        QShortcut(QKeySequence("Ctrl+R"), self, activated=self._record)
         QShortcut(QKeySequence.StandardKey.Undo, self, activated=self.undo)
         QShortcut(QKeySequence.StandardKey.Redo, self, activated=self.redo)
         QShortcut(QKeySequence("Ctrl+Shift+Z"), self, activated=self.redo)
@@ -792,6 +803,7 @@ class MainWindow(QMainWindow):
             ):
                 note_id = target.item_id if target.kind is TargetKind.EPISODE_NOTE else None
                 self.workspace_page.reload(note_id)
+                self.episodes_page.refresh(load=False)  # its row, and its season, may differ
                 return
         if page is self.board_page and target.kind is TargetKind.EPISODE:
             self.board_page.refresh(focus_id=target.item_id)
@@ -802,6 +814,9 @@ class MainWindow(QMainWindow):
                 self.episodes_page.select(target.item_id)
             case TargetKind.EPISODE_NOTE if target.owner_id is not None:
                 self.open_episode(target.owner_id, target.item_id)
+            case TargetKind.SEASON:
+                self.show_page(self.episodes_page, remember=False)
+                self.episodes_page.show_season(target.item_id)
             case TargetKind.VOICE:
                 self.open_voice(target.item_id)
             case TargetKind.TIMESTAMP_NOTE if target.owner_id is not None:

@@ -31,6 +31,8 @@ BACKUP_SNOOZE_KEY = "backup.reminder_snoozed_until"
 BACKUP_INTERVAL_KEY = "backup.reminder_days"
 GEOMETRY_KEY = "ui.window_geometry"
 RECORDER_KEY = "recording.program_path"
+SOURCE_FOLDER_KEY = "voices.source_folder"
+SEASON_FILTER_KEY = "ui.episode_season_filter"
 BALE_TOKEN_KEY = "bale.token"
 BALE_ENABLED_KEY = "bale.enabled"
 BALE_OWNER_KEY = "bale.owner"
@@ -110,6 +112,22 @@ class SettingsService:
     def set_recorder_path(self, path: str) -> None:
         with UnitOfWork(self._session_factory) as uow:
             uow.settings.set(RECORDER_KEY, path.strip())
+
+    def source_folder(self) -> str:
+        """Folder the recording program saves into ("" = not chosen yet)."""
+        value = self._get(SOURCE_FOLDER_KEY)
+        return value if isinstance(value, str) else ""
+
+    def set_source_folder(self, path: str) -> None:
+        self._set(SOURCE_FOLDER_KEY, path.strip())
+
+    def season_filter(self) -> str:
+        """Which season the Episodes list shows: "all", "none" or a season id."""
+        value = self._get(SEASON_FILTER_KEY)
+        return value if isinstance(value, str) and value else "all"
+
+    def set_season_filter(self, value: str) -> None:
+        self._set(SEASON_FILTER_KEY, value)
 
     # Bale bot --------------------------------------------------------------------------
     def bale_token(self) -> str:
