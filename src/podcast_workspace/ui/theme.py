@@ -302,9 +302,8 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
         background: {c.accent_soft}; color: {on_soft};
     }}
     QListWidget:focus, QTreeWidget:focus {{ border: 1px solid {c.accent_strong}; }}
-    /* A tree row spans several columns: one flat band reads better than rounded pieces. */
+    /* A row spans several columns: one flat band reads better than rounded pieces. */
     QTreeWidget::item {{ border-radius: 0; margin: 0; padding: 6px 4px; }}
-    QTreeWidget::branch:selected {{ background: {c.accent_soft}; }}
     QListWidget#suggestions {{ padding: 3px; }}
     QListWidget#suggestions::item {{ padding: 7px 9px; }}
     QListWidget#results::item {{ margin: 2px 0; border: 1px solid transparent; }}

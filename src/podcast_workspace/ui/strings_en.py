@@ -197,11 +197,9 @@ TRASH_VOICE_HINT = "Restore it to listen and edit."
 TAGS_TITLE = "Tags"
 TAG_NEW = "New tag"
 TAG_FILTER_PLACEHOLDER = "Find a tag…"
-TAG_FILTER_TOOLTIP = "Find a tag in this tree  (Ctrl+F)"
+TAG_FILTER_TOOLTIP = "Find a tag in this list  (Ctrl+F)"
 TAG_RENAME = "Rename"
 TAG_RECOLOR = "Change colour"
-TAG_NEST = "Move under…"
-TAG_UNNEST = "Move to top level"
 TAG_MERGE = "Merge into…"
 TAG_DELETE = "Delete"
 TAG_EMPTY = "No tags yet. You can also create tags while working on episodes and ideas."
@@ -214,11 +212,8 @@ TAG_USES_NONE = "Select a tag to see its items here."
 TAG_USES_COUNT = "{n} items"
 TAG_OPEN_ITEM = "Open (Enter)"
 TAG_NAME_HEADER = "Name"
-TAG_DELETE_CONFIRM = (
-    "Delete tag “{name}”? It is removed from {n} items and its children move up one level."
-)
+TAG_DELETE_CONFIRM = "Delete tag “{name}”? It is removed from {n} items."
 TAG_MERGE_CONFIRM = "Move every use of “{source}” to “{target}” and delete “{source}”?"
-TAG_NEST_TITLE = "Move “{name}” under…"
 TAG_MERGE_TITLE = "Merge “{name}” into…"
 TAG_NEW_TITLE = "New tag"
 TAG_NAME_PLACEHOLDER = "Tag name"
@@ -255,7 +250,6 @@ SELECT_SOMETHING = "Select an item from the list."
 ERR_TAG_LIMIT = "An item can have at most {limit} tags."
 ERR_DUPLICATE_TAG = "Tag “{name}” already exists."
 ERR_NEAR_DUPLICATE = "Similar tags exist: {names}"
-ERR_HIERARCHY = "A tag cannot sit under itself or one of its children."
 ERR_VALIDATION = "That value is not valid (it cannot be empty, for example)."
 ERR_NOT_FOUND = "This item no longer exists."
 ERR_UNEXPECTED = "Unexpected error: {error}"
@@ -540,7 +534,6 @@ UNDO_ACTIONS = {
     "linked": "Link {quoted} to {target}",
     "unlinked": "Unlink {quoted} from {target}",
     "recolor": "Recolour tag {quoted}",
-    "reparent": "Move tag {quoted}",
     "merge": "Merge tag {quoted} into {other}",
     "archive": "Archive {target} {quoted}",
     "unarchive": "Unarchive {target} {quoted}",
@@ -578,7 +571,7 @@ IDEA_SEARCH_TOOLTIP = (
 )
 IDEA_PIN_HINT = "Enter: keep this phrase and add another"
 IDEA_TAG_FILTER_PLACEHOLDER = "Filter by tag…"
-IDEA_TAG_FILTER_TOOLTIP = "Only ideas carrying all of these tags; a tag's subtags count too"
+IDEA_TAG_FILTER_TOOLTIP = "Only ideas carrying all of these tags"
 CONTENT_SWITCH = "In content"
 IDEA_CONTENT_TOOLTIP = "Also search the full text of text ideas and the transcripts of audio ideas"
 PHRASE_REMOVE_TOOLTIP = "Remove this phrase"

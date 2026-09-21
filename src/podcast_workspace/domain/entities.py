@@ -79,7 +79,6 @@ class Taggable:
 class Tag:
     name: str
     color: str = "#6b7280"
-    parent_id: int | None = None
     id: int | None = None
 
     def __post_init__(self) -> None:

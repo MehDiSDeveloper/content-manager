@@ -1,13 +1,9 @@
 """Pure business rules. No I/O, no framework imports."""
 
 import re
-from collections.abc import Callable, Collection
+from collections.abc import Collection
 
-from podcast_workspace.domain.errors import (
-    InvalidTagHierarchyError,
-    TagLimitExceededError,
-    ValidationError,
-)
+from podcast_workspace.domain.errors import TagLimitExceededError, ValidationError
 
 MAX_TAGS_PER_ITEM = 15
 """Hard cap on tags attached to a single Voice or IdeaNote."""
@@ -45,28 +41,6 @@ def normalize_color(color: str) -> str:
     if not _HEX_COLOR.match(color):
         raise ValidationError(f"Tag color must look like #RRGGBB, got {color!r}.")
     return color.lower()
-
-
-def ensure_valid_parent(
-    tag_id: int | None,
-    new_parent_id: int | None,
-    parent_of: Callable[[int], int | None],
-) -> None:
-    """Reject a parent assignment that would create a cycle.
-
-    `parent_of` returns the current parent id of a tag (None for a root tag).
-    """
-    if new_parent_id is None or tag_id is None:
-        return
-    seen: set[int] = set()
-    cursor: int | None = new_parent_id
-    while cursor is not None:
-        if cursor == tag_id:
-            raise InvalidTagHierarchyError("A tag cannot be nested inside itself.")
-        if cursor in seen:  # pre-existing corruption; stop instead of looping forever
-            break
-        seen.add(cursor)
-        cursor = parent_of(cursor)
 
 
 def ensure_non_empty(value: str, field: str) -> str:

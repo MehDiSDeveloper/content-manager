@@ -1,11 +1,13 @@
 """Engine creation, SQLite pragmas and programmatic Alembic migrations."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Connection, Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from podcast_workspace.domain.text import normalize_for_index
@@ -42,10 +44,33 @@ def alembic_config(url: str | None = None) -> Config:
     return config
 
 
+@contextmanager
+def migration_connection(engine: Engine) -> Iterator[Connection]:
+    """A connection for migrations: foreign keys off, one transaction, checked at the end.
+
+    Rebuilding a table drops the old one, and with foreign keys on that CASCADEs into every
+    table referencing it (tag links, notes, transcripts). The pragma is a no-op inside a
+    transaction, so it is set before the transaction begins, and put back on the pooled
+    connection afterwards.
+    """
+    with engine.connect() as connection:
+        connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        connection.commit()
+        try:
+            with connection.begin():
+                yield connection
+                broken = connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall()
+                if broken:
+                    raise RuntimeError(f"migration left broken references: {broken[:5]}")
+        finally:
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+            connection.commit()
+
+
 def migrate(engine: Engine) -> None:
     """Upgrade the database behind `engine` to the latest revision."""
     config = alembic_config()
-    with engine.begin() as connection:
+    with migration_connection(engine) as connection:
         config.attributes["connection"] = connection
         command.upgrade(config, "head")
 

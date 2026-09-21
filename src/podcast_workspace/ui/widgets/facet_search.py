@@ -12,7 +12,6 @@ Down moves to the list, Backspace on an empty box takes back the last chip, Esc 
 the box and then hands the page back.
 """
 
-from collections import defaultdict
 from dataclasses import dataclass
 
 from PySide6.QtCore import QEvent, QObject, Qt, Signal
@@ -69,7 +68,6 @@ class FacetSearchBar(QWidget):
 
     def __init__(self, tags: TagService, events: AppEvents, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._tags = tags
         self._phrases: list[str] = []
 
         col = QVBoxLayout(self)
@@ -129,22 +127,9 @@ class FacetSearchBar(QWidget):
         queries = (*self._phrases, self.edit.text())
         return FacetFilter(
             tuple(parse_list_filter(q) for q in queries),
-            tuple(self._with_descendants(i) for i in self.tag_input.tag_ids()),
+            frozenset(self.tag_input.tag_ids()),
             self.content.isChecked(),
         )
-
-    def _with_descendants(self, tag_id: int) -> frozenset[int]:
-        children: dict[int | None, list[int]] = defaultdict(list)
-        for tag in self._tags.list_all():
-            if tag.id is not None:
-                children[tag.parent_id].append(tag.id)
-        found, stack = {tag_id}, [tag_id]
-        while stack:
-            for child in children.get(stack.pop(), ()):
-                if child not in found:
-                    found.add(child)
-                    stack.append(child)
-        return frozenset(found)
 
     def in_content(self) -> bool:
         return self.content.isChecked()

@@ -79,12 +79,12 @@ def parse_list_filter(query: str) -> ListFilter:
 class FacetFilter:
     """Several queries and several tags at once; an item must satisfy every one.
 
-    `tag_groups` holds one set per chosen tag: the tag and its descendants, any of which
-    satisfies that chip. `in_content` lets the queries read the item's content as well.
+    `tag_ids` are the chosen tags, every one required. `in_content` lets the queries read
+    the item's content as well.
     """
 
     queries: tuple[ListFilter, ...] = ()
-    tag_groups: tuple[frozenset[int], ...] = ()
+    tag_ids: frozenset[int] = frozenset()
     in_content: bool = False
     _active: tuple[ListFilter, ...] = field(init=False, repr=False, compare=False)
 
@@ -93,7 +93,7 @@ class FacetFilter:
 
     @property
     def is_empty(self) -> bool:
-        return not self._active and not self.tag_groups
+        return not self._active and not self.tag_ids
 
     def matches(
         self,
@@ -102,10 +102,8 @@ class FacetFilter:
         tag_ids: Iterable[int] = (),
         content: str = "",
     ) -> bool:
-        if self.tag_groups:
-            owned = set(tag_ids)
-            if not all(group & owned for group in self.tag_groups):
-                return False
+        if self.tag_ids and not self.tag_ids <= set(tag_ids):
+            return False
         names = tuple(tag_names)
         body = content if self.in_content else ""
         return all(q.matches(title, names, body) for q in self._active)

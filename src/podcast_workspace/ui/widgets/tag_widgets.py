@@ -1,7 +1,5 @@
 """Tag chip, colored dot icons and the fuzzy suggestion list shared by tag pickers."""
 
-from collections.abc import Callable
-
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
@@ -87,16 +85,13 @@ class SuggestionList(QListWidget):
     def fill(
         self,
         tags: list[Tag],
-        parent_name: Callable[[Tag], str | None],
         create: tuple[str, str] | None = None,
         max_visible: int = 8,
     ) -> None:
         """`create` = (label, name) adds a trailing 'create new tag' row."""
         self.clear()
         for tag in tags:
-            parent = parent_name(tag)
-            label = f"{tag.name}   ·   {parent}" if parent else tag.name
-            item = QListWidgetItem(color_dot(tag.color), label)
+            item = QListWidgetItem(color_dot(tag.color), tag.name)
             item.setData(KIND_ROLE, KIND_TAG)
             item.setData(VALUE_ROLE, tag.id)
             self.addItem(item)

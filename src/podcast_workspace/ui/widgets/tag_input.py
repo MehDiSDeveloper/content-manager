@@ -12,7 +12,6 @@ from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
-from podcast_workspace.domain.entities import Tag
 from podcast_workspace.domain.tag_matching import NEAR_DUPLICATE_THRESHOLD
 from podcast_workspace.services.tag_service import TagService
 from podcast_workspace.ui import strings
@@ -112,12 +111,6 @@ class TagInput(QWidget):
             else self._placeholder
         )
 
-    def _parent_name(self, tag: Tag) -> str | None:
-        if tag.parent_id is None:
-            return None
-        parent = self._tags.get(tag.parent_id)
-        return parent.name if parent else None
-
     def _update_suggestions(self, text: str) -> None:
         if not text.strip() or self._full():
             self._list.setVisible(False)
@@ -139,7 +132,7 @@ class TagInput(QWidget):
             create = (label, name)
         elif exact is not None and exact.id in attached:
             matches = [m for m in matches if m.tag.id != exact.id]
-        self._list.fill([m.tag for m in matches], self._parent_name, create)
+        self._list.fill([m.tag for m in matches], create)
 
     def _on_activated(self, kind: str, value: object) -> None:
         if kind == KIND_CREATE:

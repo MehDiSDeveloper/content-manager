@@ -85,7 +85,7 @@ def test_content_is_read_only_when_handed_over() -> None:
 # FacetFilter: the Ideas page's pinned queries, tag chips and the content switch -----------
 
 
-def facet(*queries: str, tags: tuple[frozenset[int], ...] = (), content: bool = False):
+def facet(*queries: str, tags: frozenset[int] = frozenset(), content: bool = False):
     return FacetFilter(tuple(parse_list_filter(q) for q in queries), tags, content)
 
 
@@ -109,17 +109,11 @@ def test_a_query_also_reads_the_item_tags() -> None:
 
 
 def test_every_tag_chip_is_required() -> None:
-    episode, deep, city = frozenset({1}), frozenset({2}), frozenset({3})
-    chips = facet("شه", tags=(episode, deep))
+    chips = facet("شه", tags=frozenset({1, 2}))
     assert chips.matches("شهرداری", (), (1, 2))
-    assert not chips.matches("شهربازی", (), (2,))  # no «episode» tag
+    assert not chips.matches("شهربازی", (), (2,))  # no tag 1
     assert not chips.matches("کتاب", (), (1, 2))  # the word is missing
-    assert facet(tags=(city,)).matches("هر چیزی", (), (3, 9))
-
-
-def test_a_tag_chip_accepts_any_tag_beneath_it() -> None:
-    travel = frozenset({10, 11, 12})  # «سفر» and its children
-    assert facet(tags=(travel,)).matches("x", (), (12,))
+    assert facet(tags=frozenset({3})).matches("هر چیزی", (), (3, 9))
 
 
 def test_content_switch_opens_the_body() -> None:

@@ -202,11 +202,9 @@ TRASH_VOICE_HINT = "برای شنیدن و ویرایش، اول بازیابی 
 TAGS_TITLE = "برچسب‌ها"
 TAG_NEW = "برچسب تازه"
 TAG_FILTER_PLACEHOLDER = "پیدا کردن برچسب…"
-TAG_FILTER_TOOLTIP = "پیدا کردن برچسب در همین درخت  (Ctrl+F)"
+TAG_FILTER_TOOLTIP = "پیدا کردن برچسب در همین فهرست  (Ctrl+F)"
 TAG_RENAME = "تغییر نام"
 TAG_RECOLOR = "تغییر رنگ"
-TAG_NEST = "انتقال به زیرِ…"
-TAG_UNNEST = "انتقال به ریشه"
 TAG_MERGE = "ادغام در…"
 TAG_DELETE = "حذف"
 TAG_EMPTY = "هنوز برچسبی ندارید. برچسب‌ها را هنگام کار با اپیزودها و ایده‌ها هم می‌توانید بسازید."
@@ -219,11 +217,8 @@ TAG_USES_NONE = "یک برچسب را انتخاب کنید تا موردهای�
 TAG_USES_COUNT = "{n} مورد"
 TAG_OPEN_ITEM = "باز کردن (Enter)"
 TAG_NAME_HEADER = "نام"
-TAG_DELETE_CONFIRM = (
-    "برچسب «{name}» حذف شود؟ از {n} مورد برداشته می‌شود و زیرمجموعه‌هایش یک سطح بالا می‌روند."
-)
+TAG_DELETE_CONFIRM = "برچسب «{name}» حذف شود؟ از {n} مورد برداشته می‌شود."
 TAG_MERGE_CONFIRM = "همهٔ کاربردهای «{source}» به «{target}» منتقل و «{source}» حذف شود؟"
-TAG_NEST_TITLE = "انتقال «{name}» به زیرِ…"
 TAG_MERGE_TITLE = "ادغام «{name}» در…"
 TAG_NEW_TITLE = "برچسب تازه"
 TAG_NAME_PLACEHOLDER = "نام برچسب"
@@ -263,7 +258,6 @@ SELECT_SOMETHING = "یک مورد را از فهرست انتخاب کنید."
 ERR_TAG_LIMIT = "هر مورد حداکثر {limit} برچسب می‌تواند داشته باشد."
 ERR_DUPLICATE_TAG = "برچسب «{name}» از قبل وجود دارد."
 ERR_NEAR_DUPLICATE = "برچسب‌های مشابه وجود دارد: {names}"
-ERR_HIERARCHY = "یک برچسب نمی‌تواند زیرِ خودش یا زیرمجموعه‌هایش قرار بگیرد."
 ERR_VALIDATION = "مقدار واردشده معتبر نیست (مثلاً نباید خالی باشد)."
 ERR_NOT_FOUND = "این مورد دیگر وجود ندارد."
 ERR_UNEXPECTED = "خطای غیرمنتظره: {error}"
@@ -550,7 +544,6 @@ UNDO_ACTIONS = {
     "linked": "پیوند {quoted} به {target}",
     "unlinked": "برداشتن پیوند {quoted} از {target}",
     "recolor": "تغییر رنگ برچسب {quoted}",
-    "reparent": "جابه‌جایی برچسب {quoted}",
     "merge": "ادغام برچسب {quoted} در {other}",
     "archive": "بایگانی {target} {quoted}",
     "unarchive": "خروج {target} {quoted} از بایگانی",
@@ -588,9 +581,7 @@ IDEA_SEARCH_TOOLTIP = (
 )
 IDEA_PIN_HINT = "Enter: نگه‌داشتن این عبارت و افزودن عبارت بعدی"
 IDEA_TAG_FILTER_PLACEHOLDER = "پالایش با برچسب…"
-IDEA_TAG_FILTER_TOOLTIP = (
-    "فقط ایده‌هایی که همهٔ این برچسب‌ها را دارند؛ زیربرچسب‌های هر برچسب هم حساب می‌شوند"
-)
+IDEA_TAG_FILTER_TOOLTIP = "فقط ایده‌هایی که همهٔ این برچسب‌ها را دارند"
 CONTENT_SWITCH = "در محتوا"
 IDEA_CONTENT_TOOLTIP = "متن کامل ایده‌های متنی و رونوشت ایده‌های صوتی هم جستجو شود"
 PHRASE_REMOVE_TOOLTIP = "برداشتن این عبارت"

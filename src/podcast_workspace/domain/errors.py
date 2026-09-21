@@ -12,10 +12,6 @@ class TagLimitExceededError(DomainError):
         self.attempted = attempted
 
 
-class InvalidTagHierarchyError(DomainError):
-    """A tag would become its own ancestor."""
-
-
 class ValidationError(DomainError):
     """A field value is outside what the domain accepts."""
 

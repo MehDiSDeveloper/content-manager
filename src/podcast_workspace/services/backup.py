@@ -227,10 +227,7 @@ class BackupService:
             "format": FORMAT,
             "version": FORMAT_VERSION,
             "exported_at": datetime.now().astimezone().isoformat(),
-            "tags": [
-                {"id": t.id, "name": t.name, "color": t.color, "parent_id": t.parent_id}
-                for t in snap.tags
-            ],
+            "tags": [{"id": t.id, "name": t.name, "color": t.color} for t in snap.tags],
             "voices": [
                 {
                     "id": v.id,
@@ -335,7 +332,7 @@ class BackupService:
             uow.maintenance.snapshot_to(snapshot)
         with UnitOfWork(self._sf) as uow:  # one transaction: all or nothing
             uow.maintenance.wipe_user_data()
-            for tag in _parents_first(snap.tags):
+            for tag in snap.tags:
                 uow.tags.add(tag)
             for voice in snap.voices:
                 uow.voices.add(voice)
@@ -395,10 +392,7 @@ class BackupService:
     @staticmethod
     def _from_json(data: dict[str, Any]) -> _Snapshot:
         return _Snapshot(
-            tags=[
-                Tag(id=t["id"], name=t["name"], color=t["color"], parent_id=t.get("parent_id"))
-                for t in data["tags"]
-            ],
+            tags=[Tag(id=t["id"], name=t["name"], color=t["color"]) for t in data["tags"]],
             voices=[
                 Voice(
                     id=v["id"],
@@ -481,26 +475,3 @@ class BackupService:
                 for s in data.get("seasons") or ()
             ],
         )
-
-
-def _parents_first(tags: list[Tag]) -> list[Tag]:
-    by_id = {t.id: t for t in tags}
-    ordered: list[Tag] = []
-    placed: set[int | None] = set()
-
-    def place(tag: Tag, depth: int = 0) -> None:
-        if tag.id in placed:
-            return
-        if depth > len(tags):
-            raise ValidationError("tag hierarchy in export has a cycle")
-        parent = by_id.get(tag.parent_id) if tag.parent_id is not None else None
-        if parent is not None:
-            place(parent, depth + 1)
-        elif tag.parent_id is not None:
-            tag.parent_id = None  # parent missing from the export: make it a root tag
-        placed.add(tag.id)
-        ordered.append(tag)
-
-    for tag in tags:
-        place(tag)
-    return ordered

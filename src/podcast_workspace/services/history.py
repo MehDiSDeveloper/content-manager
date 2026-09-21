@@ -43,7 +43,6 @@ class ChangeKind(StrEnum):
     LINKED = "linked"
     UNLINKED = "unlinked"
     RECOLOR = "recolor"
-    REPARENT = "reparent"
     MERGE = "merge"
     ARCHIVE = "archive"
     UNARCHIVE = "unarchive"

@@ -78,9 +78,6 @@ class TagRow(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(64, collation="NOCASE"), unique=True)
     color: Mapped[str] = mapped_column(String(7))
-    parent_id: Mapped[int | None] = mapped_column(
-        ForeignKey("tags.id", ondelete="SET NULL"), index=True
-    )
 
 
 class SeasonRow(Base):

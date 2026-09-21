@@ -14,7 +14,6 @@ from podcast_workspace.domain.entities import EpisodeStatus
 from podcast_workspace.domain.errors import (
     DomainError,
     DuplicateTagError,
-    InvalidTagHierarchyError,
     NearDuplicateTagError,
     NotFoundError,
     TagLimitExceededError,
@@ -96,8 +95,6 @@ def describe_error(exc: BaseException) -> str:
             return strings.ERR_NEAR_DUPLICATE.format(
                 names=strings.LIST_SEPARATOR.join(exc.similar_names)
             )
-        case InvalidTagHierarchyError():
-            return strings.ERR_HIERARCHY
         case ValidationError():
             return strings.ERR_VALIDATION
         case NotFoundError():

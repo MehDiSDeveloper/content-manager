@@ -20,11 +20,7 @@ from podcast_workspace.domain.entities import (
     Voice,
 )
 from podcast_workspace.domain.errors import NotFoundError
-from podcast_workspace.domain.rules import (
-    MAX_TAGS_PER_ITEM,
-    ensure_tag_limit,
-    ensure_valid_parent,
-)
+from podcast_workspace.domain.rules import MAX_TAGS_PER_ITEM, ensure_tag_limit
 from podcast_workspace.repositories.base import SqlRepository
 from podcast_workspace.repositories.models import (
     EpisodeNoteRow,
@@ -67,18 +63,11 @@ class TagRepository(SqlRepository[Tag, TagRow]):
     entity_name = "Tag"
 
     def _to_domain(self, row: TagRow) -> Tag:
-        return Tag(name=row.name, color=row.color, parent_id=row.parent_id, id=row.id)
+        return Tag(name=row.name, color=row.color, id=row.id)
 
     def _apply(self, entity: Tag, row: TagRow) -> None:
-        if entity.parent_id is not None:
-            self._row(entity.parent_id)
-        ensure_valid_parent(entity.id, entity.parent_id, self._parent_of)
         row.name = entity.name
         row.color = entity.color
-        row.parent_id = entity.parent_id
-
-    def _parent_of(self, tag_id: int) -> int | None:
-        return self.session.scalar(select(TagRow.parent_id).where(TagRow.id == tag_id))
 
     def list_all(self) -> list[Tag]:
         rows = self.session.scalars(select(TagRow).order_by(TagRow.name))
@@ -87,11 +76,6 @@ class TagRepository(SqlRepository[Tag, TagRow]):
     def find_by_name(self, name: str) -> Tag | None:
         row = self.session.scalar(select(TagRow).where(TagRow.name == name))
         return None if row is None else self._to_domain(row)
-
-    def children_of(self, tag_id: int | None) -> list[Tag]:
-        condition = TagRow.parent_id.is_(None) if tag_id is None else TagRow.parent_id == tag_id
-        rows = self.session.scalars(select(TagRow).where(condition).order_by(TagRow.name))
-        return [self._to_domain(row) for row in rows]
 
     def usage_counts(self) -> dict[int, int]:
         """Tag id -> number of episodes, voices and ideas carrying it. Items in the trash
@@ -108,17 +92,6 @@ class TagRepository(SqlRepository[Tag, TagRow]):
             )
         )
         return {tag_id: count for tag_id, count in rows}
-
-    def child_ids(self, tag_id: int) -> set[int]:
-        return set(self.session.scalars(select(TagRow.id).where(TagRow.parent_id == tag_id)))
-
-    def reparent(self, tag_ids: set[int], parent_id: int | None) -> None:
-        """Put a set of tags under one parent (used to undo a delete or a merge)."""
-        for tag_id in tag_ids:
-            row = self.session.get(TagRow, tag_id)
-            if row is not None:
-                row.parent_id = parent_id
-        self.session.flush()
 
     def uses_of(self, tag_id: int) -> TagUses:
         """What carries this tag right now."""
@@ -162,16 +135,6 @@ class TagRepository(SqlRepository[Tag, TagRow]):
                 )
         self.session.expire_all()
 
-    def delete_keeping_children(self, tag_id: int) -> None:
-        """Delete a tag; its children move up to its parent instead of becoming roots."""
-        parent_id = self._row(tag_id).parent_id
-        self.session.execute(
-            text("UPDATE tags SET parent_id = :parent WHERE parent_id = :tag"),
-            {"parent": parent_id, "tag": tag_id},
-        )
-        self.session.expire_all()
-        self.delete(tag_id)
-
     def merge_into(self, source_id: int, target_id: int) -> None:
         """Move every use of `source` onto `target`, then delete `source`.
 
@@ -180,7 +143,8 @@ class TagRepository(SqlRepository[Tag, TagRow]):
         """
         if source_id == target_id:
             return
-        source, target = self._row(source_id), self._row(target_id)
+        self._row(source_id)  # both must exist
+        self._row(target_id)
         params = {"source": source_id, "target": target_id}
         for table, column in (
             ("episode_tags", "episode_id"),
@@ -193,15 +157,6 @@ class TagRepository(SqlRepository[Tag, TagRow]):
                     f"SELECT {column}, :target FROM {table} WHERE tag_id = :source"
                 ),
                 params,
-            )
-        self.session.execute(
-            text("UPDATE tags SET parent_id = :target WHERE parent_id = :source AND id != :target"),
-            params,
-        )
-        if target.parent_id == source_id:  # target nested under source: lift it one level
-            self.session.execute(
-                text("UPDATE tags SET parent_id = :parent WHERE id = :target"),
-                {"parent": source.parent_id, "target": target_id},
             )
         self.session.expire_all()
         self.delete(source_id)

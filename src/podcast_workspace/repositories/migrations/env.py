@@ -6,7 +6,7 @@ from alembic import context
 from sqlalchemy import Connection
 
 from podcast_workspace.paths import database_path
-from podcast_workspace.repositories.db import create_sqlite_engine
+from podcast_workspace.repositories.db import create_sqlite_engine, migration_connection
 from podcast_workspace.repositories.models import Base
 
 config = context.config
@@ -51,7 +51,7 @@ def run_migrations_online() -> None:
         return
     url = config.get_main_option("sqlalchemy.url") or f"sqlite:///{database_path().as_posix()}"
     engine = create_sqlite_engine(url)
-    with engine.begin() as conn:
+    with migration_connection(engine) as conn:
         _run(conn)
     engine.dispose()
 

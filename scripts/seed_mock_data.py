@@ -52,24 +52,21 @@ def ago(days: float = 0, hours: float = 0) -> datetime:
 
 # --------------------------------------------------------------------------- tags
 
-# (key, name, color, parent key)
-TAGS: tuple[tuple[str, str, str, str | None], ...] = (
-    ("topic", "موضوع", "#3b82f6", None),
-    ("city", "شهر", "#10b981", "topic"),
-    ("history", "تاریخ", "#f59e0b", "topic"),
-    ("philosophy", "فلسفه", "#8b5cf6", "topic"),
-    ("tech", "تکنولوژی", "#6366f1", "topic"),
-    ("psych", "روانشناسی", "#ec4899", "topic"),
-    ("source", "منبع", "#14b8a6", None),
-    ("field", "ضبط میدانی", "#84cc16", "source"),
-    ("guest", "مصاحبه مهمان", "#f97316", "source"),
-    ("personal", "یادداشت شخصی", "#ef4444", "source"),
-    ("state", "وضعیت", "#6b7280", None),
-    ("needs_edit", "نیاز به تدوین", "#f43f5e", "state"),
-    ("needs_research", "پژوهش لازم", "#0ea5e9", "state"),
-    ("ready", "آماده انتشار", "#22c55e", "state"),
-    ("s1", "فصل اول", "#94a3b8", None),
-    ("s2", "فصل دوم", "#a855f7", None),
+# (key, name, color)
+TAGS: tuple[tuple[str, str, str], ...] = (
+    ("city", "شهر", "#10b981"),
+    ("history", "تاریخ", "#f59e0b"),
+    ("philosophy", "فلسفه", "#8b5cf6"),
+    ("tech", "تکنولوژی", "#6366f1"),
+    ("psych", "روانشناسی", "#ec4899"),
+    ("field", "ضبط میدانی", "#84cc16"),
+    ("guest", "مصاحبه مهمان", "#f97316"),
+    ("personal", "یادداشت شخصی", "#ef4444"),
+    ("needs_edit", "نیاز به تدوین", "#f43f5e"),
+    ("needs_research", "پژوهش لازم", "#0ea5e9"),
+    ("ready", "آماده انتشار", "#22c55e"),
+    ("s1", "فصل اول", "#94a3b8"),
+    ("s2", "فصل دوم", "#a855f7"),
 )
 
 # --------------------------------------------------------------------------- audio
@@ -331,8 +328,8 @@ def seed(uow: UnitOfWork) -> dict[str, list[int] | list[str]]:
     audio_dir.mkdir(parents=True, exist_ok=True)
 
     tags: dict[str, int] = {}
-    for key, name, color, parent in TAGS:
-        tag = uow.tags.add(Tag(name=name, color=color, parent_id=tags.get(parent or "")))
+    for key, name, color in TAGS:
+        tag = uow.tags.add(Tag(name=name, color=color))
         assert tag.id is not None
         tags[key] = tag.id
 
@@ -450,7 +447,7 @@ def seed(uow: UnitOfWork) -> dict[str, list[int] | list[str]]:
 
 
 def clear(uow: UnitOfWork, manifest: dict[str, list]) -> None:
-    """Delete children before parents so the FTS triggers fire for every row."""
+    """Delete what hangs on an item before the item, so the FTS triggers fire for every row."""
     order = (
         ("transcripts", uow.transcripts),
         ("timestamp_notes", uow.timestamp_notes),

@@ -1,6 +1,4 @@
-"""Dialogs of the tag manager: pick one tag (nest/merge target) and create a new tag."""
-
-from collections.abc import Callable
+"""Dialogs of the tag manager: pick one tag (merge target) and create a new tag."""
 
 from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QKeyEvent
@@ -14,18 +12,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from podcast_workspace.domain.entities import Tag
 from podcast_workspace.services.tag_service import TagService
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.widgets.tag_widgets import SuggestionList
-
-
-def _parent_name(tags: TagService) -> Callable[[Tag], str | None]:
-    def name(tag: Tag) -> str | None:
-        parent = tags.get(tag.parent_id) if tag.parent_id is not None else None
-        return parent.name if parent else None
-
-    return name
 
 
 class _ArrowKeysToList(QObject):
@@ -84,7 +73,7 @@ class TagPickerDialog(QDialog):
             found = [m.tag for m in self._tags.suggest(text, self._exclude, limit=12)]
         else:
             found = [t for t in self._tags.list_all() if t.id not in self._exclude]
-        self._list.fill(found, _parent_name(self._tags), max_visible=10)
+        self._list.fill(found, max_visible=10)
         self._list.setVisible(True)
 
     def _choose(self, _kind: str, value: object) -> None:
@@ -132,7 +121,7 @@ class NewTagDialog(QDialog):
         similar += [
             m.tag for m in self._tags.suggest(name, limit=5) if name and m.tag not in similar
         ][: max(0, 5 - len(similar))]
-        self._similar.fill(similar, _parent_name(self._tags), max_visible=5)
+        self._similar.fill(similar, max_visible=5)
         self._similar.setCurrentRow(-1)
         self.allow_similar = bool(similar) and exact is None
         if exact is not None:
