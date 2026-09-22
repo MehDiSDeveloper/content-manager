@@ -342,7 +342,7 @@ class _Worker(threading.Thread):
         except BaleError:
             log.warning("answerCallbackQuery failed", exc_info=True)
 
-    def _authorized(self, chat: dict[str, Any]) -> bool:
+    def _authorized(self, chat: dict[str, Any], greet: bool = True) -> bool:
         if chat.get("type", "private") != "private":
             return False  # groups/channels are never an inbox
         chat_id = int(chat["id"])
@@ -353,7 +353,8 @@ class _Worker(threading.Thread):
                 str(chat.get(k) or "") for k in ("first_name", "last_name")
             ).strip() or str(chat.get("username") or chat_id)
             settings.set_bale_owner(BotOwner(chat_id, name))
-            self._send(chat_id, T_WELCOME)
+            if greet:  # a command gets its own reply; don't welcome twice
+                self._send(chat_id, T_WELCOME)
             return True
         if owner.chat_id != chat_id:
             self._send(chat_id, T_PRIVATE)
@@ -366,11 +367,12 @@ class _Worker(threading.Thread):
     # messages --------------------------------------------------------------------------
     def _on_message(self, message: dict[str, Any]) -> None:
         chat = message.get("chat") or {}
-        if "id" not in chat or not self._authorized(chat):
+        text = message.get("text")
+        is_command = isinstance(text, str) and text.startswith("/")
+        if "id" not in chat or not self._authorized(chat, greet=not is_command):
             return
         chat_id = int(chat["id"])
-        text = message.get("text")
-        if isinstance(text, str) and text.startswith("/"):
+        if is_command:
             self._on_command(chat_id, text)
             return
         audio = self._audio_of(message)
