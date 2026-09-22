@@ -1,7 +1,8 @@
 """The trash: voices and ideas on their way out (`domain/lifecycle.py`).
 
 `IdeaService.delete` / `VoiceService.delete` put an item here; this service is how it
-comes back or goes for good. Purging is the one real delete in the app: the rows go,
+comes back or goes for good. Purging is the one real delete in the app (the Ideas page's
+«delete forever» is the same delete, skipping the trash): the rows go,
 and the database cascades their tag links, timestamp notes, transcript and episode
 links after them (the tags themselves stay — other items may carry them). A voice's
 audio file is never touched.
@@ -117,12 +118,20 @@ class TrashService:
     def purge(self, keys: Iterable[TrashKey]) -> PurgeReport:
         """Delete for good. Only items that are in the trash: a stale selection must never
         reach one that was restored in the meantime."""
+        return self._delete(keys, trashed_only=True)
+
+    def delete_forever(self, keys: Iterable[TrashKey]) -> PurgeReport:
+        """Delete for good straight from the Ideas page, without the trash in between —
+        the same cascade as a purge. The UI asks first."""
+        return self._delete(keys, trashed_only=False)
+
+    def _delete(self, keys: Iterable[TrashKey], trashed_only: bool) -> PurgeReport:
         report = PurgeReport()
         with UnitOfWork(self._sf) as uow:
             for kind, item_id in keys:
                 repo = uow.voices if kind is TrashKind.VOICE else uow.idea_notes
                 item = repo.find(item_id)
-                if item is None or not item.in_trash:
+                if item is None or (trashed_only and not item.in_trash):
                     continue
                 repo.delete(item_id)
                 (report.voices if kind is TrashKind.VOICE else report.ideas).add(item_id)

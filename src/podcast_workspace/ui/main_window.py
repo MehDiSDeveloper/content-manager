@@ -895,6 +895,11 @@ class MainWindow(QMainWindow):
             case TargetKind.TAG:
                 self.show_page(self.tags_page, remember=False)
                 self.tags_page.select(target.item_id)
+            case TargetKind.ITEMS:  # only the Ideas page acts on a selection
+                if page is self.ideas_page:
+                    self.ideas_page.refresh()
+                else:
+                    self.show_page(self.ideas_page, remember=False)
 
     def _on_history_touched(self) -> None:
         """After any data change: keep the buttons honest, and offer a way back from

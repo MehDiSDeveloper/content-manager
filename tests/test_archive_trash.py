@@ -181,6 +181,55 @@ def test_purge_never_reaches_an_item_outside_the_trash(ws) -> None:
     assert ws.ideas.get(idea.id) is not None
 
 
+def test_delete_forever_skips_the_trash_and_takes_every_link(ws) -> None:
+    idea = ws.ideas.create("پاک شود")
+    tag = ws.tags.create("موقت", allow_similar=True)
+    ws.ideas.set_tags(idea.id, [tag.id])
+    episode = ws.episodes.create("قسمت دوم")
+    ws.episodes.link(episode.id, LinkKind.IDEA, idea.id, True)
+    voice = _voice(ws)
+    ws.voices.set_archived(voice.id, True)
+
+    report = ws.trash.delete_forever([(TrashKind.IDEA, idea.id), (TrashKind.VOICE, voice.id)])
+    assert report.ideas == {idea.id} and report.voices == {voice.id}
+    with UnitOfWork(ws.factory) as uow:
+        for table, column, item in (
+            ("idea_notes", "id", idea.id),
+            ("idea_note_tags", "idea_note_id", idea.id),
+            ("episode_idea_notes", "idea_note_id", idea.id),
+            ("voices", "id", voice.id),
+            ("transcripts", "voice_id", voice.id),
+        ):
+            count = uow.session.execute(
+                text(f"SELECT COUNT(*) FROM {table} WHERE {column} = :v"), {"v": item}
+            ).scalar()
+            assert count == 0, table
+    assert ws.trash.list() == []
+    assert ws.tags.get(tag.id) is not None
+
+
+def test_a_grouped_change_is_one_undo(ws) -> None:
+    ideas = [ws.ideas.create(f"ایدهٔ {n}") for n in range(3)]
+    with ws.history.grouped(ChangeKind.TRASH):
+        for idea in ideas:
+            ws.ideas.delete(idea.id)
+    change = ws.history.peek_undo()
+    assert change.kind is ChangeKind.TRASH and change.target.item_id == 3
+    assert ws.ideas.list_all() == []
+
+    ws.history.undo()
+    assert len(ws.ideas.list_all()) == 3
+    ws.history.redo()
+    assert ws.ideas.list_all() == []
+
+
+def test_a_group_of_one_stays_a_plain_change(ws) -> None:
+    idea = ws.ideas.create("تنها")
+    with ws.history.grouped(ChangeKind.ARCHIVE):
+        ws.ideas.set_archived(idea.id, True)
+    assert ws.history.peek_undo().target.item_id == idea.id
+
+
 def test_only_items_past_the_period_are_purged(ws) -> None:
     old = ws.ideas.create("قدیمی")
     new = ws.ideas.create("تازه")

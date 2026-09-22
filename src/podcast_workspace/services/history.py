@@ -14,7 +14,7 @@ per-thread, so the UI keeps recording while the bot worker does not.
 
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
@@ -59,6 +59,7 @@ class TargetKind(StrEnum):
     TAG = "tag"
     EPISODE_NOTE = "episode_note"
     TIMESTAMP_NOTE = "timestamp_note"
+    ITEMS = "items"  # a grouped change over several ideas; the id is how many
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,20 @@ class Change:
     merge_key: str | None = None  # equal keys collapse into one step while typing
     at: float = field(default_factory=time.monotonic)
     started_at: float = field(default_factory=time.monotonic)
+
+
+def _run_all(steps: Iterable[Callable[[], None]]) -> None:
+    """Every step of a group, even past one whose item is gone; it fails only when
+    nothing could be done."""
+    done, first_error = 0, None
+    for step in steps:
+        try:
+            step()
+            done += 1
+        except Exception as exc:
+            first_error = first_error or exc
+    if first_error is not None and not done:
+        raise first_error
 
 
 class HistoryService:
@@ -107,6 +122,34 @@ class HistoryService:
     def recording(self) -> bool:
         return getattr(self._local, "depth", 0) == 0
 
+    @contextmanager
+    def grouped(self, kind: ChangeKind) -> Iterator[None]:
+        """Whatever this thread records inside the block becomes one step: acting on a
+        selection of five is one undo, not five. A single change stays as it is."""
+        outer = getattr(self._local, "group", None)
+        if outer is not None:  # nested: the outer group takes it all
+            yield
+            return
+        collected: list[Change] = []
+        self._local.group = collected
+        try:
+            yield
+        finally:
+            self._local.group = None
+            if len(collected) == 1:
+                self._push(collected[0])
+            elif collected:
+                steps = tuple(collected)
+                self._push(
+                    Change(
+                        kind=kind,
+                        target=Target(TargetKind.ITEMS, len(steps)),
+                        undo=lambda: _run_all(c.undo for c in reversed(steps)),
+                        redo=lambda: _run_all(c.redo for c in steps),
+                        weight=sum(c.weight for c in steps),
+                    )
+                )
+
     def record(
         self,
         kind: ChangeKind,
@@ -129,6 +172,13 @@ class HistoryService:
             weight=weight,
             merge_key=merge_key,
         )
+        group = getattr(self._local, "group", None)
+        if group is not None:
+            group.append(change)
+            return
+        self._push(change)
+
+    def _push(self, change: Change) -> None:
         with self._lock:
             self._redo.clear()
             top = self._undo[-1] if self._undo else None

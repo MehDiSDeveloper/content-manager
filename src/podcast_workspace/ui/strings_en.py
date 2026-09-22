@@ -540,6 +540,7 @@ UNDO_ACTIONS = {
     "trash": "Move {target} {quoted} to the trash",
 }
 UNDO_SOMETHING = "The last change"
+UNDO_ITEMS = "{n} items"  # a change made to a selection
 
 # The Ideas page: audio and text ideas in one list, and its faceted search
 IDEA_KINDS = {"all": "All", "audio": "Audio", "text": "Text"}

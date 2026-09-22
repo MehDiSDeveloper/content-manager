@@ -154,17 +154,17 @@ ARCHIVE_TOOLTIP = "از فهرست فعال و جستجوی معمول کنار 
 UNARCHIVE_TOOLTIP = "به فهرست فعال برمی‌گردد"
 ARCHIVED_BADGE = "بایگانی‌شده"
 ARCHIVED_NOTE = "بایگانی‌شده — در فهرست فعال و جستجوی معمول نمی‌آید"
-MOVE_TO_TRASH = "انتقال به سطل زباله"
-MOVE_TO_TRASH_TOOLTIP = "تا {days} روز در سطل زباله می‌ماند و از آنجا برمی‌گردد  (Delete)"
+MOVE_TO_TRASH = "انتقال به سطل بازیافت"
+MOVE_TO_TRASH_TOOLTIP = "تا {days} روز در سطل بازیافت می‌ماند و از آنجا برمی‌گردد  (Delete)"
 
-NAV_TRASH = "سطل زباله"
-TRASH_TITLE = "سطل زباله"
+NAV_TRASH = "سطل بازیافت"
+TRASH_TITLE = "سطل بازیافت"
 TRASH_HINT = (
     "موارد حذف‌شده {days} روز اینجا می‌مانند و بعد برای همیشه پاک می‌شوند. "
     "تا آن وقت در هیچ فهرست و جستجویی نمی‌آیند و همه‌چیزشان محفوظ است."
 )
-TRASH_EMPTY = "سطل زباله خالی است."
-TRASH_FILTER_PLACEHOLDER = "جستجو در سطل زباله…"
+TRASH_EMPTY = "سطل بازیافت خالی است."
+TRASH_FILTER_PLACEHOLDER = "جستجو در سطل بازیافت…"
 TRASH_FILTER_TOOLTIP = "جستجو در متن، نام و برچسب موارد حذف‌شده  (Ctrl+F)"
 TRASH_KINDS = {
     "all": "همه",
@@ -176,7 +176,7 @@ TRASH_RESTORE_TOOLTIP = "برگرداندن موارد انتخاب‌شده ب�
 TRASH_RESTORE_ALL = "بازیابی همه"
 TRASH_PURGE = "حذف برای همیشه"
 TRASH_PURGE_TOOLTIP = "پاک کردن موارد انتخاب‌شده، بی‌بازگشت  (Delete)"
-TRASH_EMPTY_ALL = "خالی کردن سطل زباله"
+TRASH_EMPTY_ALL = "خالی کردن سطل بازیافت"
 TRASH_SELECT_ALL = "انتخاب همه"
 TRASH_SELECT_ALL_TOOLTIP = "انتخاب همهٔ موارد این فهرست  (Ctrl+A)"
 TRASH_SELECTED = "{n} مورد انتخاب شده"
@@ -185,13 +185,13 @@ TRASH_PURGE_CONFIRM = (
     "پاک می‌شود و این کار بازگشت ندارد. فایل‌های صوتی روی دیسک می‌مانند."
 )
 TRASH_EMPTY_CONFIRM = (
-    "همهٔ {n} مورد سطل زباله برای همیشه پاک شود؟ این کار بازگشت ندارد. "
+    "همهٔ {n} مورد سطل بازیافت برای همیشه پاک شود؟ این کار بازگشت ندارد. "
     "فایل‌های صوتی روی دیسک می‌مانند."
 )
-TRASH_RESTORE_ALL_CONFIRM = "همهٔ {n} مورد سطل زباله بازیابی شود؟"
+TRASH_RESTORE_ALL_CONFIRM = "همهٔ {n} مورد سطل بازیافت بازیابی شود؟"
 TRASH_RESTORED = "{n} مورد بازیابی شد"
 TRASH_PURGED = "{n} مورد برای همیشه پاک شد"
-TRASH_AUTO_PURGED = "{n} مورد که {days} روز در سطل زباله بود برای همیشه پاک شد"
+TRASH_AUTO_PURGED = "{n} مورد که {days} روز در سطل بازیافت بود برای همیشه پاک شد"
 TRASH_DAYS_LEFT = "{n} روز تا پاک شدن"
 TRASH_DELETED_AT = "حذف‌شده در {when}"
 TRASH_FROM_ARCHIVE = "به بایگانی برمی‌گردد"
@@ -309,8 +309,8 @@ WS_IDEAS_EMPTY = (
 WS_UNLINK = "برداشتن پیوند (Delete)"
 WS_OPEN = "باز کردن (Enter)"
 WS_MATERIALS = "مواد اپیزود"
-WS_TAB_VOICES = "صوتی"
-WS_TAB_IDEAS = "متنی"
+WS_TAB_VOICES = "صوت‌ها"
+WS_TAB_IDEAS = "متن‌ها"
 WS_TAB_SMART = "پیشنهادها"
 WS_TAB_COUNT = "{label} {n}"
 WS_SMART = "پیشنهادهای هم‌برچسب"
@@ -547,12 +547,13 @@ UNDO_ACTIONS = {
     "merge": "ادغام برچسب {quoted} در {other}",
     "archive": "بایگانی {target} {quoted}",
     "unarchive": "خروج {target} {quoted} از بایگانی",
-    "trash": "انتقال {target} {quoted} به سطل زباله",
+    "trash": "انتقال {target} {quoted} به سطل بازیافت",
 }
 UNDO_SOMETHING = "آخرین تغییر"
+UNDO_ITEMS = "{n} مورد"  # a change made to a selection
 
 # The Ideas page: audio and text ideas in one list, and its faceted search
-IDEA_KINDS = {"all": "همه", "audio": "صوتی", "text": "متنی"}
+IDEA_KINDS = {"all": "همه", "audio": "صوت‌ها", "text": "متن‌ها"}
 IDEA_KIND_TOOLTIP = "کدام ایده‌ها: همه، فقط صوتی‌ها یا فقط متنی‌ها"
 IDEA_NEW_TOOLTIP = "نوشتن ایدهٔ متنی تازه  (Ctrl+N)"
 VOICE_IMPORT_TOOLTIP = (

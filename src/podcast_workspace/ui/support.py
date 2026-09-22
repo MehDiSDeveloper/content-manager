@@ -19,7 +19,7 @@ from podcast_workspace.domain.errors import (
     TagLimitExceededError,
     ValidationError,
 )
-from podcast_workspace.services.history import Change, ChangeKind
+from podcast_workspace.services.history import Change, ChangeKind, TargetKind
 from podcast_workspace.ui import strings
 
 _FA_LOCALE = QLocale(QLocale.Language.Persian, QLocale.Country.Iran)
@@ -126,8 +126,12 @@ def describe_change(change: Change) -> str:
     else:
         first = details[0] if details else ""
         second = details[1] if len(details) > 1 else ""
+    if change.target.kind is TargetKind.ITEMS:
+        target = strings.UNDO_ITEMS.format(n=local_digits(change.target.item_id))
+    else:
+        target = strings.UNDO_TARGETS.get(change.target.kind, "")
     phrase = strings.UNDO_ACTIONS.get(change.kind, "").format(
-        target=strings.UNDO_TARGETS.get(change.target.kind, ""),
+        target=target,
         quoted=_quote(first),
         other=_quote(second),
     )
