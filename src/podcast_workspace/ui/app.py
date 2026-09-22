@@ -1,18 +1,42 @@
 """Application entry point."""
 
+import logging
 import sys
+import threading
+from logging.handlers import RotatingFileHandler
 
 from PySide6.QtCore import QProcess
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from podcast_workspace import __version__
+from podcast_workspace.paths import log_path
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import language, strings
 from podcast_workspace.ui.main_window import MainWindow
 from podcast_workspace.ui.theme import ThemeManager, configure_text_rendering, load_fonts
 
 
+def _setup_logging() -> None:
+    """pythonw has no console: warnings and crashes (any thread) go to app.log instead."""
+    try:
+        handler = RotatingFileHandler(
+            log_path(), maxBytes=1_000_000, backupCount=2, encoding="utf-8"
+        )
+    except OSError:
+        return
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
+    log = logging.getLogger("podcast_workspace")
+    sys.excepthook = lambda *exc: log.critical("uncaught", exc_info=exc)
+    threading.excepthook = lambda args: log.critical(
+        "uncaught in thread %s",
+        args.thread.name if args.thread else "?",
+        exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+    )
+
+
 def main() -> int:
+    _setup_logging()
     configure_text_rendering()
     app = QApplication(sys.argv)
     app.setApplicationName("PodcastWorkspace")

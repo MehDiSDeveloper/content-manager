@@ -208,6 +208,7 @@ class BaleBotService:
         self.stop()
         token = self._settings.bale_token()
         if not token or not self._settings.bale_enabled():
+            log.info("bot not started: %s", "disabled" if token else "no token")
             return False
 
         def status(value: BotStatus, detail: str) -> None:
@@ -271,8 +272,13 @@ class _Worker(threading.Thread):
 
     def run(self) -> None:
         self._report(BotStatus.CONNECTING)
+        log.info("bot polling started")
         settings = self._svc._settings
-        offset = settings.bale_offset()
+        try:
+            offset = settings.bale_offset()
+        except Exception:  # e.g. database busy at startup; Bale re-sends unacknowledged ones
+            log.exception("could not read bot offset")
+            offset = None
         webhook_cleared = False
         backoff = BACKOFF_START_S
         try:
@@ -283,6 +289,7 @@ class _Worker(threading.Thread):
                         webhook_cleared = True
                     updates = self._client.get_updates(offset, POLL_TIMEOUT_S)
                 except BaleUnauthorizedError:
+                    log.warning("bot token rejected")
                     self._report(BotStatus.UNAUTHORIZED)
                     return
                 except Exception as exc:  # BaleError or anything unexpected: wait and retry
@@ -290,6 +297,7 @@ class _Worker(threading.Thread):
                         log.exception("bot polling failed")
                     if isinstance(exc, BaleApiError) and exc.code == 409:
                         webhook_cleared = False
+                    log.warning("bot polling failed: %s", exc)
                     self._report(BotStatus.OFFLINE, str(exc))
                     self._stop_event.wait(backoff)
                     backoff = min(backoff * 2, BACKOFF_MAX_S)

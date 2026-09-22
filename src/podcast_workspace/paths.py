@@ -9,6 +9,7 @@ from pathlib import Path
 
 APP_DIR_NAME = "PodcastWorkspace"
 DB_FILE_NAME = "workspace.db"
+LOG_FILE_NAME = "app.log"
 
 
 def data_dir() -> Path:
@@ -24,6 +25,10 @@ def data_dir() -> Path:
 
 def database_path() -> Path:
     return data_dir() / DB_FILE_NAME
+
+
+def log_path() -> Path:
+    return data_dir() / LOG_FILE_NAME
 
 
 def package_dir() -> Path:
