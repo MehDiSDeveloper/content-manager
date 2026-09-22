@@ -156,6 +156,34 @@ ARCHIVED_BADGE = "بایگانی‌شده"
 ARCHIVED_NOTE = "بایگانی‌شده — در فهرست فعال و جستجوی معمول نمی‌آید"
 MOVE_TO_TRASH = "انتقال به سطل بازیافت"
 MOVE_TO_TRASH_TOOLTIP = "تا {days} روز در سطل بازیافت می‌ماند و از آنجا برمی‌گردد  (Delete)"
+DELETE_FOREVER = "حذف کامل"
+DELETE_FOREVER_MENU = "حذف کامل…"
+DELETE_FOREVER_TOOLTIP = (
+    "برای همیشه پاک می‌شود، همراه یادداشت‌ها، رونوشت و پیوندهایش به برچسب‌ها و اپیزودها؛ "
+    "بازگشت ندارد  (Shift+Delete)"
+)
+DELETE_FOREVER_CONFIRM = (
+    "{n} مورد برای همیشه حذف شود؟ یادداشت‌ها، رونوشت‌ها و پیوندهایشان به برچسب‌ها و "
+    "اپیزودها هم پاک می‌شوند و این کار بازگشت ندارد. فایل‌های صوتی روی دیسک می‌مانند."
+)
+DELETE_FOREVER_DONE = "{n} مورد برای همیشه حذف شد"
+# Several rows selected on the Ideas page
+SEL_COUNT = "{n} مورد انتخاب شده"
+SEL_KINDS = "{audio} صوت  ·  {text} متن"
+SEL_HINT = (
+    "با Ctrl+کلیک یا Shift+کلیک موردهای بیشتری انتخاب کنید؛ Ctrl+A همه را انتخاب می‌کند "
+    "و Esc انتخاب را برمی‌دارد."
+)
+SEL_TRANSCRIBE = "رونویسی {n} صوت"
+SEL_TRANSCRIBE_NONE = "صوتِ بی‌رونوشتی در انتخاب نیست"
+SEL_TRANSCRIBE_CONFIRM = "{n} صوت یکی‌یکی و پشت صحنه رونویسی شوند؟"
+SEL_TRANSCRIBE_SKIPPED = "{n} صوت انتخاب‌شده که رونوشت دارند کنار گذاشته می‌شوند."
+SEL_QUEUED = "{n} صوت در صف رونویسی قرار گرفت"
+SEL_ARCHIVE = "بایگانی {n} مورد"
+SEL_UNARCHIVE = "خروج {n} مورد از بایگانی"
+SEL_TRASH = "انتقال {n} مورد به سطل بازیافت"
+SEL_DELETE_FOREVER = "حذف کامل {n} مورد"
+SEL_CLEAR = "لغو انتخاب"
 
 NAV_TRASH = "سطل بازیافت"
 TRASH_TITLE = "سطل بازیافت"
@@ -406,7 +434,7 @@ TR_LOADING_MODEL = "در حال آماده‌سازی مدل…"
 TR_BUSY_ELSEWHERE = "رونویسی صوت دیگری در جریان است."
 TR_QUEUED = "این صوت در صف «رونویسی همه» است."
 TR_ALL = "رونویسی همه"
-TR_ALL_STOP = "توقف رونویسی همه"
+TR_ALL_STOP = "توقف رونویسی صف"
 TR_ALL_TOOLTIP = "ایده‌های صوتیِ بی‌رونوشتِ این فهرست را در صف می‌گذارد و یکی‌یکی رونویسی می‌کند"
 TR_ALL_NONE = "همهٔ ایده‌های صوتی این فهرست رونوشت دارند."
 TR_ALL_CONFIRM = (
@@ -414,10 +442,10 @@ TR_ALL_CONFIRM = (
     "بسته به طول صوت‌ها ممکن است زمان زیادی ببرد؛ در این مدت می‌توانید با برنامه کار کنید."
 )
 TR_ALL_START = "شروع رونویسی"
-TR_ALL_DONE = "رونویسی همه تمام شد: {ok} از {total} ایدهٔ صوتی رونویسی شد."
-TR_ALL_STOPPED = "رونویسی همه متوقف شد: {ok} از {total} ایدهٔ صوتی رونویسی شد."
-TR_ALL_SIDEBAR = "رونویسی همه: {n} از {total}"
-TR_ALL_SIDEBAR_PERCENT = "رونویسی همه: {n} از {total}  ·  {percent}٪"
+TR_ALL_DONE = "رونویسی تمام شد: {ok} از {total} ایدهٔ صوتی رونویسی شد."
+TR_ALL_STOPPED = "رونویسی متوقف شد: {ok} از {total} ایدهٔ صوتی رونویسی شد."
+TR_ALL_SIDEBAR = "رونویسی: {n} از {total}"
+TR_ALL_SIDEBAR_PERCENT = "رونویسی: {n} از {total}  ·  {percent}٪"
 TR_META = "{n} بخش، {model}، {when}"
 TR_NOT_INSTALLED = "بستهٔ faster-whisper نصب نیست؛ نصب با: ⁦pip install .[transcription]⁩"
 TR_MODEL_MISSING = "مدل رونویسی هنوز روی این رایانه نیست. از تنظیمات ← رونویسی دریافتش کنید."

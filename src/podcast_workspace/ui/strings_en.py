@@ -152,6 +152,34 @@ ARCHIVED_BADGE = "Archived"
 ARCHIVED_NOTE = "Archived — not in the active list or everyday search"
 MOVE_TO_TRASH = "Move to trash"
 MOVE_TO_TRASH_TOOLTIP = "Kept in the trash for {days} days, restorable from there  (Delete)"
+DELETE_FOREVER = "Delete forever"
+DELETE_FOREVER_MENU = "Delete forever…"
+DELETE_FOREVER_TOOLTIP = (
+    "Gone for good, with its notes, transcript and links to tags and episodes; "
+    "cannot be undone  (Shift+Delete)"
+)
+DELETE_FOREVER_CONFIRM = (
+    "Delete {n} items forever? Their notes, transcripts and links to tags and episodes go "
+    "too, and this cannot be undone. Audio files stay on disk."
+)
+DELETE_FOREVER_DONE = "{n} items deleted forever"
+# Several rows selected on the Ideas page
+SEL_COUNT = "{n} selected"
+SEL_KINDS = "{audio} audio  ·  {text} text"
+SEL_HINT = (
+    "Ctrl+click or Shift+click to select more; Ctrl+A selects everything and Esc clears "
+    "the selection."
+)
+SEL_TRANSCRIBE = "Transcribe {n} audio ideas"
+SEL_TRANSCRIBE_NONE = "Nothing selected lacks a transcript"
+SEL_TRANSCRIBE_CONFIRM = "Transcribe {n} audio ideas one by one in the background?"
+SEL_TRANSCRIBE_SKIPPED = "{n} selected audio ideas already have a transcript and are skipped."
+SEL_QUEUED = "{n} audio ideas queued for transcription"
+SEL_ARCHIVE = "Archive {n} items"
+SEL_UNARCHIVE = "Unarchive {n} items"
+SEL_TRASH = "Move {n} items to the trash"
+SEL_DELETE_FOREVER = "Delete {n} items forever"
+SEL_CLEAR = "Clear selection"
 
 NAV_TRASH = "Trash"
 TRASH_TITLE = "Trash"
@@ -396,7 +424,7 @@ TR_LOADING_MODEL = "Preparing the model…"
 TR_BUSY_ELSEWHERE = "Another audio is being transcribed."
 TR_QUEUED = "This audio is waiting in the “Transcribe all” queue."
 TR_ALL = "Transcribe all"
-TR_ALL_STOP = "Stop transcribing all"
+TR_ALL_STOP = "Stop the transcription queue"
 TR_ALL_TOOLTIP = (
     "Queue the audio ideas in this list with no transcript and transcribe them one by one"
 )
@@ -406,10 +434,10 @@ TR_ALL_CONFIRM = (
     "Depending on their length this can take a long time; you can keep using the app meanwhile."
 )
 TR_ALL_START = "Start transcribing"
-TR_ALL_DONE = "Transcribe all finished: {ok} of {total} audio ideas transcribed."
-TR_ALL_STOPPED = "Transcribe all stopped: {ok} of {total} audio ideas transcribed."
-TR_ALL_SIDEBAR = "Transcribing all: {n} of {total}"
-TR_ALL_SIDEBAR_PERCENT = "Transcribing all: {n} of {total}  ·  {percent}%"
+TR_ALL_DONE = "Transcription finished: {ok} of {total} audio ideas transcribed."
+TR_ALL_STOPPED = "Transcription stopped: {ok} of {total} audio ideas transcribed."
+TR_ALL_SIDEBAR = "Transcribing: {n} of {total}"
+TR_ALL_SIDEBAR_PERCENT = "Transcribing: {n} of {total}  ·  {percent}%"
 TR_META = "{n} segments, {model}, {when}"
 TR_NOT_INSTALLED = "faster-whisper is not installed; install it with: pip install .[transcription]"
 TR_MODEL_MISSING = (

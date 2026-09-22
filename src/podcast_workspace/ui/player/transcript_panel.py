@@ -102,6 +102,19 @@ class TranscriptionJobs(QObject):
         if self.batching:
             self._end_batch(stopped=True)
 
+    def drop(self, voice_ids: Iterable[int]) -> None:
+        """The voices are gone (deleted forever): out of the queue, and the running job
+        cancelled if it is one of them."""
+        gone = set(voice_ids)
+        kept = [v for v in self._queue if v not in gone]
+        removed = len(self._queue) - len(kept)
+        if removed:
+            self._queue = deque(kept)
+            self.batch_total -= removed
+            self.queue_changed.emit()
+        if self.running in gone:
+            self.cancel()
+
     def start(self, voice_id: int) -> bool:
         if self.running is not None:
             return False

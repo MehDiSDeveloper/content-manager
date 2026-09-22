@@ -12,6 +12,11 @@ idea's title and the first line a text idea's, as everywhere else in the app.
 Ideas can be archived and put in the trash (`ShelfListPage`); a delete here is a move to
 the trash, which is why it asks nothing — the toast offers the undo, and the trash page
 the restore.
+
+Several rows can be selected at once (Ctrl/Shift+click, Ctrl+A). The editor then gives
+way to a pane of what can be done to all of them — transcribe, archive, move to the
+trash, delete forever — and each of those is one step of the undo history, except
+deleting forever, which is the one thing here that asks first and cannot be taken back.
 """
 
 import subprocess
@@ -21,12 +26,22 @@ from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QHideEvent, QKeySequence, QShortcut
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QDragEnterEvent,
+    QDropEvent,
+    QHideEvent,
+    QKeyEvent,
+    QKeySequence,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QListWidgetItem,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
     QStackedWidget,
@@ -37,12 +52,13 @@ from PySide6.QtWidgets import (
 
 from podcast_workspace.audio.engine import Player
 from podcast_workspace.domain.entities import IdeaNote, Shelved, Voice
-from podcast_workspace.domain.lifecycle import TRASH_DAYS, ArchiveScope
+from podcast_workspace.domain.lifecycle import TRASH_DAYS, ArchiveScope, TrashKind
 from podcast_workspace.domain.list_filter import FacetFilter
 from podcast_workspace.domain.rules import MAX_TAGS_PER_ITEM
 from podcast_workspace.domain.text import flatten_for_filter
 from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS
 from podcast_workspace.services.content_services import ImportReport
+from podcast_workspace.services.history import ChangeKind
 from podcast_workspace.services.transcription import whisper_installed
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
@@ -533,6 +549,70 @@ class TextPane(QWidget):
         self._events.data_changed.emit()
 
 
+class SelectionPane(QWidget):
+    """What several selected rows can have done to them together. It takes the editor's
+    place while more than one row is selected: one editor cannot show five items."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        col = QVBoxLayout(self)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(12)
+        col.addStretch(1)
+        self.count = QLabel(objectName="editorTitle")
+        self.count.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        col.addWidget(self.count)
+        self.kinds = QLabel(objectName="muted")
+        self.kinds.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        col.addWidget(self.kinds)
+        col.addSpacing(10)
+
+        self.transcribe = QPushButton()
+        self.archive = QPushButton()
+        self.archive.setToolTip(strings.ARCHIVE_TOOLTIP)
+        self.trash = danger_button("")
+        self.trash.setToolTip(strings.MOVE_TO_TRASH_TOOLTIP.format(days=local_digits(TRASH_DAYS)))
+        self.delete_forever = danger_button("")
+        self.delete_forever.setToolTip(strings.DELETE_FOREVER_TOOLTIP)
+        self.clear = QPushButton(strings.SEL_CLEAR, objectName="flatButton")
+        self.clear.setToolTip("Esc")
+        for button in (
+            self.transcribe,
+            self.archive,
+            self.trash,
+            self.delete_forever,
+            self.clear,
+        ):
+            button.setMinimumWidth(260)
+            col.addWidget(button, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        col.addSpacing(10)
+        hint = QLabel(strings.SEL_HINT, objectName="muted")
+        hint.setWordWrap(True)
+        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        col.addWidget(hint)
+        col.addStretch(2)
+
+    def show_selection(self, audio: int, text: int, to_transcribe: int, all_archived: bool) -> None:
+        n = local_digits(audio + text)
+        self.count.setText(strings.SEL_COUNT.format(n=n))
+        self.kinds.setText(
+            strings.SEL_KINDS.format(audio=local_digits(audio), text=local_digits(text))
+        )
+        self.transcribe.setVisible(audio > 0)
+        self.transcribe.setEnabled(to_transcribe > 0)
+        self.transcribe.setText(strings.SEL_TRANSCRIBE.format(n=local_digits(to_transcribe)))
+        self.transcribe.setToolTip("" if to_transcribe else strings.SEL_TRANSCRIBE_NONE)
+        self.archive.setText(
+            (strings.SEL_UNARCHIVE if all_archived else strings.SEL_ARCHIVE).format(n=n)
+        )
+        self.archive.setToolTip(
+            strings.UNARCHIVE_TOOLTIP if all_archived else strings.ARCHIVE_TOOLTIP
+        )
+        self.trash.setText(strings.SEL_TRASH.format(n=n))
+        self.delete_forever.setText(strings.SEL_DELETE_FOREVER.format(n=n))
+
+
 class IdeasPage(ShelfListPage):
     settings_requested = Signal()
 
@@ -613,6 +693,20 @@ class IdeasPage(ShelfListPage):
         self.text_pane.created.connect(self._on_idea_created)
         self.text_pane.idea_changed.connect(lambda i: self.update_row(self._idea_row(i)))
         self.panes.addWidget(self.text_pane)
+
+        # Several rows at once: Ctrl/Shift+click, Ctrl+A. The pane takes the editor's place.
+        self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.selection_pane = SelectionPane()
+        self.selection_pane.transcribe.clicked.connect(self.transcribe_selected)
+        self.selection_pane.archive.clicked.connect(self.archive_selected)
+        self.selection_pane.trash.clicked.connect(self.trash_selected)
+        self.selection_pane.delete_forever.clicked.connect(self.delete_selected_forever)
+        self.selection_pane.clear.clicked.connect(self._collapse_selection)
+        self.detail.addWidget(self.selection_pane)
+        # Qt reports the selection before the current row; settle once both have moved.
+        self._selection_timer = QTimer(self, singleShot=True, interval=0)
+        self._selection_timer.timeout.connect(self._sync_selection)
+        self.list.itemSelectionChanged.connect(self._selection_timer.start)
 
         QShortcut(QKeySequence.StandardKey.Open, self, activated=self.import_dialog)
         QShortcut(
@@ -983,6 +1077,205 @@ class IdeasPage(ShelfListPage):
             self.update_row(self._voice_row(self._ws.voices.get(voice_id)))
         except Exception:
             return  # removed meanwhile
+
+    # several rows at once ----------------------------------------------------------------
+    def selected_keys(self) -> list[IdeaKey]:
+        """In list order; the current row when nothing is selected."""
+        items = sorted(self.list.selectedItems(), key=self.list.row)
+        if not items and self.list.currentItem() is not None:
+            items = [self.list.currentItem()]
+        return [item.data(ID_ROLE) for item in items]
+
+    def _multi(self) -> bool:
+        return len(self.list.selectedItems()) > 1
+
+    def _on_current_changed(
+        self, current: QListWidgetItem | None, previous: QListWidgetItem | None
+    ) -> None:
+        if self._multi():
+            self._show_selection()
+        else:
+            super()._on_current_changed(current, previous)
+
+    def _sync_selection(self) -> None:
+        if self._multi():
+            self._show_selection()
+        elif self.detail.currentWidget() is self.selection_pane:
+            super()._on_current_changed(self.list.currentItem(), None)
+
+    def _show_selection(self) -> None:
+        keys = self.selected_keys()
+        voice_ids = {k.item_id for k in keys if k.kind is IdeaKind.AUDIO}
+        idea_ids = {k.item_id for k in keys if k.kind is IdeaKind.TEXT}
+        archived = [v.archived for v in self._ws.voices.list_all() if v.id in voice_ids]
+        archived += [i.archived for i in self._ws.ideas.list_all() if i.id in idea_ids]
+        if self.detail.currentWidget() is not self.selection_pane:
+            self.flush()
+            self.clear_editor()  # nothing plays from a pane that is not on screen
+            self.detail.setCurrentWidget(self.selection_pane)
+        self.selection_pane.show_selection(
+            len(voice_ids),
+            len(idea_ids),
+            len(self._to_transcribe(voice_ids)[0]),
+            bool(archived) and all(archived),
+        )
+
+    def _collapse_selection(self) -> None:
+        """Back to the one current row (Esc)."""
+        current = self.list.currentItem()
+        if current is not None:
+            self.list.setCurrentItem(current)  # clears the rest of the selection
+        self.list.setFocus()
+
+    def refresh(self, select_id: Hashable | None = None, load: bool = True) -> None:
+        super().refresh(select_id, load)
+        self._selection_timer.start()  # a reload drops the selection without a signal
+
+    def _first_selected_row(self) -> int:
+        rows = [self.list.row(item) for item in self.list.selectedItems()]
+        return min(rows) if rows else max(self.list.currentRow(), 0)
+
+    def _land(self, row: int) -> None:
+        """Reload after rows left, on the row that took the place of the first of them."""
+        self.refresh()
+        if self.list.count():
+            self.list.setCurrentRow(min(row, self.list.count() - 1))
+        self.list.setFocus()
+
+    def _each_selected(self, kind: ChangeKind, act: Callable[[IdeaKey], None]) -> None:
+        """Do `act` to every selected row, as one step of the undo history."""
+        keys = self.selected_keys()
+        if not keys:
+            return
+        self.flush()
+        row = self._first_selected_row()
+        try:
+            with self._ws.history.grouped(kind):
+                for key in keys:
+                    act(key)
+        except Exception as exc:
+            show_error(self, exc)
+        self._events.data_changed.emit()
+        self._land(row)
+
+    def archive_selected(self) -> None:
+        """Archive them all, or — when every one already is — bring them all back."""
+        keys = self.selected_keys()
+        items = [self.find_item(k) for k in keys]
+        archive = not all(item is not None and item.archived for item in items)
+        self._each_selected(
+            ChangeKind.ARCHIVE if archive else ChangeKind.UNARCHIVE,
+            lambda key: self.store_archived(key, archive),
+        )
+
+    def trash_selected(self) -> None:
+        keys = self.selected_keys()
+        if len(keys) == 1:
+            self.delete_item(keys[0])
+        else:
+            self._each_selected(ChangeKind.TRASH, self.store_trashed)
+
+    def delete_selected_forever(self) -> None:
+        keys = self.selected_keys()
+        if not keys or not confirm(
+            self,
+            strings.DELETE_FOREVER_CONFIRM.format(n=local_digits(len(keys))),
+            strings.DELETE_FOREVER,
+        ):
+            return
+        row = self._first_selected_row()
+        voice_ids = [k.item_id for k in keys if k.kind is IdeaKind.AUDIO]
+        for key in keys:
+            if key.kind is IdeaKind.TEXT:
+                self.text_pane.forget(key.item_id)  # no autosave may bring it back
+        self._jobs.drop(voice_ids)
+        self.clear_editor()
+        try:
+            report = self._ws.trash.delete_forever(
+                (TrashKind.VOICE if k.kind is IdeaKind.AUDIO else TrashKind.IDEA, k.item_id)
+                for k in keys
+            )
+        except Exception as exc:
+            show_error(self, exc)
+            report = None
+        self._events.data_changed.emit()
+        self._land(row)
+        if report is not None:
+            self.status.setText(strings.DELETE_FOREVER_DONE.format(n=local_digits(len(report))))
+            QTimer.singleShot(6000, lambda: self.status.setText(""))
+
+    def _to_transcribe(self, voice_ids: set[int]) -> tuple[list[int], int]:
+        """Of these voices, the ones a transcription can start on, and how many are
+        skipped for already having a transcript."""
+        done = self._ws.transcripts.voice_ids()
+        todo = [
+            v.id
+            for v in self._ws.voices.list_all()
+            if v.id in voice_ids
+            and v.id not in done
+            and v.id != self._jobs.running
+            and not self._jobs.is_queued(v.id)
+            and Path(v.file_path).is_file()
+        ]
+        return todo, len(voice_ids & done)
+
+    def transcribe_selected(self) -> None:
+        if not whisper_installed():
+            self.status.setText(strings.TR_NOT_INSTALLED)
+            return
+        if self._ws.transcripts.model_path() is None:
+            self.status.setText(strings.TR_MODEL_MISSING)
+            return
+        voice_ids = {k.item_id for k in self.selected_keys() if k.kind is IdeaKind.AUDIO}
+        todo, skipped = self._to_transcribe(voice_ids)
+        if not todo:
+            self.status.setText(strings.SEL_TRANSCRIBE_NONE)
+            return
+        text = strings.SEL_TRANSCRIBE_CONFIRM.format(n=local_digits(len(todo)))
+        if skipped:
+            text += "\n" + strings.SEL_TRANSCRIBE_SKIPPED.format(n=local_digits(skipped))
+        if confirm(self, text, strings.TR_ALL_START):
+            added = self._jobs.enqueue(todo)
+            self.status.setText(strings.SEL_QUEUED.format(n=local_digits(added)))
+            self._show_selection()
+
+    def row_actions(self, item_id: Hashable) -> list[tuple[str, Callable[[], None]]]:
+        actions = super().row_actions(item_id)
+        return [*actions, (strings.DELETE_FOREVER_MENU, self.delete_selected_forever)]
+
+    def _row_menu(self, pos: QPoint) -> None:
+        item = self.list.itemAt(pos)
+        if item is None or not (item.isSelected() and self._multi()):
+            super()._row_menu(pos)  # one row: it becomes the selection
+            return
+        pane = self.selection_pane
+        menu = QMenu(self.list)
+        for button, callback in (
+            (pane.transcribe, self.transcribe_selected),
+            (pane.archive, self.archive_selected),
+            (pane.trash, self.trash_selected),
+            (pane.delete_forever, self.delete_selected_forever),
+        ):
+            if button.isVisible() and button.isEnabled():
+                menu.addAction(button.text(), callback)
+        menu.exec(self.list.viewport().mapToGlobal(pos))
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if watched is self.list and event.type() == QEvent.Type.KeyPress:
+            assert isinstance(event, QKeyEvent)
+            key = event.key()
+            if key == Qt.Key.Key_Delete:
+                if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                    self.delete_selected_forever()
+                else:
+                    self.trash_selected()
+                return True
+            if self._multi() and key == Qt.Key.Key_Escape:
+                self._collapse_selection()
+                return True
+            if self._multi() and key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                return True  # no single editor to walk into
+        return super().eventFilter(watched, event)
 
     # navigation state ------------------------------------------------------------------
     def nav_state(self) -> ListPageState:
