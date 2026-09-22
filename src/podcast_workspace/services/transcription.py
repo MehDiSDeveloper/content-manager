@@ -7,8 +7,10 @@ faster-whisper is an optional dependency (`pip install .[transcription]`).
 
 import importlib.util
 import logging
+import math
 import os
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -36,6 +38,23 @@ INITIAL_PROMPT = "این یک اپیزود پادکست فارسی است."
 
 ProgressCallback = Callable[[float], None]
 
+# Whisper decodes 30-second windows and hands out a window's segments only once the whole
+# window is done, so a short voice would sit at 0% until the end. Between segments the
+# bar therefore follows an estimate: elapsed time against how long this machine took per
+# second of audio last time (a guess per model size until it has measured one).
+DEFAULT_SPEEDS = {"small": 0.6, "medium": 1.8, "large-v3-turbo": 1.5, "large-v3": 4.0}
+FALLBACK_SPEED = 2.0
+ESTIMATE_TICK_S = 0.5
+# The estimate runs straight up to here, then only creeps towards ESTIMATE_CEILING:
+# a slow run must keep moving, and must never look finished while it is not.
+ESTIMATE_KNEE = 0.85
+ESTIMATE_CEILING = 0.99
+ESTIMATE_TAIL = 2.0  # expected durations past the knee to cover most of the rest
+# How much one run moves the remembered speed (the rest is the history).
+SPEED_LEARNING_RATE = 0.5
+# Runs this short are dominated by fixed costs and would skew the speed.
+MIN_MEASURED_AUDIO_S = 5.0
+
 
 class TranscriptionUnavailableError(RuntimeError):
     """faster-whisper is not installed."""
@@ -55,6 +74,68 @@ def whisper_installed() -> bool:
 
 def _is_model_dir(path: Path) -> bool:
     return (path / "model.bin").is_file() and (path / "config.json").is_file()
+
+
+def estimated_fraction(elapsed_s: float, expected_s: float) -> float:
+    """Progress by the clock: linear up to the knee, then an ever slower approach to the
+    ceiling, so an underestimate slows the bar down instead of stopping it."""
+    if expected_s <= 0:
+        return 0.0
+    x = max(elapsed_s, 0.0) / expected_s
+    if x <= ESTIMATE_KNEE:
+        return x
+    room = ESTIMATE_CEILING - ESTIMATE_KNEE
+    return ESTIMATE_KNEE + room * (1 - math.exp(-(x - ESTIMATE_KNEE) / ESTIMATE_TAIL))
+
+
+def default_speed(model_name: str) -> float:
+    """A first guess from the folder name ("faster-whisper-large-v3-turbo")."""
+    name = model_name.lower()
+    for key in sorted(DEFAULT_SPEEDS, key=len, reverse=True):  # "large-v3-turbo" first
+        if name.endswith(key):
+            return DEFAULT_SPEEDS[key]
+    return FALLBACK_SPEED
+
+
+class _Progress:
+    """What the bar shows: the furthest of the decoded segments and the clock estimate,
+    reported from the worker thread and from a ticker thread, never going backwards."""
+
+    def __init__(self, report: ProgressCallback, expected_s: float) -> None:
+        self._report = report
+        self._expected_s = expected_s
+        self._start = time.monotonic()
+        self._shown = 0.0
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._ticker = threading.Thread(target=self._tick, daemon=True)
+
+    def __enter__(self) -> "_Progress":
+        self._report(0.0)
+        self._ticker.start()
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self._stop.set()
+        self._ticker.join()
+
+    @property
+    def elapsed_s(self) -> float:
+        return time.monotonic() - self._start
+
+    def decoded(self, fraction: float) -> None:
+        self._show(min(fraction, ESTIMATE_CEILING))
+
+    def _tick(self) -> None:
+        while not self._stop.wait(ESTIMATE_TICK_S):
+            self._show(estimated_fraction(self.elapsed_s, self._expected_s))
+
+    def _show(self, fraction: float) -> None:
+        with self._lock:
+            if self._stop.is_set() or fraction <= self._shown:
+                return
+            self._shown = fraction
+            self._report(fraction)
 
 
 class TranscriptionService:
@@ -158,27 +239,34 @@ class TranscriptionService:
                 raise TranscriptionCancelledError
             audio = np.frombuffer(decode_mono_f32(audio_file, SAMPLE_RATE), dtype=np.float32)
             total_s = max(len(audio) / SAMPLE_RATE, 0.001)
+            speed = self._settings.transcription_speed(path.name) or default_speed(path.name)
             # Only now: until the model is loaded the panel shows "preparing", not 0%.
-            on_progress(0.0)
-            segments, _info = model.transcribe(
-                audio,
-                language=LANGUAGE,
-                task="transcribe",
-                beam_size=5,
-                vad_filter=True,
-                condition_on_previous_text=False,  # avoids runaway repetition loops
-                initial_prompt=INITIAL_PROMPT,
-            )
-            collected: list[TranscriptSegment] = []
-            for segment in segments:  # decoding happens lazily, segment by segment
-                if cancel.is_set():
-                    raise TranscriptionCancelledError
-                collected.append(
-                    TranscriptSegment(
-                        int(segment.start * 1000), int(segment.end * 1000), segment.text
-                    )
+            with _Progress(on_progress, total_s * speed) as progress:
+                segments, _info = model.transcribe(
+                    audio,
+                    language=LANGUAGE,
+                    task="transcribe",
+                    beam_size=5,
+                    vad_filter=True,
+                    condition_on_previous_text=False,  # avoids runaway repetition loops
+                    initial_prompt=INITIAL_PROMPT,
                 )
-                on_progress(min(1.0, segment.end / total_s))
+                collected: list[TranscriptSegment] = []
+                for segment in segments:  # decoding happens lazily, window by window
+                    if cancel.is_set():
+                        raise TranscriptionCancelledError
+                    collected.append(
+                        TranscriptSegment(
+                            int(segment.start * 1000), int(segment.end * 1000), segment.text
+                        )
+                    )
+                    progress.decoded(segment.end / total_s)
+                elapsed_s = progress.elapsed_s
+            if total_s >= MIN_MEASURED_AUDIO_S:
+                measured = elapsed_s / total_s
+                self._settings.set_transcription_speed(
+                    path.name, speed + SPEED_LEARNING_RATE * (measured - speed)
+                )
 
         transcript = Transcript(voice_id=voice_id, segments=collected, model=path.name)
         with UnitOfWork(self._sf) as uow:

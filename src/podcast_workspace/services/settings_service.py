@@ -39,6 +39,7 @@ BALE_OWNER_KEY = "bale.owner"
 BALE_OFFSET_KEY = "bale.update_offset"
 WHISPER_MODEL_KEY = "transcription.model"
 WHISPER_MODEL_DIR_KEY = "transcription.model_dir"
+WHISPER_SPEED_KEY = "transcription.seconds_per_audio_second"
 
 DEFAULT_WHISPER_MODEL = "large-v3-turbo"
 DEFAULT_BACKUP_INTERVAL_DAYS = 7
@@ -181,6 +182,19 @@ class SettingsService:
 
     def set_whisper_model_dir(self, path: str) -> None:
         self._set(WHISPER_MODEL_DIR_KEY, path.strip())
+
+    def transcription_speed(self, model: str) -> float | None:
+        """Seconds of work per second of audio measured on this machine for a model
+        (None = never measured). The progress estimate is built on it."""
+        value = self._get(WHISPER_SPEED_KEY)
+        speed = value.get(model) if isinstance(value, dict) else None
+        return float(speed) if isinstance(speed, int | float) and speed > 0 else None
+
+    def set_transcription_speed(self, model: str, speed: float) -> None:
+        value = self._get(WHISPER_SPEED_KEY)
+        speeds = dict(value) if isinstance(value, dict) else {}
+        speeds[model] = round(speed, 4)
+        self._set(WHISPER_SPEED_KEY, speeds)
 
     # backup reminder -------------------------------------------------------------------
     def _get_datetime(self, key: str) -> datetime | None:
