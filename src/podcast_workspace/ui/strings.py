@@ -348,6 +348,11 @@ WS_SMART_SUBTITLE = "{kind}، {n} برچسب مشترک: {names}"
 WS_SMART_LINKED = "پیوندشده ✓"
 WS_LINK = "پیوند دادن"
 WS_UNLINK_SHORT = "برداشتن پیوند"
+WS_LINK_TOOLTIP = "پیوند دادن این مورد به اپیزود، یا برداشتن پیوندش  (Space)"
+WS_SHARED = "{n} برچسب مشترک"
+WS_MORE_SUGGESTED = (
+    '{n} مورد دیگر از همین نوع با اپیزود برچسب مشترک دارد — <a href="smart">پیشنهادها</a>'
+)
 WS_RECORD = "ضبط"
 WS_RECORD_TOOLTIP = "اجرای برنامهٔ ضبط شما — از هر جای برنامه (Ctrl+R)"
 WS_PICK_VOICE = "افزودن ایدهٔ صوتی به اپیزود"

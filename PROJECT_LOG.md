@@ -239,6 +239,14 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
   HighlightedText (unreadable in dark). Lines/focus/markers use the Link role (accent_strong)
 
 ## Status
+- v1.10: multi-select on the Ideas page (Ctrl/Shift+click, Ctrl+A): a selection pane
+  transcribes, archives, moves to the recycle bin or deletes forever, each one grouped undo
+  step (`HistoryService.grouped`, target `ITEMS`). «حذف کامل» (`TrashService.delete_forever`,
+  Shift+Delete) skips the trash, same cascade as a purge. Transcription progress follows a
+  clock estimate between whisper's 30 s windows, learned per model
+  (`transcription.seconds_per_audio_second`). Episode materials: linked lists sorted by
+  shared tags, double-click opens everywhere (Space links in suggestions), and the linked
+  tabs point to same-tag suggestions. «سطل زباله» → «سطل بازیافت»
 - v1.9: tags are flat — the parent/child hierarchy is gone everywhere (model, migration
   a9e2d5c8f314, services, undo, export, tags page, pickers, idea tag filter). Keycaps beside
   the main controls; Ctrl+I (Ideas search) and Ctrl+T (new tag) from anywhere. Emptying the

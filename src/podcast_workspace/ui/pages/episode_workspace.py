@@ -86,7 +86,8 @@ def stale_text(episode: Episode, now: datetime | None = None) -> str:
 
 
 class _LinkedList(QListWidget):
-    """Linked voices or ideas. Click/Enter opens, Delete unlinks."""
+    """Linked voices or ideas. Double-click/Enter opens, Delete unlinks. A single click only
+    selects: it must not carry the user off the episode."""
 
     open_item = Signal(int)
     unlink_item = Signal(int)
@@ -95,7 +96,7 @@ class _LinkedList(QListWidget):
         super().__init__(objectName="linkedList")
         self.setItemDelegate(TwoLineDelegate(self))
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.itemClicked.connect(lambda item: self.open_item.emit(int(item.data(ID_ROLE))))
+        self.itemDoubleClicked.connect(lambda item: self.open_item.emit(int(item.data(ID_ROLE))))
 
     def current_id(self) -> int | None:
         item = self.currentItem()
@@ -229,7 +230,9 @@ class MaterialsPanel(QFrame):
         self.smart_list = QListWidget(objectName="smartList")
         self.smart_list.setItemDelegate(TwoLineDelegate(self.smart_list))
         self.smart_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.smart_list.itemDoubleClicked.connect(lambda _i: self._toggle_smart())
+        # Opening is what a double-click does in every list here; linking has its own
+        # button (and Space), so no double-click can quietly unlink something.
+        self.smart_list.itemDoubleClicked.connect(lambda _i: self._open_current())
         self.smart_list.currentItemChanged.connect(lambda *_: self._sync_buttons())
         self.smart_list.installEventFilter(self)
 
@@ -240,6 +243,7 @@ class MaterialsPanel(QFrame):
 
         self.hint = QLabel(objectName="muted")
         self.hint.setWordWrap(True)
+        self.hint.linkActivated.connect(lambda _href: self.show_tab(self.TAB_SMART))
         col.addWidget(self.hint)
 
         buttons = QHBoxLayout()
@@ -254,6 +258,7 @@ class MaterialsPanel(QFrame):
 
         self._linked: dict[tuple[LinkKind, int], bool] = {}
         self._counts = [0, 0, 0]
+        self._more = [0, 0]  # unlinked suggestions of each kind, for the linked tabs' hint
         self._has_tags = False
         self._sync_buttons()
 
@@ -273,6 +278,7 @@ class MaterialsPanel(QFrame):
         index = self.TAB_VOICES if kind is LinkKind.VOICE else self.TAB_IDEAS
         self._counts[index] = len(rows)
         self._update_tab_labels()
+        self._sync_buttons()
 
     def show_links(
         self,
@@ -312,6 +318,10 @@ class MaterialsPanel(QFrame):
             self.smart_list.setCurrentItem(target)
         elif self.smart_list.count():
             self.smart_list.setCurrentRow(0)
+        self._more = [
+            sum(1 for link in links if link.kind is kind and not self._linked[(kind, link.item_id)])
+            for kind in (LinkKind.VOICE, LinkKind.IDEA)
+        ]
         self._counts[self.TAB_SMART] = len(links)
         self._update_tab_labels()
         self._sync_buttons()
@@ -347,6 +357,7 @@ class MaterialsPanel(QFrame):
             self.primary_button.setText(strings.WS_UNLINK_SHORT if linked else strings.WS_LINK)
             self.primary_button.setObjectName("" if linked else "primary")
             self.primary_button.setEnabled(key is not None)
+            self.primary_button.setToolTip(strings.WS_LINK_TOOLTIP)
             self.open_button.setEnabled(key is not None)
             empty = self.smart_list.count() == 0
             self.hint.setText(
@@ -357,17 +368,21 @@ class MaterialsPanel(QFrame):
         else:
             widget = self.voices_list if index == self.TAB_VOICES else self.ideas_list
             self.primary_button.setText(strings.WS_LINK_ADD)
+            self.primary_button.setToolTip("")
             self.primary_button.setObjectName("primary")
             self.primary_button.setEnabled(True)
             self.open_button.setEnabled(widget.current_id() is not None)
-            empty = widget.count() == 0
-            self.hint.setText(
-                ""
-                if not empty
-                else (
+            parts = []
+            if widget.count() == 0:
+                parts.append(
                     strings.WS_VOICES_EMPTY if index == self.TAB_VOICES else strings.WS_IDEAS_EMPTY
                 )
-            )
+            # A linked tab lists only what is linked; say when same-tag material waits in
+            # the suggestions, or a short list reads as "that is all there is".
+            more = self._more[index]
+            if more:
+                parts.append(strings.WS_MORE_SUGGESTED.format(n=local_digits(more)))
+            self.hint.setText("<br>".join(parts))
         self.hint.setVisible(bool(self.hint.text()))
         # objectName drives the primary/secondary look; re-polish after changing it.
         self.primary_button.style().unpolish(self.primary_button)
@@ -405,6 +420,9 @@ class MaterialsPanel(QFrame):
         if watched is self.smart_list and event.type() == QEvent.Type.KeyPress:
             assert isinstance(event, QKeyEvent)
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self._open_current()
+                return True
+            if event.key() == Qt.Key.Key_Space:
                 self._toggle_smart()
                 return True
         return super().eventFilter(watched, event)
@@ -929,32 +947,46 @@ class EpisodeWorkspacePage(QWidget):
             if iid is not None:
                 names[(LinkKind.IDEA, iid)] = _first_line(idea.text)
 
+        # Most shared tags first, as in the suggestions; then the most recent.
+        wanted = episode.tag_ids
+
+        def shared(tag_ids: set[int]) -> int:
+            return len(tag_ids & wanted)
+
+        def shared_text(tag_ids: set[int]) -> str:
+            n = shared(tag_ids)
+            return strings.WS_SHARED.format(n=local_digits(n)) if n else ""
+
+        linked_voices = [voices[v] for v in episode.voice_ids if v in voices]
+        linked_voices.sort(key=lambda v: (-shared(v.tag_ids), -v.imported_at.timestamp()))
         voice_rows: list[tuple[int, str, str]] = []
-        for vid in sorted(episode.voice_ids, key=lambda i: names.get((LinkKind.VOICE, i), "")):
-            voice = voices.get(vid)
-            if voice is None:
+        for voice in linked_voices:
+            if voice.id is None:
                 continue
+            parts = [
+                strings.ARCHIVED_BADGE if voice.archived else "",
+                shared_text(voice.tag_ids),
+                format_duration(voice.duration_ms),
+                voice.format.upper(),
+            ]
             voice_rows.append(
-                (
-                    vid,
-                    Path(voice.file_path).name,
-                    (strings.ARCHIVED_BADGE + "  ·  " if voice.archived else "")
-                    + f"{format_duration(voice.duration_ms)}  ·  {voice.format.upper()}",
-                )
+                (voice.id, Path(voice.file_path).name, "  ·  ".join(p for p in parts if p))
             )
         self.materials.show_linked(LinkKind.VOICE, voice_rows)
 
         idea_rows: list[tuple[int, str, str]] = []
         linked_ideas = [ideas[i] for i in episode.idea_note_ids if i in ideas]
-        for idea in sorted(linked_ideas, key=lambda i: i.updated_at, reverse=True):
+        linked_ideas.sort(key=lambda i: (-shared(i.tag_ids), -i.updated_at.timestamp()))
+        for idea in linked_ideas:
             if idea.id is None:
                 continue
             tag_names = [t.name for t in self._ws.tags.by_ids(idea.tag_ids)]
-            if idea.archived:
-                tag_names.insert(0, strings.ARCHIVED_BADGE)
-            idea_rows.append(
-                (idea.id, _first_line(idea.text), strings.LIST_SEPARATOR.join(tag_names))
-            )
+            parts = [
+                strings.ARCHIVED_BADGE if idea.archived else "",
+                shared_text(idea.tag_ids),
+                strings.LIST_SEPARATOR.join(tag_names),
+            ]
+            idea_rows.append((idea.id, _first_line(idea.text), "  ·  ".join(p for p in parts if p)))
         self.materials.show_linked(LinkKind.IDEA, idea_rows)
 
         linked = {(LinkKind.VOICE, v) for v in episode.voice_ids} | {

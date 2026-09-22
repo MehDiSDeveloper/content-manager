@@ -338,6 +338,11 @@ WS_SMART_SUBTITLE = "{kind}, {n} shared tags: {names}"
 WS_SMART_LINKED = "Linked ✓"
 WS_LINK = "Link"
 WS_UNLINK_SHORT = "Unlink"
+WS_LINK_TOOLTIP = "Link this item to the episode, or remove its link  (Space)"
+WS_SHARED = "{n} shared tags"
+WS_MORE_SUGGESTED = (
+    '{n} more of this kind share tags with the episode — <a href="smart">Suggestions</a>'
+)
 WS_RECORD = "Record"
 WS_RECORD_TOOLTIP = "Launch your recording program — from anywhere in the app (Ctrl+R)"
 WS_PICK_VOICE = "Add audio ideas to the episode"
