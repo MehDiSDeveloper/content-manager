@@ -2,9 +2,10 @@
 
 - Text message -> IdeaNote (hashtags in it become its tags). Saved on arrival, no confirmation.
 - Voice / audio message -> downloaded, then Bale asks whether to add it to the voice library.
-  Declining deletes the download; nothing is registered and no tags are asked for. Accepting
-  imports it (caption hashtags become tags, the rest of the caption a TimestampNote at 0:00)
-  and the tag keyboard follows, same as a text idea.
+  Declining moves the download into the audio source folder (the same place a recorder like
+  Audacity leaves takes), for later manual review; nothing is registered and no tags are asked
+  for. Accepting imports it straight into the voice ideas (caption hashtags become tags, the
+  rest of the caption a TimestampNote at 0:00) and the tag keyboard follows, same as a text idea.
 - Tags: inline keyboard of the 20 most-used tags (toggle), or free text / hashtags, which go
   through TagService.resolve_or_create so no near-duplicate tag is ever created.
 - The first private chat to message the bot becomes its owner; anyone else is refused.
@@ -13,6 +14,7 @@
 
 import logging
 import re
+import shutil
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -118,6 +120,8 @@ T_BUTTON_IMPORT_YES = "✅ اضافه شود"
 T_BUTTON_IMPORT_NO = "❌ نه"
 T_IMPORT_ACCEPTED = "✅ در حال افزودن…"
 T_IMPORT_DECLINED = "ذخیره نشد."
+T_IMPORT_MOVED = "ذخیره نشد؛ به پوشهٔ صوت منتقل شد."
+T_IMPORT_MOVE_FAILED = "ذخیره نشد؛ پوشهٔ صوت تنظیم نشده یا در دسترس نیست، فایل نگه داشته شد."
 
 
 class BotStatus(StrEnum):
@@ -490,14 +494,14 @@ class _Worker(threading.Thread):
             ]
         }
         message_id = self._send(chat_id, T_IMPORT_ASK, markup)
-        if message_id is None:
-            path.unlink(missing_ok=True)
+        if message_id is None:  # couldn't even ask; don't strand the file unreviewable
+            self._move_to_source_folder(path)
             return
         state = self._state(chat_id)
         state.pending_voices[message_id] = _PendingVoice(path, caption)
         while len(state.pending_voices) > MAX_PENDING_VOICES:  # abandoned prompts never answered
             stale = state.pending_voices.pop(next(iter(state.pending_voices)))
-            stale.path.unlink(missing_ok=True)
+            self._move_to_source_folder(stale.path)
 
     def _on_import_decision(
         self, callback_id: str, chat_id: int, message_id: int, accept: bool
@@ -507,13 +511,32 @@ class _Worker(threading.Thread):
             self._answer(callback_id)
             return
         if not accept:
-            pending.path.unlink(missing_ok=True)
+            moved = self._move_to_source_folder(pending.path)
             self._answer(callback_id, T_IMPORT_DECLINED)
-            self._edit(chat_id, message_id, T_IMPORT_DECLINED)
+            self._edit(chat_id, message_id, T_IMPORT_MOVED if moved else T_IMPORT_MOVE_FAILED)
             return
         self._answer(callback_id, T_IMPORT_ACCEPTED)
         self._edit(chat_id, message_id, T_IMPORT_ACCEPTED)
         self._import_voice(chat_id, pending)
+
+    def _move_to_source_folder(self, path: Path) -> bool:
+        """Move a declined download where a recorder like Audacity would have left it, so it
+        shows up in the audio source folder for manual review. False if left where it was."""
+        raw = self._svc._settings.source_folder()
+        folder = Path(raw) if raw else None
+        if folder is None or not folder.is_dir():
+            return False
+        target = folder / path.name
+        counter = 2
+        while target.exists():
+            target = folder / f"{path.stem}-{counter}{path.suffix}"
+            counter += 1
+        try:
+            shutil.move(str(path), str(target))  # may cross drives; os.rename can't
+        except OSError:
+            log.warning("could not move declined voice to source folder", exc_info=True)
+            return False
+        return True
 
     def _import_voice(self, chat_id: int, pending: _PendingVoice) -> None:
         report = self._svc._voices.import_files([pending.path])
