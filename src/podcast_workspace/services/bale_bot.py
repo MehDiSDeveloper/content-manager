@@ -1,9 +1,10 @@
 """Bale bot: a pocket inbox for the workspace, polled from a background thread.
 
-- Text message -> IdeaNote (hashtags in it become its tags).
-- Voice / audio message -> downloaded into the voice library (caption hashtags become tags,
-  the rest of the caption becomes a TimestampNote at 0:00).
-- Everything is saved on arrival; the tag keyboard that follows is optional.
+- Text message -> IdeaNote (hashtags in it become its tags). Saved on arrival, no confirmation.
+- Voice / audio message -> downloaded, then Bale asks whether to add it to the voice library.
+  Declining deletes the download; nothing is registered and no tags are asked for. Accepting
+  imports it (caption hashtags become tags, the rest of the caption a TimestampNote at 0:00)
+  and the tag keyboard follows, same as a text idea.
 - Tags: inline keyboard of the 20 most-used tags (toggle), or free text / hashtags, which go
   through TagService.resolve_or_create so no near-duplicate tag is ever created.
 - The first private chat to message the bot becomes its owner; anyone else is refused.
@@ -49,6 +50,9 @@ BACKOFF_MAX_S = 120.0
 KEYBOARD_TAGS = 20
 KEYBOARD_COLUMNS = 2
 MAX_PROMPTS_REMEMBERED = 50
+MAX_PENDING_VOICES = 50
+IMPORT_YES = "iy"
+IMPORT_NO = "in"
 
 _FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 _MIME_EXTENSIONS = {
@@ -109,6 +113,11 @@ T_TOO_LARGE = "حجم فایل بیش از ۲۰ مگابایت است و باز�
 T_UNSUPPORTED_AUDIO = "این قالب صوتی پشتیبانی نمی‌شود."
 T_VOICE_FAILED = "دریافت فایل صوتی ممکن نشد؛ دوباره بفرستید."
 T_SAVE_FAILED = "ذخیره ممکن نشد: {error}"
+T_IMPORT_ASK = "وویس دریافت شد. به کتابخانه اضافه شود؟"
+T_BUTTON_IMPORT_YES = "✅ اضافه شود"
+T_BUTTON_IMPORT_NO = "❌ نه"
+T_IMPORT_ACCEPTED = "✅ در حال افزودن…"
+T_IMPORT_DECLINED = "ذخیره نشد."
 
 
 class BotStatus(StrEnum):
@@ -165,11 +174,18 @@ class _Prompt:
 
 
 @dataclass
+class _PendingVoice:
+    path: Path
+    caption: str
+
+
+@dataclass
 class _ChatState:
     last_item: ItemRef | None = None
     awaiting_tags: ItemRef | None = None
     active_prompt: _Prompt | None = None
     prompts: dict[int, _Prompt] = field(default_factory=dict)
+    pending_voices: dict[int, _PendingVoice] = field(default_factory=dict)
 
 
 def _fa(value: object) -> str:
@@ -462,15 +478,53 @@ class _Worker(threading.Thread):
             log.warning("voice download failed", exc_info=True)
             self._send(chat_id, T_VOICE_FAILED)
             return
-        report = self._svc._voices.import_files([target])
+        self._ask_import(chat_id, target, caption)
+
+    def _ask_import(self, chat_id: int, path: Path, caption: str) -> None:
+        markup = {
+            "inline_keyboard": [
+                [
+                    {"text": T_BUTTON_IMPORT_YES, "callback_data": IMPORT_YES},
+                    {"text": T_BUTTON_IMPORT_NO, "callback_data": IMPORT_NO},
+                ]
+            ]
+        }
+        message_id = self._send(chat_id, T_IMPORT_ASK, markup)
+        if message_id is None:
+            path.unlink(missing_ok=True)
+            return
+        state = self._state(chat_id)
+        state.pending_voices[message_id] = _PendingVoice(path, caption)
+        while len(state.pending_voices) > MAX_PENDING_VOICES:  # abandoned prompts never answered
+            stale = state.pending_voices.pop(next(iter(state.pending_voices)))
+            stale.path.unlink(missing_ok=True)
+
+    def _on_import_decision(
+        self, callback_id: str, chat_id: int, message_id: int, accept: bool
+    ) -> None:
+        pending = self._state(chat_id).pending_voices.pop(message_id, None)
+        if pending is None:  # already answered, or the prompt fell off the pending cap
+            self._answer(callback_id)
+            return
+        if not accept:
+            pending.path.unlink(missing_ok=True)
+            self._answer(callback_id, T_IMPORT_DECLINED)
+            self._edit(chat_id, message_id, T_IMPORT_DECLINED)
+            return
+        self._answer(callback_id, T_IMPORT_ACCEPTED)
+        self._edit(chat_id, message_id, T_IMPORT_ACCEPTED)
+        self._import_voice(chat_id, pending)
+
+    def _import_voice(self, chat_id: int, pending: _PendingVoice) -> None:
+        report = self._svc._voices.import_files([pending.path])
         if not report.imported:
-            reason = report.failed[0][1] if report.failed else target.name
+            reason = report.failed[0][1] if report.failed else pending.path.name
             self._send(chat_id, T_SAVE_FAILED.format(error=reason))
             return
         voice = report.imported[0]
         assert voice.id is not None
         ref = ItemRef(ItemKind.VOICE, voice.id)
-        parsed = parse_message(caption)
+        parsed = parse_message(pending.caption)
         tag_report = self._add_tags(ref, parsed.tags) if parsed.tags else TagReport()
         if parsed.text:
             try:
@@ -640,7 +694,11 @@ class _Worker(threading.Thread):
             self._answer(callback_id, T_PRIVATE)
             return
         chat_id, message_id = int(chat["id"]), int(message.get("message_id") or 0)
-        parts = str(query.get("data") or "").split("|")
+        data = str(query.get("data") or "")
+        if data in (IMPORT_YES, IMPORT_NO):
+            self._on_import_decision(callback_id, chat_id, message_id, data == IMPORT_YES)
+            return
+        parts = data.split("|")
         try:
             ref = ItemRef(ItemKind(parts[1]), int(parts[2]))
         except (IndexError, ValueError):
