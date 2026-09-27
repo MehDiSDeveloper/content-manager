@@ -10,8 +10,9 @@ import threading
 import time
 from collections import deque
 from collections.abc import Iterable
+from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -27,7 +28,9 @@ from PySide6.QtWidgets import (
 )
 
 from podcast_workspace.domain.entities import Transcript, TranscriptSegment
+from podcast_workspace.domain.errors import NotFoundError
 from podcast_workspace.domain.text import find_spans, query_terms
+from podcast_workspace.domain.transcript_export import paragraphs, render
 from podcast_workspace.services.transcription import (
     ModelMissingError,
     TranscriptionCancelledError,
@@ -42,11 +45,13 @@ from podcast_workspace.ui.support import (
     describe_error,
     format_clock,
     format_datetime,
+    format_duration,
     local_digits,
     run_async,
 )
 
 USER_SCROLL_GRACE_S = 4.0
+COPIED_NOTICE_MS = 2500
 
 
 class TranscriptionJobs(QObject):
@@ -269,9 +274,18 @@ class TranscriptPanel(QFrame):
         header = QHBoxLayout()
         self.meta = QLabel(objectName="muted")
         header.addWidget(self.meta, 1)
-        self.copy_button = QPushButton(strings.TR_COPY, objectName="flatButton")
-        self.copy_button.clicked.connect(self._copy)
+        self.copy_text_button = QPushButton(strings.TR_COPY_TEXT, objectName="flatButton")
+        self.copy_text_button.setToolTip(strings.TR_COPY_TEXT_TOOLTIP)
+        self.copy_text_button.clicked.connect(lambda: self._copy(full=False))
+        header.addWidget(self.copy_text_button)
+        self.copy_button = QPushButton(strings.TR_COPY_EXPORT, objectName="flatButton")
+        self.copy_button.setToolTip(strings.TR_COPY_EXPORT_TOOLTIP)
+        self.copy_button.clicked.connect(lambda: self._copy(full=True))
         header.addWidget(self.copy_button)
+        # "Copied" stands in for the meta line a moment, then the meta line comes back.
+        self._copied_timer = QTimer(self, singleShot=True, interval=COPIED_NOTICE_MS)
+        self._copied_timer.timeout.connect(self._end_copied_notice)
+        self._meta_before_copy = ""
         self.cancel_button = QPushButton(strings.TR_CANCEL)
         self.cancel_button.clicked.connect(jobs.cancel)
         header.addWidget(self.cancel_button)
@@ -362,6 +376,7 @@ class TranscriptPanel(QFrame):
         self._show_state()
 
     def _show_state(self, message: str | None = None) -> None:
+        self._copied_timer.stop()
         transcript = self._transcript
         self.settings_button.hide()
         if message:
@@ -405,7 +420,9 @@ class TranscriptPanel(QFrame):
         self.run_button.setToolTip(tip)
         self.cancel_button.setVisible(mine)
         self.progress.setVisible(mine)
-        self.copy_button.setVisible(bool(self._transcript and self._transcript.segments))
+        copyable = bool(self._transcript and self._transcript.segments)
+        self.copy_button.setVisible(copyable)
+        self.copy_text_button.setVisible(copyable)
 
     # actions ---------------------------------------------------------------------------
     def _run(self) -> None:
@@ -418,10 +435,40 @@ class TranscriptPanel(QFrame):
         if self._jobs.start(self._voice_id):
             self._sync_controls()
 
-    def _copy(self) -> None:
-        if self._transcript is not None:
-            QGuiApplication.clipboard().setText(self._transcript.text)
-            self.meta.setText(strings.TR_COPIED)
+    def _copy(self, full: bool) -> None:
+        if self._transcript is None:
+            return
+        items = paragraphs(self._transcript.segments)
+        text = render(items, self._export_header(), format_clock) if full else render(items)
+        QGuiApplication.clipboard().setText(text)
+        if not self._copied_timer.isActive():
+            self._meta_before_copy = self.meta.text()
+        self.meta.setText(strings.TR_COPIED_EXPORT if full else strings.TR_COPIED_TEXT)
+        self._copied_timer.start()
+
+    def _end_copied_notice(self) -> None:
+        if self.meta.text() in (strings.TR_COPIED_EXPORT, strings.TR_COPIED_TEXT):
+            self.meta.setText(self._meta_before_copy)
+
+    def _export_header(self) -> list[str]:
+        """What the text is about, for whoever reads it away from the app."""
+        if self._voice_id is None:
+            return []
+        try:
+            voice = self._ws.voices.get(self._voice_id)
+        except NotFoundError:
+            return []
+        lines = [
+            Path(voice.file_path).stem,
+            strings.TR_EXPORT_META.format(
+                when=format_datetime(voice.imported_at),
+                duration=format_duration(voice.duration_ms),
+            ),
+        ]
+        names = sorted(t.name for t in self._ws.tags.by_ids(voice.tag_ids))
+        if names:
+            lines.append(strings.TR_EXPORT_TAGS.format(names=strings.LIST_SEPARATOR.join(names)))
+        return lines
 
     def _seek(self, position_ms: int) -> None:
         if self._player.is_current():
