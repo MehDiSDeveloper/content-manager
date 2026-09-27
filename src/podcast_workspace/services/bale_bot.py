@@ -1,11 +1,14 @@
 """Bale bot: a pocket inbox for the workspace, polled from a background thread.
 
-- Text message -> IdeaNote (hashtags in it become its tags). Saved on arrival, no confirmation.
-- Voice / audio message -> downloaded, then Bale asks whether to add it to the voice library.
-  Declining moves the download into the audio source folder (the same place a recorder like
-  Audacity leaves takes), for later manual review; nothing is registered and no tags are asked
-  for. Accepting imports it straight into the voice ideas (caption hashtags become tags, the
-  rest of the caption a TimestampNote at 0:00) and the tag keyboard follows, same as a text idea.
+- Every idea is confirmed before it enters the workspace: Bale asks «save it?» and on yes the
+  question turns into the tag keyboard. Unanswered questions live only in the worker's memory,
+  so a restart forgets them (the button then says to send the message again).
+- Text message -> held until confirmed, then an IdeaNote (hashtags in it become its tags).
+  Declining drops it: nothing is written anywhere.
+- Voice / audio message -> downloaded first. Declining moves the download into the audio
+  source folder (the same place a recorder like Audacity leaves takes), for later manual
+  review; nothing is registered and no tags are asked for. Accepting imports it into the voice
+  ideas (caption hashtags become tags, the rest of the caption a TimestampNote at 0:00).
 - Tags: inline keyboard of the 20 most-used tags (toggle), or free text / hashtags, which go
   through TagService.resolve_or_create so no near-duplicate tag is ever created.
 - The first private chat to message the bot becomes its owner; anyone else is refused.
@@ -52,9 +55,9 @@ BACKOFF_MAX_S = 120.0
 KEYBOARD_TAGS = 20
 KEYBOARD_COLUMNS = 2
 MAX_PROMPTS_REMEMBERED = 50
-MAX_PENDING_VOICES = 50
-IMPORT_YES = "iy"
-IMPORT_NO = "in"
+MAX_PENDING = 50
+SAVE_YES = "iy"
+SAVE_NO = "in"
 
 _FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 _MIME_EXTENSIONS = {
@@ -78,8 +81,8 @@ _UNSAFE_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 # Bot-facing text (Persian). The desktop UI keeps its own strings in ui/strings.py.
 T_WELCOME = (
     "سلام! این بازو به «فضای کاری پادکست» شما وصل شد.\n\n"
-    "• هر پیام متنی یک ایدهٔ متنی ذخیره می‌شود.\n"
-    "• هر پیام صوتی یک ایدهٔ صوتی ذخیره می‌شود.\n"
+    "• هر پیام متنی یک ایدهٔ متنی و هر پیام صوتی یک ایدهٔ صوتی است؛ "
+    "پیش از ذخیره می‌پرسم که ذخیره شود یا نه.\n"
     "• برچسب: روی دکمه‌ها بزنید یا نامش را با # بفرستید (مثلاً #روان_شناسی).\n"
     "• پیامی که فقط هشتگ دارد، به آخرین مورد برچسب می‌زند.\n"
     "/cancel لغو انتظار برای برچسب"
@@ -117,9 +120,13 @@ T_VOICE_FAILED = "دریافت فایل صوتی ممکن نشد؛ دوباره 
 T_SAVE_FAILED = "ذخیره ممکن نشد: {error}"
 T_IMPORT_ASK = "وویس دریافت شد. به کتابخانه اضافه شود؟"
 T_BUTTON_IMPORT_YES = "✅ اضافه شود"
-T_BUTTON_IMPORT_NO = "❌ نه"
+T_TEXT_ASK = "ایدهٔ متنی ذخیره شود؟\n«{summary}»"
+T_BUTTON_SAVE_YES = "✅ ذخیره شود"
+T_BUTTON_NO = "❌ نه"
 T_IMPORT_ACCEPTED = "✅ در حال افزودن…"
-T_IMPORT_DECLINED = "ذخیره نشد."
+T_DECLINED = "ذخیره نشد."
+T_TEXT_DECLINED = "❌ ذخیره نشد: «{summary}»"
+T_ASK_EXPIRED = "این پرسش دیگر معتبر نیست؛ پیام را دوباره بفرستید."
 T_IMPORT_MOVED = "ذخیره نشد؛ به پوشهٔ صوت منتقل شد."
 T_IMPORT_MOVE_FAILED = "ذخیره نشد؛ پوشهٔ صوت تنظیم نشده یا در دسترس نیست، فایل نگه داشته شد."
 
@@ -184,12 +191,17 @@ class _PendingVoice:
 
 
 @dataclass
+class _PendingText:
+    text: str
+
+
+@dataclass
 class _ChatState:
     last_item: ItemRef | None = None
     awaiting_tags: ItemRef | None = None
     active_prompt: _Prompt | None = None
     prompts: dict[int, _Prompt] = field(default_factory=dict)
-    pending_voices: dict[int, _PendingVoice] = field(default_factory=dict)
+    pending: dict[int, _PendingVoice | _PendingText] = field(default_factory=dict)  # by question
 
 
 def _fa(value: object) -> str:
@@ -358,11 +370,13 @@ class _Worker(threading.Thread):
 
     def _edit(
         self, chat_id: int, message_id: int, text: str, markup: dict[str, Any] | None = None
-    ) -> None:
+    ) -> bool:
         try:
             self._client.edit_message_text(chat_id, message_id, text, markup)
         except BaleError:
             log.warning("editMessageText failed", exc_info=True)
+            return False
+        return True
 
     def _answer(self, callback_id: str, text: str | None = None, alert: bool = False) -> None:
         try:
@@ -448,16 +462,25 @@ class _Worker(threading.Thread):
             else:
                 self._tag_by_names(chat_id, state.last_item, parsed.tags)
             return
+        self._ask_save(
+            chat_id,
+            _PendingText(text),
+            T_TEXT_ASK.format(summary=_shorten(parsed.text)),
+            T_BUTTON_SAVE_YES,
+        )
+
+    def _save_text(self, chat_id: int, message_id: int, pending: _PendingText) -> None:
+        parsed = parse_message(pending.text)
         try:
             idea = self._svc._ideas.create(parsed.text)
         except DomainError as exc:
-            self._send(chat_id, T_SAVE_FAILED.format(error=exc))
+            self._edit(chat_id, message_id, T_SAVE_FAILED.format(error=exc))
             return
         assert idea.id is not None
         ref = ItemRef(ItemKind.IDEA, idea.id)
         report = self._add_tags(ref, parsed.tags) if parsed.tags else TagReport()
         self._delivered(ref)
-        self._send_prompt(chat_id, ref, T_IDEA_SAVED, report)
+        self._send_prompt(chat_id, ref, T_IDEA_SAVED, report, message_id)
 
     def _receive_voice(self, chat_id: int, audio: dict[str, Any], caption: str) -> None:
         size = int(audio.get("file_size") or 0)
@@ -482,42 +505,62 @@ class _Worker(threading.Thread):
             log.warning("voice download failed", exc_info=True)
             self._send(chat_id, T_VOICE_FAILED)
             return
-        self._ask_import(chat_id, target, caption)
+        self._ask_save(chat_id, _PendingVoice(target, caption), T_IMPORT_ASK, T_BUTTON_IMPORT_YES)
 
-    def _ask_import(self, chat_id: int, path: Path, caption: str) -> None:
+    def _ask_save(
+        self, chat_id: int, pending: _PendingVoice | _PendingText, question: str, yes: str
+    ) -> None:
         markup = {
             "inline_keyboard": [
                 [
-                    {"text": T_BUTTON_IMPORT_YES, "callback_data": IMPORT_YES},
-                    {"text": T_BUTTON_IMPORT_NO, "callback_data": IMPORT_NO},
+                    {"text": yes, "callback_data": SAVE_YES},
+                    {"text": T_BUTTON_NO, "callback_data": SAVE_NO},
                 ]
             ]
         }
-        message_id = self._send(chat_id, T_IMPORT_ASK, markup)
-        if message_id is None:  # couldn't even ask; don't strand the file unreviewable
-            self._move_to_source_folder(path)
+        message_id = self._send(chat_id, question, markup)
+        if message_id is None:  # couldn't even ask
+            self._discard(pending)
             return
         state = self._state(chat_id)
-        state.pending_voices[message_id] = _PendingVoice(path, caption)
-        while len(state.pending_voices) > MAX_PENDING_VOICES:  # abandoned prompts never answered
-            stale = state.pending_voices.pop(next(iter(state.pending_voices)))
-            self._move_to_source_folder(stale.path)
+        state.pending[message_id] = pending
+        while len(state.pending) > MAX_PENDING:  # abandoned questions never answered
+            self._discard(state.pending.pop(next(iter(state.pending))))
 
-    def _on_import_decision(
+    def _discard(self, pending: _PendingVoice | _PendingText) -> bool:
+        """Let an unsaved idea go. A text simply vanishes; a downloaded voice is moved to the
+        audio source folder so it isn't stranded unreviewable. False if the file stayed put."""
+        if isinstance(pending, _PendingVoice):
+            return self._move_to_source_folder(pending.path)
+        return True
+
+    def _on_save_decision(
         self, callback_id: str, chat_id: int, message_id: int, accept: bool
     ) -> None:
-        pending = self._state(chat_id).pending_voices.pop(message_id, None)
-        if pending is None:  # already answered, or the prompt fell off the pending cap
-            self._answer(callback_id)
+        state = self._state(chat_id)
+        pending = state.pending.pop(message_id, None)
+        if pending is None:
+            # A second tap on a question already answered stays quiet; anything else was
+            # asked before a restart (or fell off the cap) and is gone.
+            self._answer(callback_id, None if message_id in state.prompts else T_ASK_EXPIRED)
             return
         if not accept:
-            moved = self._move_to_source_folder(pending.path)
-            self._answer(callback_id, T_IMPORT_DECLINED)
-            self._edit(chat_id, message_id, T_IMPORT_MOVED if moved else T_IMPORT_MOVE_FAILED)
+            kept_file = not self._discard(pending)
+            self._answer(callback_id, T_DECLINED)
+            if isinstance(pending, _PendingText):
+                summary = _shorten(parse_message(pending.text).text)
+                self._edit(chat_id, message_id, T_TEXT_DECLINED.format(summary=summary))
+            else:
+                reply = T_IMPORT_MOVE_FAILED if kept_file else T_IMPORT_MOVED
+                self._edit(chat_id, message_id, reply)
+            return
+        if isinstance(pending, _PendingText):
+            self._answer(callback_id)
+            self._save_text(chat_id, message_id, pending)
             return
         self._answer(callback_id, T_IMPORT_ACCEPTED)
         self._edit(chat_id, message_id, T_IMPORT_ACCEPTED)
-        self._import_voice(chat_id, pending)
+        self._import_voice(chat_id, message_id, pending)
 
     def _move_to_source_folder(self, path: Path) -> bool:
         """Move a declined download where a recorder like Audacity would have left it, so it
@@ -538,11 +581,11 @@ class _Worker(threading.Thread):
             return False
         return True
 
-    def _import_voice(self, chat_id: int, pending: _PendingVoice) -> None:
+    def _import_voice(self, chat_id: int, message_id: int, pending: _PendingVoice) -> None:
         report = self._svc._voices.import_files([pending.path])
         if not report.imported:
             reason = report.failed[0][1] if report.failed else pending.path.name
-            self._send(chat_id, T_SAVE_FAILED.format(error=reason))
+            self._edit(chat_id, message_id, T_SAVE_FAILED.format(error=reason))
             return
         voice = report.imported[0]
         assert voice.id is not None
@@ -555,7 +598,7 @@ class _Worker(threading.Thread):
             except DomainError:
                 log.warning("caption note not saved", exc_info=True)
         self._delivered(ref)
-        self._send_prompt(chat_id, ref, T_VOICE_SAVED, tag_report)
+        self._send_prompt(chat_id, ref, T_VOICE_SAVED, tag_report, message_id)
 
     @staticmethod
     def _suffix_for(audio: dict[str, Any], remote_path: str) -> str | None:
@@ -685,7 +728,16 @@ class _Worker(threading.Thread):
         )
         return {"inline_keyboard": rows}
 
-    def _send_prompt(self, chat_id: int, ref: ItemRef, header: str, report: TagReport) -> None:
+    def _send_prompt(
+        self,
+        chat_id: int,
+        ref: ItemRef,
+        header: str,
+        report: TagReport,
+        reuse_message_id: int | None = None,
+    ) -> None:
+        """Show the item with its tag keyboard: in `reuse_message_id` (the question that led
+        here) when given and still editable, else in a new message."""
         state = self._state(chat_id)
         state.last_item = ref
         previous = state.active_prompt
@@ -696,9 +748,11 @@ class _Worker(threading.Thread):
                 self._edit(chat_id, previous.message_id, T_ITEM_GONE)
             state.active_prompt = None
         tag_ids = [t.id for t in self._svc._tags.most_used(KEYBOARD_TAGS) if t.id is not None]
-        message_id = self._send(
-            chat_id, self._prompt_text(ref, header, report), self._keyboard(ref, tag_ids)
-        )
+        text, keyboard = self._prompt_text(ref, header, report), self._keyboard(ref, tag_ids)
+        if reuse_message_id is not None and self._edit(chat_id, reuse_message_id, text, keyboard):
+            message_id: int | None = reuse_message_id
+        else:
+            message_id = self._send(chat_id, text, keyboard)
         if message_id is None:
             return
         prompt = _Prompt(message_id, ref, tag_ids)
@@ -718,8 +772,8 @@ class _Worker(threading.Thread):
             return
         chat_id, message_id = int(chat["id"]), int(message.get("message_id") or 0)
         data = str(query.get("data") or "")
-        if data in (IMPORT_YES, IMPORT_NO):
-            self._on_import_decision(callback_id, chat_id, message_id, data == IMPORT_YES)
+        if data in (SAVE_YES, SAVE_NO):
+            self._on_save_decision(callback_id, chat_id, message_id, data == SAVE_YES)
             return
         parts = data.split("|")
         try:

@@ -159,7 +159,10 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
     brought up — or just refreshed when it is already in front — because a change you cannot
     see is a change you cannot trust
 - Bale bot:
-  - Everything is saved on arrival; tag buttons are optional follow-up
+  - Nothing is saved until the owner taps «ذخیره شود» on the question the bot asks; on yes the
+    question message becomes the tag prompt (tag buttons stay optional). A declined text is
+    never written; a declined voice goes to the audio source folder. Unanswered questions
+    live in the worker's memory only: after a restart their buttons say to send again
   - Text → IdeaNote (hashtags become tags); a hashtag-only message tags the last item; voice/audio/audio-document → file into `bale_voices/`, then a normal voice import. Caption hashtags → tags, rest of caption → TimestampNote at 0:00
   - Free-text tags go through `TagService.resolve_or_create`: exact reuse, near-duplicate reuse (reported to the user as a correction), otherwise create. No tag is created that would then be dropped by the limit
   - Keyboard = 20 most-used tags, frozen per prompt message so buttons do not reorder while tapping; toggles; callback_data self-contained (`t|kind|item|tag`), so old prompts still work
@@ -168,6 +171,10 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
   - Errors: 401/403 → UNAUTHORIZED, stop until token changes; network/5xx/other → OFFLINE, exponential backoff 3 s → 120 s; per-update exceptions logged, never raised
 - Transcription: faster-whisper, CPU int8, language fa, VAD on, condition_on_previous_text off (repetition loops), Persian initial prompt. Audio decoded by our ffmpeg to 16 kHz float32. Model is a local folder: managed download (`models/faster-whisper-<name>`, explicit button, one-time network) or a user folder; loaded with local_files_only. Default model large-v3-turbo. One job at a time; cancel checked per segment. «Transcribe all» (under the Voices list) queues what the switch shows with no transcript and a file on disk; `TranscriptionJobs` runs the queue one by one, cancel skips one voice, a missing model/library ends the batch; progress in the sidebar. 0% is reported only after the model is loaded
 - Transcripts are their own entity (not TimestampNotes): the user's notes stay the user's words
+- Transcript copy: `domain/transcript_export.py` joins whisper segments into paragraphs (new one
+  after a 1.5 s pause, or at a sentence end past 400 chars, or anywhere past 900). «کپی خروجی»
+  adds a header (file name, date, length, tags) and each paragraph's time; «کپی متن» is the
+  paragraphs alone
 - Export = one zip: `data.json` (all entities, ids kept) + `audio/<id>_<name>` stored uncompressed. Settings not exported (per machine, bot token is a secret)
 - Import = full restore, not merge: validate every entity first, extract audio, snapshot DB to `backups/before-import_*.db`, then wipe + insert in one transaction. Voice keeps its original path if a same-size file is still there, else points into `library/`
 
@@ -239,6 +246,8 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
   HighlightedText (unreadable in dark). Lines/focus/markers use the Link role (accent_strong)
 
 ## Status
+- v1.11: transcript copy as paragraphs, with or without header and times; the Bale bot asks
+  before saving a text idea too, and a «no» stores nothing
 - v1.10: multi-select on the Ideas page (Ctrl/Shift+click, Ctrl+A): a selection pane
   transcribes, archives, moves to the recycle bin or deletes forever, each one grouped undo
   step (`HistoryService.grouped`, target `ITEMS`). «حذف کامل» (`TrashService.delete_forever`,
