@@ -10,14 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal
-from PySide6.QtGui import (
-    QAction,
-    QActionGroup,
-    QGuiApplication,
-    QKeySequence,
-    QPalette,
-    QShortcut,
-)
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
@@ -146,8 +139,6 @@ class PlayerWidget(QFrame):
         self._loader.done.connect(self._on_wave_done)
         self._loader.failed.connect(self._on_wave_failed)
 
-        self._rtl = QGuiApplication.isRightToLeft()
-
         col = QVBoxLayout(self)
         col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(10)
@@ -172,9 +163,7 @@ class PlayerWidget(QFrame):
         self.play.clicked.connect(self.player.toggle)
         self.forward = self._transport_button(strings.PLAYER_FORWARD_TOOLTIP)
         self.forward.clicked.connect(lambda: self.player.skip(SKIP_MS))
-        # The skips read like the UI: back on the right in Persian, on the left in English.
-        transport = (self.back, self.play, self.forward)
-        for button in reversed(transport) if self._rtl else transport:
+        for button in (self.back, self.play, self.forward):
             row.addWidget(button)
         row.addStretch(1)
         self.speed = QToolButton(objectName="speedButton")
@@ -197,8 +186,7 @@ class PlayerWidget(QFrame):
         self.total.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
         row.addWidget(self.total)
         row_host = QFrame()
-        # The clock and the time readouts stay left-to-right; the skips order themselves above.
-        row_host.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+        row_host.setLayoutDirection(Qt.LayoutDirection.LeftToRight)  # media controls never mirror
         row_host.setLayout(row)
         col.addWidget(row_host)
 
@@ -328,10 +316,9 @@ class PlayerWidget(QFrame):
         on_accent = palette.color(QPalette.ColorRole.HighlightedText)
         playing = self.is_current() and self.player.is_playing
         self.play.setIcon(pause_icon(on_accent) if playing else play_icon(on_accent))
-        # A mirrored UI mirrors the arrows too: back turns clockwise in Persian.
         ten = local_digits(10)
-        self.back.setIcon(skip_icon(text, clockwise=self._rtl, label=ten))
-        self.forward.setIcon(skip_icon(text, clockwise=not self._rtl, label=ten))
+        self.back.setIcon(skip_icon(text, clockwise=False, label=ten))
+        self.forward.setIcon(skip_icon(text, clockwise=True, label=ten))
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.PaletteChange:

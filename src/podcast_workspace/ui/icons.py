@@ -178,15 +178,14 @@ def theme_icon(color: QColor, dark: bool) -> QIcon:
     return QIcon(pixmap)
 
 
-def history_icon(color: QColor, forward: bool, rtl: bool = True) -> QIcon:
-    """A curved arrow: back for undo, forward (mirrored) for redo.
+def history_icon(color: QColor, forward: bool) -> QIcon:
+    """A curved arrow: back (left) for undo, forward (mirrored, right) for redo.
 
-    Like Back, «back» is against the reading direction: undo points right in Persian,
-    left in English, and redo the other way.
+    They sit undo-left, redo-right in every language, so the arrows point outwards.
     """
     pixmap, p = _canvas()
     _stroke(p, color, 1.5)
-    if forward != rtl:
+    if forward:
         p.translate(NAV_ICON_SIZE, 0)
         p.scale(-1, 1)
     path = QPainterPath(QPointF(5.5, 5.4))

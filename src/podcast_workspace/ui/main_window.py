@@ -475,13 +475,16 @@ class MainWindow(QMainWindow):
 
         # Undo lives with the app's own controls, in reach from every page, and names
         # the change it would take back in its tooltip.
-        history = self._history_row = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        # Undo on the left and redo on the right in every language, like their arrows.
+        history = self._history_row = QBoxLayout(self._history_direction())
         history.setSpacing(4)
         self.undo_button = NavButton(strings.UNDO, -1, keys="Ctrl+Z")
         self.undo_button.setCheckable(False)
+        self.undo_button.setProperty("framed", True)
         self.undo_button.clicked.connect(self.undo)
         history.addWidget(self.undo_button, 1)
         self.redo_button = QToolButton(objectName="chromeButton")
+        self.redo_button.setProperty("framed", True)
         self.redo_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.redo_button.setIconSize(QSize(NAV_ICON_SIZE, NAV_ICON_SIZE))
         self.redo_button.clicked.connect(self.redo)
@@ -549,8 +552,8 @@ class MainWindow(QMainWindow):
         # Rows of two side by side do not fit a rail: stack them instead.
         vertical = QBoxLayout.Direction.TopToBottom
         horizontal = QBoxLayout.Direction.LeftToRight
-        for row in (self._history_row, self._footer_row):
-            row.setDirection(vertical if compact else horizontal)
+        self._footer_row.setDirection(vertical if compact else horizontal)
+        self._history_row.setDirection(vertical if compact else self._history_direction())
         for button in (self.back_button, self.undo_button, self.settings_button, *self.nav_buttons):
             button.set_compact(compact)
         centre = Qt.AlignmentFlag.AlignHCenter if compact else Qt.AlignmentFlag(0)
@@ -566,6 +569,11 @@ class MainWindow(QMainWindow):
         self._sync_back()
         self._sync_history()
         self._paint_fold_icon()
+
+    def _history_direction(self) -> QBoxLayout.Direction:
+        """A box layout mirrors in RTL; asking for right-to-left there keeps undo on the left."""
+        rtl = self.isRightToLeft()
+        return QBoxLayout.Direction.RightToLeft if rtl else QBoxLayout.Direction.LeftToRight
 
     def _paint_fold_icon(self) -> None:
         text = self.palette().color(QPalette.ColorRole.Text)
@@ -610,12 +618,11 @@ class MainWindow(QMainWindow):
         palette = self.palette()
         text = palette.color(QPalette.ColorRole.Text)
         muted = palette.color(QPalette.ColorRole.PlaceholderText)
-        rtl = self.isRightToLeft()
         self.undo_button.set_icon(
-            history_icon(text if self.undo_button.isEnabled() else muted, False, rtl)
+            history_icon(text if self.undo_button.isEnabled() else muted, False)
         )
         self.redo_button.setIcon(
-            history_icon(text if self.redo_button.isEnabled() else muted, True, rtl)
+            history_icon(text if self.redo_button.isEnabled() else muted, True)
         )
 
     def _build_content(self) -> QWidget:
