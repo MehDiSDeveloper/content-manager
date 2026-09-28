@@ -26,7 +26,7 @@ from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QItemSelectionModel, QObject, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QDragEnterEvent,
     QDropEvent,
@@ -1124,7 +1124,9 @@ class IdeasPage(ShelfListPage):
         """Back to the one current row (Esc)."""
         current = self.list.currentItem()
         if current is not None:
-            self.list.setCurrentItem(current)  # clears the rest of the selection
+            # The plain call only replaces Qt's uncommitted selection: rows picked with
+            # Ctrl+click would stay selected.
+            self.list.setCurrentItem(current, QItemSelectionModel.SelectionFlag.ClearAndSelect)
         self.list.setFocus()
 
     def refresh(self, select_id: Hashable | None = None, load: bool = True) -> None:
