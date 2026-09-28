@@ -52,6 +52,7 @@ class Toast(QFrame):
         text: str,
         action_text: str = "",
         on_action: Callable[[], None] | None = None,
+        show_ms: int = SHOW_MS,
     ) -> None:
         self.label.setText(text)
         self._on_action = on_action if action_text else None
@@ -61,7 +62,7 @@ class Toast(QFrame):
         self._place()
         self.show()
         self.raise_()
-        self._timer.start()
+        self._timer.start(show_ms)
 
     def dismiss(self) -> None:
         self._timer.stop()

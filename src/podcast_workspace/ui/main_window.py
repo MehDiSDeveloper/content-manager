@@ -2,10 +2,9 @@
 page stack.
 
 Nav pages: Episodes, Board, Ideas (audio and text), Audio folder, Tags, Trash (Ctrl+1..6).
-Off-nav pages:
-the startup resume screen and search results. An episode is always shown in one place — the Episodes
+Off-nav page: search results. An episode is always shown in one place — the Episodes
 page, beside its list — whether it is reached from there, the board, a tag, a search hit
-or the resume screen.
+or the «pick up where you left off» toast the app opens with.
 
 The sidebar folds down to a rail of icons (Ctrl+B) when the page needs the width, and
 remembers that it did.
@@ -54,6 +53,7 @@ from PySide6.QtWidgets import (
 )
 
 from podcast_workspace.audio.engine import Player
+from podcast_workspace.domain.bot_input import shorten
 from podcast_workspace.domain.lifecycle import TRASH_DAYS, ArchiveScope
 from podcast_workspace.domain.search import SearchHit, SearchKind
 from podcast_workspace.services.bale_bot import BotStatus, ItemKind, ItemRef
@@ -85,7 +85,6 @@ from podcast_workspace.ui.navigation import NavEntry, NavigationHistory, capture
 from podcast_workspace.ui.pages.board_page import BoardPage
 from podcast_workspace.ui.pages.content_pages import EpisodesPage
 from podcast_workspace.ui.pages.ideas_page import IdeasPage
-from podcast_workspace.ui.pages.resume_page import ResumePage
 from podcast_workspace.ui.pages.search_page import SearchPage
 from podcast_workspace.ui.pages.source_page import SourcePage
 from podcast_workspace.ui.pages.tags_page import TagsPage
@@ -124,6 +123,8 @@ BACKUP_CHECK_DELAY_MS = 1200  # after the window has settled, not in the way of 
 PURGE_INTERVAL_MS = 60 * 60 * 1000  # the 30-day trash is emptied hourly while the app is open
 IDEA_HOTKEY_ID = 0xB0B1
 START_PAGE = 2  # Ideas: the app opens where new ideas land
+RESUME_SHOW_MS = 20_000  # the startup «continue» toast: longer than news, not for ever
+RESUME_TITLE_CHARS = 60
 # Changes worth a toast: the ones that take something away, where noticing late is the
 # whole problem. Everything else is visible on the page as it happens.
 UNDO_OFFERED = frozenset(
@@ -318,7 +319,6 @@ class MainWindow(QMainWindow):
         self.tags_page = TagsPage(workspace, self.events)
         self.trash_page = TrashPage(workspace, self.events)
         self.workspace_page = self.episodes_page.workspace  # lives inside the Episodes page
-        self.resume_page = ResumePage()
         self.search_page = SearchPage()
         self._pages: list[QWidget] = [
             self.episodes_page,
@@ -345,8 +345,6 @@ class MainWindow(QMainWindow):
         self.transcription_jobs.queue_changed.connect(self._show_transcribe_progress)
         self.transcription_jobs.progress.connect(lambda *_: self._show_transcribe_progress())
         self.bot.item_received.connect(self._on_bot_item)
-        self.resume_page.continue_requested.connect(self.open_episode)
-        self.resume_page.skip_requested.connect(lambda: self.navigate(0, focus=True))
 
         self.inbox = IdeaInbox(workspace)
         self.inbox.saved.connect(self._on_inbox_saved)
@@ -632,7 +630,7 @@ class MainWindow(QMainWindow):
         col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(0)
         self.stack = QStackedWidget()
-        for page in (*self._pages, self.resume_page, self.search_page):
+        for page in (*self._pages, self.search_page):
             self.stack.addWidget(page)
         col.addWidget(self.stack, 1)
         self.toast = Toast(content)
@@ -684,18 +682,43 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("F6"), self, activated=self._cycle_pane_focus)
 
     def _start_page(self) -> None:
-        self.navigate(START_PAGE)
+        # Where the app starts is not a move the user made: nothing for Back to undo.
+        self.show_page(self._home, remember=False)
+
+    @property
+    def _home(self) -> QWidget:
+        """The page the app opens on, and where Back and Esc land with nowhere else to go."""
+        return self._pages[START_PAGE]
+
+    def _offer_resume(self) -> None:
+        """The last opened episode, one click away, without standing between the user and
+        the ideas the app opens on."""
+        try:
+            info = self._ws.episodes.resume()
+        except Exception:
+            return  # a convenience; never in the way of startup
+        if info is None or info.episode.id is None:
+            return
+        episode_id = info.episode.id
+        note_id = info.note.id if info.note is not None else None
+        title = shorten(info.episode.title, RESUME_TITLE_CHARS)
+        self.toast.show_message(
+            strings.RESUME_OFFER.format(title=title),
+            strings.RESUME_CONTINUE,
+            lambda: self.open_episode(episode_id, note_id),
+            show_ms=RESUME_SHOW_MS,
+        )
 
     # navigation ------------------------------------------------------------------------
     def show_page(self, page: QWidget, focus: bool = False, remember: bool = True) -> None:
         """Bring `page` up, recording the one it replaces so Back can undo the move.
 
-        The search results and the startup resume screen are never recorded: neither is
-        a place the user chose to be, and Back through them would be a detour. Search has
-        its own way home (`_before_search`).
+        The search results are never recorded: they are not a place the user chose to be,
+        and Back through them would be a detour. Search has its own way home
+        (`_before_search`).
         """
         current = self.stack.currentWidget()
-        if remember and current is not page and current not in (self.search_page, self.resume_page):
+        if remember and current is not page and current is not self.search_page:
             self._history.push(current)
         self.stack.setCurrentWidget(page)
         index = self._pages.index(page) if page in self._pages else -1
@@ -729,8 +752,8 @@ class MainWindow(QMainWindow):
             return
         entry = self._history.pop_before(current)
         if entry is None:
-            if current is not self._pages[0]:
-                self.show_page(self._pages[0], focus=True, remember=False)
+            if current is not self._home:
+                self.show_page(self._home, focus=True, remember=False)
             return
         self.show_page(entry.page, focus=True, remember=False)
         entry.restore()  # after the page is up: showEvent reloads it first
@@ -743,7 +766,7 @@ class MainWindow(QMainWindow):
         target = ""
         if current is self.search_page:  # Back leaves the results the way Esc does
             before = self._before_search
-            target = before.title if before is not None else self._pages[0].nav_title
+            target = before.title if before is not None else self._home.nav_title
         elif entry is not None:
             target = entry.title
         self.back_button.setEnabled(bool(target))
@@ -808,7 +831,7 @@ class MainWindow(QMainWindow):
         `keep_typing`: the box was emptied by hand, which is a pause while retyping, not a
         goodbye — the page comes back behind the box but the caret stays in it.
         """
-        entry = self._before_search or NavEntry(self._pages[0])
+        entry = self._before_search or NavEntry(self._home)
         self.search_page.reset_scope()  # the next search starts on «active» again
         self.search.clear()
         self.show_page(entry.page, focus=not keep_typing, remember=False)
@@ -1108,7 +1131,7 @@ class MainWindow(QMainWindow):
         self._before_search = None
         self.events.tags_changed.emit()
         self.events.data_changed.emit()
-        self.navigate(0)
+        self.show_page(self._home, remember=False)  # a fresh start, like opening the app
 
     def _on_bot_status(self, status: BotStatus, _detail: str) -> None:
         self._bot_active = status is not BotStatus.STOPPED
@@ -1179,11 +1202,11 @@ class MainWindow(QMainWindow):
             self.hotkey.register(int(self.winId()), *IDEA_HOTKEY)
             self.bot.restart()  # quietly does nothing unless enabled with a token
             QTimer.singleShot(BACKUP_CHECK_DELAY_MS, self._check_backup)
-            if self._auto_purged:
+            if self._auto_purged:  # the one toast at a time: news of a deletion comes first
                 purged = self._auto_purged
                 QTimer.singleShot(0, lambda: self._announce_purge(purged))
-            if self.stack.currentWidget() is self.resume_page:
-                QTimer.singleShot(0, self.resume_page.focus_main)
+            else:
+                QTimer.singleShot(0, self._offer_resume)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self.ideas_page.flush()  # pending autosaves must not be lost

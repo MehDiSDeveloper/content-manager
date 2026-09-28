@@ -513,12 +513,6 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     QListWidget#boardColumn:focus {{ border: none; }}
     #boardScroll, #boardHost {{ background: transparent; }}
 
-    #resumeCard {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 22px; }}
-    #eyebrow {{ color: {c.accent_strong}; font-weight: 700; font-size: 10pt; }}
-    #resumeTitle {{ font-size: 21pt; font-weight: 700; color: {c.text}; }}
-    #resumeNext {{ font-size: 13pt; color: {c.text}; }}
-    #resumeNoteTitle {{ font-size: 11pt; font-weight: 600; color: {c.text}; }}
-
     #inboxFrame {{
         background: {c.surface}; border: 2px solid {c.accent}; border-radius: 18px;
     }}
