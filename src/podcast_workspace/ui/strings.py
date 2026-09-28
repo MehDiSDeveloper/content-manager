@@ -379,6 +379,25 @@ WS_PICK_ADD = "افزودن"
 WS_PICK_EMPTY = "موردی برای افزودن نیست."
 KIND_VOICE = "ایدهٔ صوتی"
 KIND_IDEA = "ایدهٔ متنی"
+# Previewing a linked item inside the materials panel
+WS_PREVIEW_BACK = "→  مواد اپیزود"
+WS_PREVIEW_BACK_TOOLTIP = "بازگشت به فهرست مواد  (Esc)"
+WS_PREVIEW_OPEN = "باز کردن در ایده‌ها"
+WS_PREVIEW_OPEN_TOOLTIP = "ویرایش، برچسب‌ها و یادداشت‌های زمان‌دار در صفحهٔ ایده‌ها"
+WS_OPEN_TOOLTIP = "نمایش همین‌جا، کنار یادداشت‌ها  (Enter)"
+# The publish checklist (domain/publish.py)
+PUBLISH_CHIP = "انتشار {done} از {total}"
+PUBLISH_CHIP_DONE = "انتشار ✓"
+PUBLISH_TOOLTIP = "چک‌لیست انتشار: عنوان، توضیحات، کلیپ‌ها، کاور و جایی که منتشر شد"
+PUBLISH_TITLE = "چک‌لیست انتشار"
+PUBLISH_STEPS = {
+    "title": "عنوان نهایی",
+    "description": "توضیحات",
+    "clips": "کلیپ‌ها",
+    "cover": "کاور",
+}
+PUBLISH_WHERE = "کجا منتشر شد"
+PUBLISH_WHERE_PLACEHOLDER = "نام سکو یا لینک، هر کدام در یک خط"
 
 RESUME_OFFER = "آخرین اپیزودی که باز بود: «{title}»"
 RESUME_CONTINUE = "ادامه"
@@ -599,6 +618,7 @@ UNDO_ACTIONS = {
     "archive": "بایگانی {target} {quoted}",
     "unarchive": "خروج {target} {quoted} از بایگانی",
     "trash": "انتقال {target} {quoted} به سطل بازیافت",
+    "checklist": "تغییر چک‌لیست انتشار {target} {quoted}",
 }
 UNDO_SOMETHING = "آخرین تغییر"
 UNDO_ITEMS = "{n} مورد"  # a change made to a selection
@@ -645,6 +665,26 @@ FACET_NO_MATCH_CONTENT = (
     "هیچ ایده‌ای با همهٔ این شرط‌ها جور در نیامد.\n"
     "یکی از عبارت‌ها یا برچسب‌ها را بردارید، یا «در محتوا» را روشن کنید."
 )
+UNTAGGED_SWITCH = "بی‌برچسب"
+UNTAGGED_SWITCH_COUNT = "بی‌برچسب {n}"
+UNTAGGED_TOOLTIP = "فقط ایده‌هایی که هنوز برچسبی ندارند — برای مرور هفتگی"
+IDEA_UNTAGGED_NONE = "همهٔ ایده‌های این فهرست برچسب دارند."
+
+# From an idea to an episode (ui/widgets/episode_links.py)
+IDEA_EPISODES_LABEL = "اپیزودها"
+IDEA_EPISODES_NONE = "هنوز در هیچ اپیزودی نیست"
+IDEA_EPISODE_TOOLTIP = "باز کردن این اپیزود — {status}"
+IDEA_IN_EPISODES = "در {n} اپیزود"
+ADD_TO_EPISODE = "افزودن به اپیزود"
+ADD_TO_EPISODE_TOOLTIP = "به یک اپیزود اضافه کنید، یا اپیزود تازه‌ای با آن شروع کنید"
+SEL_ADD_TO_EPISODE = "افزودن {n} مورد به اپیزود"
+NEW_EPISODE_FROM_ONE = "اپیزود تازه از این ایده"
+NEW_EPISODE_FROM_MANY = "اپیزود تازه از این {n} ایده"
+EPISODE_MENU_ITEM = "{title}   ({status})"
+EPISODE_MENU_ALL = "همهٔ اپیزودها…"
+EPISODE_PICK_TITLE = "افزودن به کدام اپیزود؟"
+IDEA_ADDED_TO = "به «{title}» اضافه شد"
+IDEA_REMOVED_FROM = "از «{title}» برداشته شد"
 
 # Global search: titles unless the content is asked for, and a filter by kind
 SEARCH_CONTENT_TOOLTIP = (

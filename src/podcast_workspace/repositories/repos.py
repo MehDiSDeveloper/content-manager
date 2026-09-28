@@ -20,7 +20,9 @@ from podcast_workspace.domain.entities import (
     Voice,
 )
 from podcast_workspace.domain.errors import NotFoundError
+from podcast_workspace.domain.publish import PublishChecklist, PublishStep
 from podcast_workspace.domain.rules import MAX_TAGS_PER_ITEM, ensure_tag_limit
+from podcast_workspace.domain.smart_links import LinkKind
 from podcast_workspace.repositories.base import SqlRepository
 from podcast_workspace.repositories.models import (
     EpisodeNoteRow,
@@ -32,6 +34,8 @@ from podcast_workspace.repositories.models import (
     TimestampNoteRow,
     TranscriptRow,
     VoiceRow,
+    episode_idea_notes,
+    episode_voices,
 )
 
 
@@ -179,6 +183,10 @@ class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
             tag_ids={tag.id for tag in row.tags},
             voice_ids={voice.id for voice in row.voices},
             idea_note_ids={idea.id for idea in row.idea_notes},
+            publish=PublishChecklist(
+                frozenset(PublishStep(s) for s in row.publish_done.split(",") if s),
+                row.published_where,
+            ),
         )
 
     def _apply(self, entity: Episode, row: EpisodeRow) -> None:
@@ -191,6 +199,9 @@ class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
         row.created_at = entity.created_at
         row.updated_at = entity.updated_at
         row.last_opened_at = entity.last_opened_at
+        # Stored in the enum's order, so the same checklist is always the same text.
+        row.publish_done = ",".join(s.value for s in PublishStep if s in entity.publish.done)
+        row.published_where = entity.publish.where
         row.tags = self._tag_rows(entity.tag_ids)
         row.voices = self._rows(VoiceRow, "Voice", entity.voice_ids)
         row.idea_notes = self._rows(IdeaNoteRow, "IdeaNote", entity.idea_note_ids)
@@ -209,6 +220,18 @@ class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
     def list_all(self) -> list[Episode]:
         rows = self.session.scalars(select(EpisodeRow).order_by(EpisodeRow.updated_at.desc()))
         return [self._to_domain(row) for row in rows]
+
+    def link_counts(self) -> dict[tuple[LinkKind, int], int]:
+        """How many episodes each voice / idea is linked to (only the linked ones)."""
+        counts: dict[tuple[LinkKind, int], int] = {}
+        for kind, table, column in (
+            (LinkKind.VOICE, episode_voices, episode_voices.c.voice_id),
+            (LinkKind.IDEA, episode_idea_notes, episode_idea_notes.c.idea_note_id),
+        ):
+            query = select(column, func.count()).select_from(table).group_by(column)
+            for item_id, n in self.session.execute(query):
+                counts[(kind, item_id)] = n
+        return counts
 
     def ids_in_season(self, season_id: int) -> set[int]:
         query = select(EpisodeRow.id).where(EpisodeRow.season_id == season_id)

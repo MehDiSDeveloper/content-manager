@@ -120,3 +120,16 @@ def test_content_switch_opens_the_body() -> None:
     body = flatten_for_filter("از کودکی و پدرش گفت")
     assert not facet("کودکی").matches("ضبط دوم", content=body)
     assert facet("کودکی", content=True).matches("ضبط دوم", content=body)
+
+
+def test_untagged_keeps_only_items_without_a_tag() -> None:
+    review = FacetFilter(untagged=True)
+    assert not review.is_empty  # on its own it narrows the list
+    assert review.matches("ایدهٔ تازه", (), ())
+    assert not review.matches("ایدهٔ تازه", ("شهر",), (1,))
+
+
+def test_untagged_still_ands_with_the_typed_phrases() -> None:
+    review = FacetFilter((parse_list_filter("کتاب"),), untagged=True)
+    assert review.matches("کتاب‌فروشی", (), ())
+    assert not review.matches("رادیو", (), ())

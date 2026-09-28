@@ -374,6 +374,25 @@ WS_PICK_ADD = "Add"
 WS_PICK_EMPTY = "Nothing left to add."
 KIND_VOICE = "Audio idea"
 KIND_IDEA = "Text idea"
+# Previewing a linked item inside the materials panel
+WS_PREVIEW_BACK = "←  Materials"
+WS_PREVIEW_BACK_TOOLTIP = "Back to the materials list  (Esc)"
+WS_PREVIEW_OPEN = "Open in Ideas"
+WS_PREVIEW_OPEN_TOOLTIP = "Edit it, tag it and see its timestamp notes on the Ideas page"
+WS_OPEN_TOOLTIP = "Show it right here, beside the notes  (Enter)"
+# The publish checklist (domain/publish.py)
+PUBLISH_CHIP = "Publish {done}/{total}"
+PUBLISH_CHIP_DONE = "Published ✓"
+PUBLISH_TOOLTIP = "Publish checklist: title, description, clips, cover, and where it went out"
+PUBLISH_TITLE = "Publish checklist"
+PUBLISH_STEPS = {
+    "title": "Final title",
+    "description": "Description",
+    "clips": "Clips",
+    "cover": "Cover",
+}
+PUBLISH_WHERE = "Where it was published"
+PUBLISH_WHERE_PLACEHOLDER = "A platform or a link, one per line"
 
 RESUME_OFFER = "Last open episode: «{title}»"
 RESUME_CONTINUE = "Continue"
@@ -594,6 +613,7 @@ UNDO_ACTIONS = {
     "archive": "Archive {target} {quoted}",
     "unarchive": "Unarchive {target} {quoted}",
     "trash": "Move {target} {quoted} to the trash",
+    "checklist": "Change the publish checklist of {target} {quoted}",
 }
 UNDO_SOMETHING = "The last change"
 UNDO_ITEMS = "{n} items"  # a change made to a selection
@@ -639,6 +659,26 @@ FACET_NO_MATCH = "No idea matches all of these.\nRemove one of the phrases or ta
 FACET_NO_MATCH_CONTENT = (
     "No idea matches all of these.\nRemove one of the phrases or tags, or turn on “In content”."
 )
+UNTAGGED_SWITCH = "No tags"
+UNTAGGED_SWITCH_COUNT = "No tags {n}"
+UNTAGGED_TOOLTIP = "Only the ideas that have no tag yet — for the weekly review"
+IDEA_UNTAGGED_NONE = "Every idea in this list has a tag."
+
+# From an idea to an episode (ui/widgets/episode_links.py)
+IDEA_EPISODES_LABEL = "Episodes"
+IDEA_EPISODES_NONE = "Not in any episode yet"
+IDEA_EPISODE_TOOLTIP = "Open this episode — {status}"
+IDEA_IN_EPISODES = "in {n} ep."
+ADD_TO_EPISODE = "Add to episode"
+ADD_TO_EPISODE_TOOLTIP = "Add it to an episode, or start a new episode from it"
+SEL_ADD_TO_EPISODE = "Add {n} items to an episode"
+NEW_EPISODE_FROM_ONE = "New episode from this idea"
+NEW_EPISODE_FROM_MANY = "New episode from these {n} ideas"
+EPISODE_MENU_ITEM = "{title}   ({status})"
+EPISODE_MENU_ALL = "All episodes…"
+EPISODE_PICK_TITLE = "Add to which episode?"
+IDEA_ADDED_TO = "Added to “{title}”"
+IDEA_REMOVED_FROM = "Taken out of “{title}”"
 
 # Global search: titles unless the content is asked for, and a filter by kind
 SEARCH_CONTENT_TOOLTIP = (

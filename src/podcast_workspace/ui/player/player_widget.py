@@ -127,9 +127,12 @@ class _WaveformLoader(QObject):
 
 
 class PlayerWidget(QFrame):
+    """`compact` puts the transport on a line of its own, for a narrow pane (the episode
+    workspace's preview): on one line the controls need about 550 px."""
+
     exact_duration = Signal(int, int)  # voice_id, duration_ms
 
-    def __init__(self, player: Player) -> None:
+    def __init__(self, player: Player, compact: bool = False) -> None:
         super().__init__(objectName="playerPanel")
         self.player = player
         self._voice_id: int | None = None
@@ -163,9 +166,13 @@ class PlayerWidget(QFrame):
         self.play.clicked.connect(self.player.toggle)
         self.forward = self._transport_button(strings.PLAYER_FORWARD_TOOLTIP)
         self.forward.clicked.connect(lambda: self.player.skip(SKIP_MS))
+        transport = QHBoxLayout() if compact else row
+        transport.setSpacing(8)
         for button in (self.back, self.play, self.forward):
-            row.addWidget(button)
-        row.addStretch(1)
+            transport.addWidget(button)
+        if compact:
+            transport.insertStretch(0, 1)
+        transport.addStretch(1)
         self.speed = QToolButton(objectName="speedButton")
         self.speed.setToolTip(strings.PLAYER_SPEED_TOOLTIP)
         self.speed.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -185,10 +192,11 @@ class PlayerWidget(QFrame):
         self.total = QLabel(format_clock(0), objectName="muted")
         self.total.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
         row.addWidget(self.total)
-        row_host = QFrame()
-        row_host.setLayoutDirection(Qt.LayoutDirection.LeftToRight)  # media controls never mirror
-        row_host.setLayout(row)
-        col.addWidget(row_host)
+        for layout in (transport, row) if compact else (row,):
+            host = QFrame()
+            host.setLayoutDirection(Qt.LayoutDirection.LeftToRight)  # media controls never mirror
+            host.setLayout(layout)
+            col.addWidget(host)
 
         player.position_changed.connect(self._on_position)
         player.state_changed.connect(self._on_state)

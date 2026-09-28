@@ -346,6 +346,17 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
         background: {c.accent_soft}; color: {on_soft}; border-color: {c.accent};
     }}
     QToolButton#toggleChip:focus {{ border: 1px dashed {c.accent_strong}; }}
+    /* The publish checklist's chip (widgets/publish_checklist.py): quiet while there is
+       something left to do, filled like a switch that is on once everything is. */
+    QToolButton#publishChip {{
+        background: transparent; color: {c.muted}; border: 1px solid {c.border};
+        border-radius: 12px; padding: 5px 11px; font-weight: 600;
+    }}
+    QToolButton#publishChip:hover {{ color: {c.text}; background: {c.hover}; }}
+    QToolButton#publishChip[complete="true"] {{
+        background: {c.accent_soft}; color: {on_soft}; border-color: {c.accent};
+    }}
+    QToolButton#publishChip:focus {{ border: 1px dashed {c.accent_strong}; }}
     #hint {{ color: {c.muted}; font-size: 8.5pt; padding: 0 4px; }}
     /* Keycaps (widgets/key_hint.py): quiet enough to sit beside every main control. */
     QLabel#keyHint {{
@@ -407,7 +418,9 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     QToolButton#silenceButton[active="true"]:hover,
     QToolButton#silenceMore[active="true"]:hover {{ border-color: {c.accent_strong}; }}
     QToolButton#silenceButton:disabled, QToolButton#silenceMore:disabled {{ color: {c.muted}; }}
-    #silencePopup, #volumePopup {{ background: {c.surface}; border: 1px solid {c.border}; }}
+    #silencePopup, #volumePopup, #publishPopup {{
+        background: {c.surface}; border: 1px solid {c.border};
+    }}
     #silenceValue, #volumeValue {{ color: {c.text}; font-weight: 700; }}
     QSlider::groove:horizontal {{ height: 4px; background: {c.border}; border-radius: 2px; }}
     QSlider::sub-page:horizontal {{ background: {c.accent_strong}; border-radius: 2px; }}

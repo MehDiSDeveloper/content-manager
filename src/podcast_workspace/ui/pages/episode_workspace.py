@@ -9,6 +9,12 @@ undoes on purpose, rather than by a mode the app switches into on a double-click
 
 Layout (RTL): header row, next action + tags, then [main column | materials panel].
 Main column: note tabs + editor.
+
+Opening something in the materials panel shows it there (`material_preview.py`): the
+panel widens and turns into the item — a text idea to read, an audio idea to play with
+its transcript — and turns back into the list with its arrow or Esc. Writing with the
+material beside the note is the job; going to the Ideas page to look at it, and Back
+again, broke the thread every time. «Open in Ideas» is still there for editing it.
 """
 
 from dataclasses import dataclass
@@ -18,10 +24,8 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QHideEvent, QKeyEvent, QKeySequence, QShortcut, QShowEvent
 from PySide6.QtWidgets import (
-    QAbstractItemView,
     QComboBox,
     QDialog,
-    QDialogButtonBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -39,15 +43,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from podcast_workspace.audio.engine import Player
 from podcast_workspace.domain.entities import Episode, EpisodeNote, EpisodeStatus
 from podcast_workspace.domain.lifecycle import ArchiveScope
 from podcast_workspace.domain.pipeline import days_untouched, is_stale
 from podcast_workspace.domain.smart_links import LinkKind, SmartLink
-from podcast_workspace.domain.text import normalize_for_match
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.icons import NAV_ICON_SIZE
 from podcast_workspace.ui.pages.base import SUBTITLE_ROLE, TwoLineDelegate
+from podcast_workspace.ui.pages.material_preview import MaterialPreview
+from podcast_workspace.ui.player.transcript_panel import TranscriptionJobs
 from podcast_workspace.ui.seasons import create_season
 from podcast_workspace.ui.support import (
     AppEvents,
@@ -58,12 +64,17 @@ from podcast_workspace.ui.support import (
     show_error,
 )
 from podcast_workspace.ui.widgets.key_hint import add_key_hint
+from podcast_workspace.ui.widgets.picker import PickerDialog
+from podcast_workspace.ui.widgets.publish_checklist import PublishChecklistButton
 from podcast_workspace.ui.widgets.tag_input import TagInput
 
 AUTOSAVE_DELAY_MS = 700
 NEW_SEASON = "new"  # the season box's last entry: make one and file the episode there
 SIDE_PANEL_MIN_WIDTH = 280
 SIDE_PANEL_MAX_WIDTH = 380
+# Previewing, the panel takes as much room as the note, within these bounds.
+PREVIEW_MIN_WIDTH = 430
+PREVIEW_MAX_WIDTH = 640
 ID_ROLE = Qt.ItemDataRole.UserRole
 KIND_ROLE = Qt.ItemDataRole.UserRole + 2
 
@@ -122,72 +133,15 @@ class _LinkedList(QListWidget):
         menu.exec(event.globalPos())  # type: ignore[attr-defined]
 
 
-class PickerDialog(QDialog):
-    """Choose voices or ideas to link: type to filter, Enter adds the selection."""
-
-    def __init__(self, parent: QWidget, title: str, rows: list[tuple[int, str, str]]) -> None:
-        super().__init__(parent)
-        self.setWindowTitle(title)
-        self.resize(520, 520)
-        self._rows = rows
-        col = QVBoxLayout(self)
-        col.setContentsMargins(20, 20, 20, 20)
-        col.setSpacing(12)
-        col.addWidget(QLabel(title, objectName="dialogTitle"))
-        self.filter = QLineEdit(placeholderText=strings.WS_PICK_FILTER)
-        self.filter.textChanged.connect(self._fill)
-        self.filter.installEventFilter(self)
-        col.addWidget(self.filter)
-        self.list = QListWidget()
-        self.list.setItemDelegate(TwoLineDelegate(self.list))
-        self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.list.itemDoubleClicked.connect(lambda _i: self.accept())
-        col.addWidget(self.list, 1)
-        buttons = QDialogButtonBox()
-        add = buttons.addButton(strings.WS_PICK_ADD, QDialogButtonBox.ButtonRole.AcceptRole)
-        add.setObjectName("primary")
-        buttons.addButton(strings.CANCEL, QDialogButtonBox.ButtonRole.RejectRole)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        col.addWidget(buttons)
-        self._fill("")
-
-    def _fill(self, query: str) -> None:
-        needle = normalize_for_match(query)
-        self.list.clear()
-        for item_id, title, subtitle in self._rows:
-            if needle and needle not in normalize_for_match(f"{title} {subtitle}"):
-                continue
-            item = QListWidgetItem(title)
-            item.setData(ID_ROLE, item_id)
-            item.setData(SUBTITLE_ROLE, subtitle)
-            self.list.addItem(item)
-        if self.list.count():
-            self.list.setCurrentRow(0)
-        else:
-            empty = QListWidgetItem(strings.WS_PICK_EMPTY)
-            empty.setFlags(Qt.ItemFlag.NoItemFlags)
-            self.list.addItem(empty)
-
-    def chosen(self) -> list[int]:
-        return [int(i.data(ID_ROLE)) for i in self.list.selectedItems() if i.data(ID_ROLE)]
-
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if watched is self.filter and event.type() == QEvent.Type.KeyPress:
-            assert isinstance(event, QKeyEvent)
-            if event.key() in (Qt.Key.Key_Down, Qt.Key.Key_Up):
-                self.list.setFocus()
-                self.list.keyPressEvent(event)
-                return True
-        return super().eventFilter(watched, event)
-
-
 class MaterialsPanel(QFrame):
     """Everything attached to (or suggested for) the episode, in one place.
 
     Three tabs — linked voices, linked ideas, same-tag suggestions — instead of two
     boxes under the editor plus a separate suggestion rail: the note editor keeps the
     whole main column, and one list at a time is enough to look at.
+
+    Opening an item (double-click, Enter, «Open») turns the panel into its preview; the
+    lists wait behind it, as they were.
     """
 
     TAB_VOICES, TAB_IDEAS, TAB_SMART = 0, 1, 2
@@ -197,13 +151,21 @@ class MaterialsPanel(QFrame):
     add_requested = Signal(object)  # LinkKind
     record_requested = Signal()
 
-    def __init__(self) -> None:
+    def __init__(self, preview: MaterialPreview) -> None:
         super().__init__(objectName="sidePanel")
         self.setMinimumWidth(SIDE_PANEL_MIN_WIDTH)
         self.setMaximumWidth(SIDE_PANEL_MAX_WIDTH)
-        col = QVBoxLayout(self)
-        col.setContentsMargins(14, 14, 14, 14)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(14, 14, 14, 14)
+        self.pages = QStackedWidget()
+        outer.addWidget(self.pages)
+        browse = QWidget()
+        col = QVBoxLayout(browse)
+        col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(10)
+        self.pages.addWidget(browse)
+        self.preview = preview
+        self.pages.addWidget(preview)
         col.addWidget(QLabel(strings.WS_MATERIALS, objectName="panelTitle"))
 
         self.tabs = QTabBar(objectName="panelTabs")
@@ -252,6 +214,7 @@ class MaterialsPanel(QFrame):
         self.primary_button.clicked.connect(self._primary)
         buttons.addWidget(self.primary_button, 1)
         self.open_button = QPushButton(strings.WS_OPEN.split(" (")[0])
+        self.open_button.setToolTip(strings.WS_OPEN_TOOLTIP)
         self.open_button.clicked.connect(self._open_current)
         buttons.addWidget(self.open_button)
         col.addLayout(buttons)
@@ -416,6 +379,20 @@ class MaterialsPanel(QFrame):
     def show_tab(self, index: int) -> None:
         self.tabs.setCurrentIndex(index)
 
+    # the preview -------------------------------------------------------------------------
+    @property
+    def previewing(self) -> bool:
+        return self.pages.currentWidget() is self.preview
+
+    def set_previewing(self, on: bool) -> None:
+        self.pages.setCurrentWidget(self.preview if on else self.pages.widget(0))
+        self.setMinimumWidth(PREVIEW_MIN_WIDTH if on else SIDE_PANEL_MIN_WIDTH)
+        self.setMaximumWidth(PREVIEW_MAX_WIDTH if on else SIDE_PANEL_MAX_WIDTH)
+
+    def focus_list(self) -> None:
+        index = self.tabs.currentIndex()
+        (self.voices_list, self.ideas_list, self.smart_list)[index].setFocus()
+
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if watched is self.smart_list and event.type() == QEvent.Type.KeyPress:
             assert isinstance(event, QKeyEvent)
@@ -435,6 +412,7 @@ class WorkspaceState:
     episode_id: int | None = None
     note_id: int | None = None
     materials_tab: int = 0
+    preview: tuple[LinkKind, int] | None = None
 
 
 class EpisodeWorkspacePage(QWidget):
@@ -447,7 +425,9 @@ class EpisodeWorkspacePage(QWidget):
     settings_requested = Signal()
     record_requested = Signal()
 
-    def __init__(self, workspace: Workspace, events: AppEvents) -> None:
+    def __init__(
+        self, workspace: Workspace, events: AppEvents, player: Player, jobs: TranscriptionJobs
+    ) -> None:
         super().__init__()
         self._ws = workspace
         self._events = events
@@ -461,12 +441,17 @@ class EpisodeWorkspacePage(QWidget):
         root.setSpacing(12)
         root.addLayout(self._build_header())
         root.addLayout(self._build_fields())
-        body = QHBoxLayout()
+        body = self._body = QHBoxLayout()
         body.setSpacing(18)
         body.addLayout(self._build_main(), 5)
-        self.materials = MaterialsPanel()
+        self.preview = MaterialPreview(workspace, events, player, jobs)
+        self.preview.back_requested.connect(self.close_preview)
+        self.preview.open_requested.connect(self._open_in_ideas)
+        self.preview.link_requested.connect(self._link_previewed)
+        self.preview.settings_requested.connect(self.settings_requested)
+        self.materials = MaterialsPanel(self.preview)
         self.materials.toggle_link.connect(self._toggle_link)
-        self.materials.open_item.connect(self._open_linked)
+        self.materials.open_item.connect(self._preview)
         self.materials.add_requested.connect(self._pick)
         body.addWidget(self.materials, 2)
         root.addLayout(body, 1)
@@ -558,6 +543,8 @@ class EpisodeWorkspacePage(QWidget):
         self.season_box.setToolTip(strings.SEASON_LABEL)
         self.season_box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.season_box.activated.connect(lambda _i: self._save_season())
+        self.publish_button = PublishChecklistButton(self._ws)
+        self.publish_button.saved.connect(self._on_publish_saved)
         self.next_action = QLineEdit(objectName="nextAction")
         self.next_action.setPlaceholderText(strings.EPISODE_NEXT_ACTION_PLACEHOLDER)
         self.next_action.editingFinished.connect(self._save_fields)
@@ -579,6 +566,8 @@ class EpisodeWorkspacePage(QWidget):
         stage.addSpacing(10)
         stage.addWidget(label(strings.SEASON_LABEL))
         stage.addWidget(self.season_box)
+        stage.addSpacing(10)
+        stage.addWidget(self.publish_button)
         stage.addSpacing(10)
         stage.addWidget(label(strings.EPISODE_NEXT_ACTION))
         stage.addWidget(self.next_action, 1)
@@ -648,6 +637,7 @@ class EpisodeWorkspacePage(QWidget):
     def clear(self) -> None:
         """No episode selected (the list is empty, or its selection was deleted)."""
         self.flush()
+        self.close_preview(focus=False)
         self._episode = None
         self._note = None
         self._notes = []
@@ -658,6 +648,7 @@ class EpisodeWorkspacePage(QWidget):
             episode_id=self.episode_id,
             note_id=self._note.id if self._note is not None else None,
             materials_tab=self.materials.tabs.currentIndex(),
+            preview=self.preview.item if self.materials.previewing else None,
         )
 
     def restore_nav_state(self, state: object) -> None:
@@ -669,6 +660,10 @@ class EpisodeWorkspacePage(QWidget):
         elif state.note_id is not None:
             self._load_notes(select_id=state.note_id)
         self.materials.show_tab(state.materials_tab)
+        if state.preview is not None:
+            self._preview(*state.preview, focus=False)
+        else:
+            self.close_preview(focus=False)
 
     def open(self, episode_id: int, note_id: int | None = None, focus: bool = False) -> bool:
         """Show an episode (it counts as opening it, for the resume screen).
@@ -677,6 +672,8 @@ class EpisodeWorkspacePage(QWidget):
         in the list, so the arrow keys keep walking through the episodes.
         """
         self.flush()
+        if episode_id != self.episode_id:
+            self.close_preview(focus=False)  # another episode's material
         try:
             self._episode = self._ws.episodes.open(episode_id)
         except Exception as exc:
@@ -740,6 +737,7 @@ class EpisodeWorkspacePage(QWidget):
         self.next_action.setText(episode.next_action)
         self._fill_seasons(episode.season_id)
         self.tag_input.set_tag_ids(episode.tag_ids)
+        self.publish_button.set_episode(episode)
         badge = stale_text(episode)
         self.stale.setText(badge)
         self.stale.setVisible(bool(badge))
@@ -778,6 +776,14 @@ class EpisodeWorkspacePage(QWidget):
             self._fill_fields()
             self.episode_saved.emit(saved)
             self._changed()
+
+    def _on_publish_saved(self, episode: Episode) -> None:
+        self._episode = episode
+        self.episode_saved.emit(episode)
+        self._changed()
+        badge = stale_text(episode)
+        self.stale.setText(badge)
+        self.stale.setVisible(bool(badge))
 
     def _fill_seasons(self, current: int | None) -> None:
         box = self.season_box
@@ -994,6 +1000,12 @@ class EpisodeWorkspacePage(QWidget):
         }
         tag_names_by_id = {t.id: t.name for t in self._ws.tags.list_all() if t.id is not None}
         self.materials.show_links(links, names, tag_names_by_id, linked, bool(episode.tag_ids))
+        previewed = self.preview.item
+        if self.materials.previewing and previewed is not None:
+            if previewed not in names:  # it went to the trash meanwhile
+                self.close_preview(focus=False)
+            else:
+                self.preview.set_linked(previewed in linked)
 
     def _toggle_link(self, kind: LinkKind, item_id: int, link: bool) -> None:
         episode = self._episode
@@ -1037,7 +1049,36 @@ class EpisodeWorkspacePage(QWidget):
         for item_id in dialog.chosen():
             self._toggle_link(kind, item_id, True)
 
-    def _open_linked(self, kind: LinkKind, item_id: int) -> None:
+    # the preview --------------------------------------------------------------------------
+    def _preview(self, kind: LinkKind, item_id: int, focus: bool = True) -> None:
+        episode = self._episode
+        if episode is None:
+            return
+        ids = episode.voice_ids if kind is LinkKind.VOICE else episode.idea_note_ids
+        if not self.preview.show_item(kind, item_id, item_id in ids):
+            self.close_preview(focus=False)
+            return
+        self.materials.set_previewing(True)
+        # As wide as the note while it is open: reading and writing side by side.
+        self._body.setStretch(0, 1)
+        self._body.setStretch(1, 1)
+        if focus:
+            self.preview.focus()
+
+    def close_preview(self, focus: bool = True) -> None:
+        if not self.materials.previewing:
+            return
+        self.preview.close_item()
+        self.materials.set_previewing(False)
+        self._body.setStretch(0, 5)
+        self._body.setStretch(1, 2)
+        if focus:
+            self.materials.focus_list()
+
+    def _link_previewed(self, kind: LinkKind, item_id: int) -> None:
+        self._toggle_link(kind, item_id, True)
+
+    def _open_in_ideas(self, kind: LinkKind, item_id: int) -> None:
         self.flush()
         if kind is LinkKind.VOICE:
             self.open_voice.emit(item_id)

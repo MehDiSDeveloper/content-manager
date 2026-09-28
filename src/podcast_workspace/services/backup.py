@@ -30,6 +30,7 @@ from podcast_workspace.domain.entities import (
     Voice,
 )
 from podcast_workspace.domain.errors import ValidationError
+from podcast_workspace.domain.publish import PublishChecklist, PublishStep
 from podcast_workspace.paths import backups_dir, library_dir
 from podcast_workspace.repositories.db import WriteCounter
 from podcast_workspace.repositories.unit_of_work import UnitOfWork
@@ -271,6 +272,8 @@ class BackupService:
                     "tag_ids": sorted(e.tag_ids),
                     "voice_ids": sorted(e.voice_ids),
                     "idea_note_ids": sorted(e.idea_note_ids),
+                    "publish_done": sorted(s.value for s in e.publish.done),
+                    "published_where": e.publish.where,
                 }
                 for e in snap.episodes
             ],
@@ -432,6 +435,11 @@ class BackupService:
                     tag_ids=set(e.get("tag_ids") or ()),
                     voice_ids=set(e.get("voice_ids") or ()),
                     idea_note_ids=set(e.get("idea_note_ids") or ()),
+                    # Exports made before the checklist existed start with an empty one.
+                    publish=PublishChecklist(
+                        frozenset(PublishStep(s) for s in e.get("publish_done") or ()),
+                        e.get("published_where") or "",
+                    ),
                 )
                 for e in data["episodes"]
             ],

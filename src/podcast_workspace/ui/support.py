@@ -121,7 +121,12 @@ def describe_change(change: Change) -> str:
             details[0] = strings.STATUS_LABELS[EpisodeStatus(details[0])]
     if change.kind is ChangeKind.SEASON and details and not details[0]:
         details[0] = strings.SEASON_NONE  # moved out of every season
-    if change.kind in (ChangeKind.TAGS_ADDED, ChangeKind.TAGS_REMOVED):
+    if change.kind in (
+        ChangeKind.TAGS_ADDED,
+        ChangeKind.TAGS_REMOVED,
+        ChangeKind.LINKED,  # several ideas put into an episode at once
+        ChangeKind.UNLINKED,
+    ):
         first, second = strings.LIST_SEPARATOR.join(d for d in details if d), ""
     else:
         first = details[0] if details else ""

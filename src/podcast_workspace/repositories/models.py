@@ -100,6 +100,10 @@ class EpisodeRow(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime)
     last_opened_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # The publish checklist (migration c6e1a8f4b2d7): ticked steps, comma-separated, and
+    # where it went, one place per line.
+    publish_done: Mapped[str] = mapped_column(String(64), default="")
+    published_where: Mapped[str] = mapped_column(Text, default="")
 
     tags: Mapped[list[TagRow]] = relationship(secondary=episode_tags)
     voices: Mapped[list["VoiceRow"]] = relationship(secondary=episode_voices)

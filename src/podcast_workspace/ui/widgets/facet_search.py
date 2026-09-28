@@ -7,6 +7,10 @@ narrows the list and removing one widens it again. Tags have a box of their own,
 "carries this tag" and "mentions this word" are different questions — a word typed in
 the search box still finds it in tag names, the way the plain filter boxes do.
 
+Beside the tag box, «No tags» answers the weekly review's question — what still needs
+sorting? — and says how many there are. It and the tag box exclude each other: turning
+it on empties the box, choosing a tag turns it off.
+
 Keys in the search box: Enter keeps the phrase (on an empty box it moves to the list),
 Down moves to the list, Backspace on an empty box takes back the last chip, Esc empties
 the box and then hands the page back.
@@ -30,7 +34,7 @@ from PySide6.QtWidgets import (
 from podcast_workspace.domain.list_filter import FacetFilter, parse_list_filter
 from podcast_workspace.services.tag_service import TagService
 from podcast_workspace.ui import strings
-from podcast_workspace.ui.support import AppEvents, direction_mark
+from podcast_workspace.ui.support import AppEvents, direction_mark, local_digits
 from podcast_workspace.ui.widgets.flow_layout import FlowLayout
 from podcast_workspace.ui.widgets.tag_input import TagInput
 
@@ -43,6 +47,7 @@ class FacetState:
     text: str = ""
     tag_ids: tuple[int, ...] = ()
     in_content: bool = False
+    untagged: bool = False
 
 
 class PhraseChip(QFrame):
@@ -108,7 +113,16 @@ class FacetSearchBar(QWidget):
         self.tag_input.edit.setObjectName("listFilter")
         self.tag_input.edit.setToolTip(strings.IDEA_TAG_FILTER_TOOLTIP)
         self.tag_input.tags_changed.connect(self._on_tags_changed)
-        col.addWidget(self.tag_input)
+        tag_row = QHBoxLayout()
+        tag_row.setSpacing(6)
+        tag_row.addWidget(self.tag_input, 1)
+        self.untagged = QToolButton(objectName="toggleChip", text=strings.UNTAGGED_SWITCH)
+        self.untagged.setCheckable(True)
+        self.untagged.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.untagged.setToolTip(strings.UNTAGGED_TOOLTIP)
+        self.untagged.toggled.connect(self._on_untagged_toggled)
+        tag_row.addWidget(self.untagged, 0, Qt.AlignmentFlag.AlignTop)
+        col.addLayout(tag_row)
 
         self.clear_button = QPushButton(strings.FACETS_CLEAR, objectName="flatButton")
         self.clear_button.setToolTip(strings.FACETS_CLEAR_TOOLTIP)
@@ -129,6 +143,7 @@ class FacetSearchBar(QWidget):
             tuple(parse_list_filter(q) for q in queries),
             frozenset(self.tag_input.tag_ids()),
             self.content.isChecked(),
+            self.untagged.isChecked(),
         )
 
     def in_content(self) -> bool:
@@ -136,7 +151,12 @@ class FacetSearchBar(QWidget):
 
     def has_conditions(self) -> bool:
         """Something narrows the list (the content switch alone narrows nothing)."""
-        return bool(self._phrases or self.edit.text().strip() or self.tag_input.tag_ids())
+        return bool(
+            self._phrases
+            or self.edit.text().strip()
+            or self.tag_input.tag_ids()
+            or self.untagged.isChecked()
+        )
 
     # state -----------------------------------------------------------------------------
     def state(self) -> FacetState:
@@ -145,6 +165,7 @@ class FacetSearchBar(QWidget):
             self.edit.text(),
             tuple(self.tag_input.tag_ids()),
             self.content.isChecked(),
+            self.untagged.isChecked(),
         )
 
     def restore(self, state: FacetState) -> None:
@@ -154,6 +175,9 @@ class FacetSearchBar(QWidget):
         self.edit.setText(state.text)
         self.tag_input.set_tag_ids(list(state.tag_ids))
         self.content.setChecked(state.in_content)
+        self.untagged.blockSignals(True)
+        self.untagged.setChecked(state.untagged)
+        self.untagged.blockSignals(False)
         self.blockSignals(False)
         self._render()
 
@@ -163,6 +187,14 @@ class FacetSearchBar(QWidget):
             return
         self.restore(FacetState(in_content=self.content.isChecked()))
         self.changed.emit()
+
+    def set_untagged_count(self, n: int) -> None:
+        """How many ideas in the list have no tag: the review's to-do count."""
+        self.untagged.setText(
+            strings.UNTAGGED_SWITCH_COUNT.format(n=local_digits(n))
+            if n
+            else strings.UNTAGGED_SWITCH
+        )
 
     def focus(self) -> None:
         self.edit.setFocus()
@@ -193,7 +225,17 @@ class FacetSearchBar(QWidget):
         self._sync_clear()
         self.changed.emit()
 
-    def _on_tags_changed(self, _ids: list[int]) -> None:
+    def _on_tags_changed(self, ids: list[int]) -> None:
+        if ids and self.untagged.isChecked():
+            self.untagged.blockSignals(True)  # one reload for both changes
+            self.untagged.setChecked(False)
+            self.untagged.blockSignals(False)
+        self._sync_clear()
+        self.changed.emit()
+
+    def _on_untagged_toggled(self, on: bool) -> None:
+        if on and self.tag_input.tag_ids():
+            self.tag_input.set_tag_ids([])
         self._sync_clear()
         self.changed.emit()
 
@@ -215,7 +257,7 @@ class FacetSearchBar(QWidget):
         self.hint.setVisible(bool(self.edit.text().strip()) and not self._phrases)
 
     def _sync_clear(self) -> None:
-        kept = len(self._phrases) + len(self.tag_input.tag_ids())
+        kept = len(self._phrases) + len(self.tag_input.tag_ids()) + self.untagged.isChecked()
         self.clear_button.setVisible(kept >= 2 or (kept == 1 and bool(self.edit.text().strip())))
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:

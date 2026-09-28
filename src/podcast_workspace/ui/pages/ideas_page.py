@@ -14,9 +14,16 @@ the trash, which is why it asks nothing — the toast offers the undo, and the t
 the restore.
 
 Several rows can be selected at once (Ctrl/Shift+click, Ctrl+A). The editor then gives
-way to a pane of what can be done to all of them — transcribe, archive, move to the
-trash, delete forever — and each of those is one step of the undo history, except
-deleting forever, which is the one thing here that asks first and cannot be taken back.
+way to a pane of what can be done to all of them — put them in an episode, transcribe,
+archive, move to the trash, delete forever — and each of those is one step of the undo
+history, except deleting forever, which is the one thing here that asks first and cannot
+be taken back.
+
+Ideas become episodes from here (`widgets/episode_links.py`): each editor says which
+episodes its idea is in, and one menu — on the editor, a row's right-click and the
+selection pane — adds ideas to an episode or starts a new one from them. A new episode
+opens straight away (Back returns to this list as it was); adding to an existing one
+leaves the user where they are, reviewing.
 """
 
 import subprocess
@@ -55,9 +62,10 @@ from podcast_workspace.domain.entities import IdeaNote, Shelved, Voice
 from podcast_workspace.domain.lifecycle import TRASH_DAYS, ArchiveScope, TrashKind
 from podcast_workspace.domain.list_filter import FacetFilter
 from podcast_workspace.domain.rules import MAX_TAGS_PER_ITEM
+from podcast_workspace.domain.smart_links import LinkKind
 from podcast_workspace.domain.text import flatten_for_filter
 from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS
-from podcast_workspace.services.content_services import ImportReport
+from podcast_workspace.services.content_services import ImportReport, ItemRef
 from podcast_workspace.services.history import ChangeKind
 from podcast_workspace.services.transcription import whisper_installed
 from podcast_workspace.services.workspace import Workspace
@@ -85,6 +93,7 @@ from podcast_workspace.ui.support import (
     show_error,
 )
 from podcast_workspace.ui.theme import section_ink
+from podcast_workspace.ui.widgets.episode_links import EpisodeLinksRow, EpisodeMenu
 from podcast_workspace.ui.widgets.facet_search import FacetSearchBar, FacetState
 from podcast_workspace.ui.widgets.key_hint import attach_key_hint
 from podcast_workspace.ui.widgets.scope_switch import ChoiceSwitch, ScopeSwitch
@@ -113,6 +122,13 @@ def audio_key(voice_id: int) -> IdeaKey:
 
 def text_key(idea_id: int) -> IdeaKey:
     return IdeaKey(IdeaKind.TEXT, idea_id)
+
+
+def _align_labels(*labels: QLabel) -> None:
+    """Field labels stacked in one column share its width, so the fields line up."""
+    width = max(label.sizeHint().width() for label in labels)
+    for label in labels:
+        label.setMinimumWidth(width)
 
 
 class ShelfControls:
@@ -319,6 +335,9 @@ class VoicePane(QWidget):
         self.tag_input.tags_changed.connect(self._save_tags)
         tags_row.addWidget(self.tag_input, 1)
         col.addLayout(tags_row)
+        self.episodes = EpisodeLinksRow(workspace)
+        _align_labels(tag_label, self.episodes.label)
+        col.addWidget(self.episodes)
 
         self.player = PlayerWidget(player)
         self.player.exact_duration.connect(self._store_exact_duration)
@@ -359,12 +378,14 @@ class VoicePane(QWidget):
         self.meta.setText(self._meta_text(voice))
         self.shelf.sync(voice)
         self.tag_input.set_tag_ids(voice.tag_ids)
+        self.episodes.set_item(LinkKind.VOICE, voice.id)
         self.player.open_voice(voice.id, Path(voice.file_path), voice.duration_ms)
         self.notes.set_voice(voice.id)
         self.transcript.set_voice(voice.id)
 
     def clear(self) -> None:
         self.voice = None
+        self.episodes.set_item(None)
         self.player.close_voice()
         self.notes.set_voice(None)
         self.transcript.set_voice(None)
@@ -452,6 +473,9 @@ class TextPane(QWidget):
         self.tag_input.tags_changed.connect(self._save_tags)
         tags_row.addWidget(self.tag_input, 1)
         col.addLayout(tags_row)
+        self.episodes = EpisodeLinksRow(workspace)
+        _align_labels(tag_label, self.episodes.label)
+        col.addWidget(self.episodes)
         bottom = QHBoxLayout()
         bottom.setSpacing(10)
         self.meta = QLabel(objectName="muted")
@@ -475,6 +499,7 @@ class TextPane(QWidget):
         self.idea = idea
         self._set_text(idea.text)
         self.tag_input.set_tag_ids(idea.tag_ids)
+        self.episodes.set_item(LinkKind.IDEA, idea.id)
         self.meta.setText(strings.UPDATED_AT.format(when=format_datetime(idea.updated_at)))
         self.shelf.sync(idea)
 
@@ -484,6 +509,7 @@ class TextPane(QWidget):
         self.drafting = True
         self._set_text("")
         self.tag_input.set_tag_ids([])
+        self.episodes.set_item(None)  # a draft has nothing to put in an episode yet
         self.meta.setText(strings.IDEA_UNSAVED)
         self.shelf.sync(None)
         self.text.setFocus()
@@ -522,6 +548,7 @@ class TextPane(QWidget):
                 idea = self._ws.ideas.create(text, self.tag_input.tag_ids())
                 self.drafting = False
                 self.idea = idea
+                self.episodes.set_item(LinkKind.IDEA, idea.id)
                 self._events.data_changed.emit()
                 self.created.emit(idea)
             elif self.idea is not None and self.idea.id is not None:
@@ -567,6 +594,8 @@ class SelectionPane(QWidget):
         col.addWidget(self.kinds)
         col.addSpacing(10)
 
+        self.add_to_episode = QPushButton()
+        self.add_to_episode.setToolTip(strings.ADD_TO_EPISODE_TOOLTIP)
         self.transcribe = QPushButton()
         self.archive = QPushButton()
         self.archive.setToolTip(strings.ARCHIVE_TOOLTIP)
@@ -577,6 +606,7 @@ class SelectionPane(QWidget):
         self.clear = QPushButton(strings.SEL_CLEAR, objectName="flatButton")
         self.clear.setToolTip("Esc")
         for button in (
+            self.add_to_episode,
             self.transcribe,
             self.archive,
             self.trash,
@@ -599,6 +629,7 @@ class SelectionPane(QWidget):
         self.kinds.setText(
             strings.SEL_KINDS.format(audio=local_digits(audio), text=local_digits(text))
         )
+        self.add_to_episode.setText(strings.SEL_ADD_TO_EPISODE.format(n=n))
         self.transcribe.setVisible(audio > 0)
         self.transcribe.setEnabled(to_transcribe > 0)
         self.transcribe.setText(strings.SEL_TRANSCRIBE.format(n=local_digits(to_transcribe)))
@@ -615,6 +646,8 @@ class SelectionPane(QWidget):
 
 class IdeasPage(ShelfListPage):
     settings_requested = Signal()
+    open_episode = Signal(int)
+    new_episode = Signal(int)  # made from ideas here: it opens, with its title to name
 
     def __init__(
         self, workspace: Workspace, events: AppEvents, player: Player, jobs: TranscriptionJobs
@@ -633,6 +666,7 @@ class IdeasPage(ShelfListPage):
         self._facets = FacetFilter()
         self._transcribed: set[int] = set()
         self._note_counts: dict[int, int] = {}
+        self._episode_counts: dict[ItemRef, int] = {}
         self._transcripts: dict[int, str] | None = None  # flattened; None: to be read
         events.data_changed.connect(self._forget_content)
         self.setAcceptDrops(True)
@@ -693,10 +727,15 @@ class IdeasPage(ShelfListPage):
         self.text_pane.created.connect(self._on_idea_created)
         self.text_pane.idea_changed.connect(lambda i: self.update_row(self._idea_row(i)))
         self.panes.addWidget(self.text_pane)
+        for row in (self.voice_pane.episodes, self.text_pane.episodes):
+            row.open_episode.connect(self._open_episode)
+            row.created.connect(self._open_new_episode)
+            row.changed.connect(self._on_episode_changed)
 
         # Several rows at once: Ctrl/Shift+click, Ctrl+A. The pane takes the editor's place.
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.selection_pane = SelectionPane()
+        self.selection_pane.add_to_episode.setMenu(self._episode_menu(self.selection_pane))
         self.selection_pane.transcribe.clicked.connect(self.transcribe_selected)
         self.selection_pane.archive.clicked.connect(self.archive_selected)
         self.selection_pane.trash.clicked.connect(self.trash_selected)
@@ -735,6 +774,7 @@ class IdeasPage(ShelfListPage):
         else:
             self._empty_text = strings.IDEA_ACTIVE_EMPTY[wanted]
         tags = tag_map(self._ws)
+        self._episode_counts = self._ws.episodes.link_counts()
         if voices:
             self._transcribed = self._ws.transcripts.voice_ids()
             self._note_counts = self._ws.timestamp_notes.counts_by_voice()
@@ -747,7 +787,9 @@ class IdeasPage(ShelfListPage):
             (i.updated_at, self._idea_row(i, tags)) for i in ideas if self.scope.shows(i.archived)
         ]
         dated.sort(key=lambda pair: pair[0], reverse=True)  # newest first, either kind
-        return [row for _, row in dated]
+        rows = [row for _, row in dated]
+        self.facets.set_untagged_count(sum(1 for row in rows if not row.tag_ids))
+        return rows
 
     def _voice_row(self, voice: Voice, tags: dict[int, str] | None = None) -> Row:
         assert voice.id is not None
@@ -758,6 +800,7 @@ class IdeasPage(ShelfListPage):
         # arrived. The full line is in the row's tooltip either way.
         if names:
             parts.append(strings.LIST_SEPARATOR.join(names))
+        parts.append(self._in_episodes(LinkKind.VOICE, voice.id))
         notes = self._note_counts.get(voice.id, 0)
         if notes:
             parts.append(strings.VOICE_NOTE_COUNT.format(n=local_digits(notes)))
@@ -778,9 +821,10 @@ class IdeasPage(ShelfListPage):
     def _idea_row(self, idea: IdeaNote, tags: dict[int, str] | None = None) -> Row:
         assert idea.id is not None
         names = tag_labels(self._ws, idea.tag_ids, tags)
-        subtitle = format_datetime(idea.updated_at)
+        parts = [format_datetime(idea.updated_at), self._in_episodes(LinkKind.IDEA, idea.id)]
         if names:
-            subtitle += "  ·  " + strings.LIST_SEPARATOR.join(names)
+            parts.append(strings.LIST_SEPARATOR.join(names))
+        subtitle = "  ·  ".join(p for p in parts if p)
         return Row(
             text_key(idea.id),
             first_line(idea.text),
@@ -791,6 +835,11 @@ class IdeasPage(ShelfListPage):
             IdeaKind.TEXT,
             text_icon(section_ink("ideas")),
         )
+
+    def _in_episodes(self, kind: LinkKind, item_id: int) -> str:
+        """«in 2 episodes» — what the weekly review needs to see: used already, or not."""
+        n = self._episode_counts.get((kind, item_id), 0)
+        return strings.IDEA_IN_EPISODES.format(n=local_digits(n)) if n else ""
 
     def _transcript_text(self, voice_id: int) -> str:
         """Read, and flattened, once per change to the data — and only while the search
@@ -829,11 +878,13 @@ class IdeasPage(ShelfListPage):
                 )
             )
         if rows and not shown_rows:
-            self._empty_label.setText(
-                strings.FACET_NO_MATCH
-                if self._facets.in_content
-                else strings.FACET_NO_MATCH_CONTENT
-            )
+            if self._facets.untagged and all(row.tag_ids for row in rows):
+                text = strings.IDEA_UNTAGGED_NONE  # the review is done
+            elif self._facets.in_content:
+                text = strings.FACET_NO_MATCH
+            else:
+                text = strings.FACET_NO_MATCH_CONTENT
+            self._empty_label.setText(text)
 
     def clear_filter(self, reload: bool = True) -> None:
         if not self.facets.has_conditions():
@@ -1247,20 +1298,69 @@ class IdeasPage(ShelfListPage):
 
     def _row_menu(self, pos: QPoint) -> None:
         item = self.list.itemAt(pos)
-        if item is None or not (item.isSelected() and self._multi()):
-            super()._row_menu(pos)  # one row: it becomes the selection
+        if item is None:
             return
-        pane = self.selection_pane
         menu = QMenu(self.list)
-        for button, callback in (
-            (pane.transcribe, self.transcribe_selected),
-            (pane.archive, self.archive_selected),
-            (pane.trash, self.trash_selected),
-            (pane.delete_forever, self.delete_selected_forever),
-        ):
-            if button.isVisible() and button.isEnabled():
-                menu.addAction(button.text(), callback)
+        menu.addMenu(self._episode_menu(menu))
+        menu.addSeparator()
+        if item.isSelected() and self._multi():
+            pane = self.selection_pane
+            for button, callback in (
+                (pane.transcribe, self.transcribe_selected),
+                (pane.archive, self.archive_selected),
+                (pane.trash, self.trash_selected),
+                (pane.delete_forever, self.delete_selected_forever),
+            ):
+                if button.isVisible() and button.isEnabled():
+                    menu.addAction(button.text(), callback)
+        else:
+            self.list.setCurrentItem(item)  # one row: it becomes the selection
+            for label, callback in self.row_actions(item.data(ID_ROLE)):
+                menu.addAction(label, callback)
         menu.exec(self.list.viewport().mapToGlobal(pos))
+
+    # into episodes -----------------------------------------------------------------------
+    def _selected_refs(self) -> list[ItemRef]:
+        return [
+            (LinkKind.VOICE if key.kind is IdeaKind.AUDIO else LinkKind.IDEA, key.item_id)
+            for key in self.selected_keys()
+        ]
+
+    def _episode_menu(self, parent: QWidget) -> EpisodeMenu:
+        menu = EpisodeMenu(self._ws, parent, self._selected_refs)
+        menu.created.connect(self._open_new_episode)
+        menu.changed.connect(self._on_episode_changed)
+        return menu
+
+    def _open_episode(self, episode_id: int) -> None:
+        self.flush()
+        self.open_episode.emit(episode_id)
+
+    def _open_new_episode(self, episode_id: int) -> None:
+        self.flush()
+        self._events.data_changed.emit()
+        self.new_episode.emit(episode_id)
+
+    def _on_episode_changed(self, episode_id: int, linked: bool) -> None:
+        """Say where they went, and redraw what shows it — without a reload, which
+        would drop a selection the user may be about to act on again."""
+        self._events.data_changed.emit()
+        try:
+            title = self._ws.episodes.get(episode_id).title
+        except Exception:
+            title = ""
+        template = strings.IDEA_ADDED_TO if linked else strings.IDEA_REMOVED_FROM
+        self.status.setText(template.format(title=title))
+        QTimer.singleShot(6000, lambda: self.status.setText(""))
+        self._episode_counts = self._ws.episodes.link_counts()
+        for key in self.selected_keys():
+            item = self.find_item(key)
+            if isinstance(item, Voice):
+                self.update_row(self._voice_row(item))
+            elif isinstance(item, IdeaNote):
+                self.update_row(self._idea_row(item))
+        for row in (self.voice_pane.episodes, self.text_pane.episodes):
+            row.reload()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if watched is self.list and event.type() == QEvent.Type.KeyPress:

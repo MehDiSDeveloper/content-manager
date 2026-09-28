@@ -34,6 +34,7 @@ from podcast_workspace.domain.entities import (
 )
 from podcast_workspace.domain.errors import DomainError
 from podcast_workspace.domain.lifecycle import ArchiveScope
+from podcast_workspace.domain.publish import PublishChecklist, PublishStep
 from podcast_workspace.domain.smart_links import (
     LinkCandidate,
     LinkKind,
@@ -49,6 +50,10 @@ def _short(text: str, width: int = 60) -> str:
     """A name for an undo entry: the first line, shortened."""
     line = text.strip().splitlines()[0] if text.strip() else ""
     return line if len(line) <= width else line[:width].rstrip() + "…"
+
+
+# An item in an episode, as the Ideas page and the episode workspace both name it.
+ItemRef = tuple[LinkKind, int]
 
 
 def _tag_names(uow: UnitOfWork, tag_ids: Iterable[int]) -> tuple[str, ...]:
@@ -141,6 +146,7 @@ class EpisodeService:
                 tag_ids=current.tag_ids,
                 voice_ids=current.voice_ids,
                 idea_note_ids=current.idea_note_ids,
+                publish=current.publish,
             )
             if (edited.title, edited.status, edited.next_action) == (
                 current.title,
@@ -255,6 +261,143 @@ class EpisodeService:
         )
         return saved
 
+    def set_linked(self, episode_id: int, items: Iterable[ItemRef], linked: bool) -> Episode:
+        """Put several voices / ideas into the episode, or take them out, as one step.
+
+        The Ideas page's way in: the ones already where they are asked to be are left
+        alone, and nothing is recorded when that is all of them.
+        """
+        wanted = list(dict.fromkeys(items))
+        with UnitOfWork(self._sf) as uow:
+            episode = uow.episodes.get(episode_id)
+            stamp = episode.updated_at
+            moved: list[ItemRef] = []
+            for kind, item_id in wanted:
+                ids = episode.voice_ids if kind is LinkKind.VOICE else episode.idea_note_ids
+                if (item_id in ids) != linked:
+                    if linked:
+                        ids.add(item_id)
+                    else:
+                        ids.discard(item_id)
+                    moved.append((kind, item_id))
+            if not moved:
+                return episode
+            episode.touch()
+            saved = uow.episodes.update(episode)
+            names = tuple(self._item_name(uow, k, i) for k, i in moved)
+        touched = saved.updated_at
+        self._history.record(
+            ChangeKind.LINKED if linked else ChangeKind.UNLINKED,
+            Target(TargetKind.EPISODE, episode_id),
+            undo=lambda: self._set_links(episode_id, moved, not linked, stamp),
+            redo=lambda: self._set_links(episode_id, moved, linked, touched),
+            details=names,
+            weight=sum(len(n) for n in names),
+        )
+        return saved
+
+    def create_from(self, items: Iterable[ItemRef], season_id: int | None = None) -> Episode:
+        """A new episode that starts out holding these voices / ideas.
+
+        It is named after the first of them and carries all of their tags, so the
+        workspace's suggestions have something to go on from the start. One undo step:
+        taking it back takes back the episode, and its links with it.
+        """
+        wanted = list(dict.fromkeys(items))
+        if not wanted:
+            raise ValueError("an episode needs at least one item to start from")
+        with UnitOfWork(self._sf) as uow:
+            tag_ids: set[int] = set()
+            voice_ids: set[int] = set()
+            idea_ids: set[int] = set()
+            for kind, item_id in wanted:
+                if kind is LinkKind.VOICE:
+                    tag_ids |= uow.voices.get(item_id).tag_ids
+                    voice_ids.add(item_id)
+                else:
+                    tag_ids |= uow.idea_notes.get(item_id).tag_ids
+                    idea_ids.add(item_id)
+            episode = uow.episodes.add(
+                Episode(
+                    title=self._item_title(uow, *wanted[0]),
+                    season_id=season_id,
+                    tag_ids=tag_ids,
+                    voice_ids=voice_ids,
+                    idea_note_ids=idea_ids,
+                )
+            )
+        assert episode.id is not None
+        snapshot = deepcopy(episode)
+        self._history.record(
+            ChangeKind.CREATE,
+            Target(TargetKind.EPISODE, episode.id),
+            undo=lambda: self._erase(snapshot.id),
+            redo=lambda: self._restore(snapshot, ()),
+            details=(episode.title,),
+            weight=len(episode.title),
+        )
+        return episode
+
+    def episodes_with(self, kind: LinkKind, item_id: int) -> list[Episode]:
+        """The episodes a voice / idea is used in, most recently worked on first."""
+        with UnitOfWork(self._sf) as uow:
+            episodes = uow.episodes.list_all()
+        return [
+            e
+            for e in episodes
+            if item_id in (e.voice_ids if kind is LinkKind.VOICE else e.idea_note_ids)
+        ]
+
+    def link_counts(self) -> dict[ItemRef, int]:
+        """How many episodes each linked voice / idea is in (one query, for whole lists)."""
+        with UnitOfWork(self._sf) as uow:
+            return uow.episodes.link_counts()
+
+    def check_publish_step(self, episode_id: int, step: PublishStep, done: bool) -> Episode:
+        with UnitOfWork(self._sf) as uow:
+            current = uow.episodes.get(episode_id).publish
+        return self._change_publish(episode_id, current.with_step(step, done))
+
+    def set_published_where(self, episode_id: int, text: str) -> Episode:
+        """Typed: one undo step per run of typing, like the other text fields."""
+        with UnitOfWork(self._sf) as uow:
+            current = uow.episodes.get(episode_id).publish
+        return self._change_publish(
+            episode_id, current.with_where(text), merge_key=f"episode-publish:{episode_id}"
+        )
+
+    def _change_publish(
+        self, episode_id: int, checklist: PublishChecklist, merge_key: str | None = None
+    ) -> Episode:
+        """Counts as touching the episode: getting it out is work on it."""
+        with UnitOfWork(self._sf) as uow:
+            episode = uow.episodes.get(episode_id)
+            before, stamp = episode.publish, episode.updated_at
+            if checklist == before:
+                return episode
+            episode.publish = checklist
+            episode.touch()
+            saved = uow.episodes.update(episode)
+        touched, title = saved.updated_at, saved.title
+        self._history.record(
+            ChangeKind.CHECKLIST,
+            Target(TargetKind.EPISODE, episode_id),
+            undo=lambda: self._set_publish(episode_id, before, stamp),
+            redo=lambda: self._set_publish(episode_id, checklist, touched),
+            details=(title,),
+            weight=len(title) + len(checklist.where),
+            merge_key=merge_key,
+        )
+        return saved
+
+    @staticmethod
+    def _item_title(uow: UnitOfWork, kind: LinkKind, item_id: int) -> str:
+        """What an episode started from an item is called: the file's name without its
+        extension, or the idea's first line."""
+        if kind is LinkKind.VOICE:
+            return Path(uow.voices.get(item_id).file_path).stem
+        return _short(uow.idea_notes.get(item_id).text)
+
     @staticmethod
     def _item_name(uow: UnitOfWork, kind: LinkKind, item_id: int) -> str:
         if kind is LinkKind.VOICE:
@@ -353,6 +496,29 @@ class EpisodeService:
                 ids.add(item_id)
             else:
                 ids.discard(item_id)
+            episode.updated_at = updated_at
+            uow.episodes.update(episode)
+
+    def _set_links(
+        self, episode_id: int, items: list[ItemRef], linked: bool, updated_at: datetime
+    ) -> None:
+        with UnitOfWork(self._sf) as uow:
+            episode = uow.episodes.get(episode_id)
+            for kind, item_id in items:
+                ids = episode.voice_ids if kind is LinkKind.VOICE else episode.idea_note_ids
+                if not linked:
+                    ids.discard(item_id)
+                elif (uow.voices if kind is LinkKind.VOICE else uow.idea_notes).find(item_id):
+                    ids.add(item_id)  # one gone meanwhile has nothing to link back
+            episode.updated_at = updated_at
+            uow.episodes.update(episode)
+
+    def _set_publish(
+        self, episode_id: int, checklist: PublishChecklist, updated_at: datetime
+    ) -> None:
+        with UnitOfWork(self._sf) as uow:
+            episode = uow.episodes.get(episode_id)
+            episode.publish = checklist
             episode.updated_at = updated_at
             uow.episodes.update(episode)
 

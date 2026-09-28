@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import ClassVar
 
+from podcast_workspace.domain.publish import PublishChecklist
 from podcast_workspace.domain.rules import (
     MAX_TAGS_PER_ITEM,
     ensure_non_empty,
@@ -119,6 +120,7 @@ class Episode(Taggable):
     tag_ids: set[int] = field(default_factory=set)
     voice_ids: set[int] = field(default_factory=set)
     idea_note_ids: set[int] = field(default_factory=set)
+    publish: PublishChecklist = field(default_factory=PublishChecklist)
     id: int | None = None
 
     def __post_init__(self) -> None:

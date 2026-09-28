@@ -18,7 +18,7 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 - Off the UI thread: voice import, search warm-up, waveform, playback engine (own QThread), transcription (thread pool), export/import (thread pool), model download (daemon thread), Bale polling (daemon thread)
 
 ## Data model
-- Episode: title, status, next_action, season_id (nullable), created_at, updated_at, last_opened_at; tags; linked voices + ideas
+- Episode: title, status, next_action, season_id (nullable), created_at, updated_at, last_opened_at; tags; linked voices + ideas; publish checklist (`publish_done` = ticked `PublishStep`s comma-separated, `published_where` = one place/link per line)
 - Season: title, created_at. Ordered by id (season one first). Deleting one keeps its episodes, seasonless
 - Voice: file_path (referenced in place, never copied/moved/deleted), duration_ms, format, imported_at, archived_at, deleted_at; ≤15 tags
 - IdeaNote: free text, created/updated, archived_at, deleted_at; ≤15 tags. Raw material, no timestamp
@@ -28,7 +28,7 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 - Tag: name (unique, NOCASE), color. Flat: no parents, no nesting
 - Link tables: episode_tags, voice_tags, idea_note_tags, episode_voices, episode_idea_notes. `settings` = key → JSON
 - Status pipeline: idea → outline → recorded → script_ready → edited → published
-- Migrations: 5c0bcd4c8144 schema · a7f3c2d91e10 FTS · c41e8b7d2f05 status remap · e5a91d3c7b28 transcripts · b8d4e6f1a320 seasons · d2c7f9a4b615 archive/trash · f3a8c1e5d907 idea title · a9e2d5c8f314 flat tags (drops tags.parent_id)
+- Migrations: 5c0bcd4c8144 schema · a7f3c2d91e10 FTS · c41e8b7d2f05 status remap · e5a91d3c7b28 transcripts · b8d4e6f1a320 seasons · d2c7f9a4b615 archive/trash · f3a8c1e5d907 idea title · a9e2d5c8f314 flat tags (drops tags.parent_id) · c6e1a8f4b2d7 publish checklist (two ALTER TABLE ADD COLUMNs on episodes)
 
 ## Where things live
 - Rules: `domain/rules.py` (15-tag limit, names, colors), `entities.py` (Taggable mixin enforces limit)
@@ -40,6 +40,10 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 - Pause trimming: `audio/silence.py` (detection, cut plan, `Splicer`; tested in `test_silence.py`), state on `Player` (`set_skip_silence` / `set_keep_pause` / `set_pauses`), `ui/player/silence_control.py` (split switch + popup), cut shading in `WaveformView.set_cuts`. Setting `player.trim_silence` (keep only)
 - Volume: `Player.set_volume` / `toggle_mute` → `QAudioSink.setVolume` on a log scale; `ui/player/volume_control.py` (speaker button + popup). Setting `player.volume`. Both popups share `ui/player/popup.py`
 - Workspace/board/resume: `ui/pages/{episode_workspace,board_page,resume_page}.py`; smart links `domain/smart_links.py`; stale `domain/pipeline.py`
+- Idea → episode: `EpisodeService.set_linked` (several items, one undo step), `create_from` (new episode named after the first item, with all their tags), `episodes_with`, `link_counts` (`EpisodeRepository.link_counts`, one GROUP BY per link table); UI `ui/widgets/episode_links.py` (`EpisodeMenu`, `EpisodeLinksRow`), wired in `IdeasPage` (editor rows, selection pane, row context menu, «in N ep.» in row subtitles) and `MainWindow.open_new_episode`. The list picker is `ui/widgets/picker.py`
+- Material preview: `ui/pages/material_preview.py` (`MaterialPreview`), shown by `MaterialsPanel.set_previewing` / `EpisodeWorkspacePage._preview` / `close_preview`; its player is `PlayerWidget(compact=True)` (transport on its own line)
+- Publish checklist: `domain/publish.py` (`PublishStep`, `PublishChecklist`, tested in `test_publish_checklist.py`), `EpisodeService.check_publish_step` / `set_published_where`, chip + popup `ui/widgets/publish_checklist.py` in the workspace's stage row
+- Untagged filter: `FacetFilter.untagged` (`domain/list_filter.py`), the «بی‌برچسب N» toggle chip in `FacetSearchBar`; `IdeasPage.rows` feeds it the count
 - Idea inbox hotkey: `ui/hotkey.py` (RegisterHotKey, Ctrl+Alt+I), `ui/idea_inbox.py`
 - Recorder handoff: `services/recording.py` (os.startfile of the configured program); Ctrl+R is a MainWindow shortcut, so it works on every page
 - Shortcuts: app-wide ones in `MainWindow._install_shortcuts`, shown as keycaps (`ui/widgets/key_hint.py`: `KeyHint` beside a button, `attach_key_hint` inside an empty line edit, `NavButton(keys=…)` in the sidebar)
@@ -56,7 +60,7 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 - Settings: `services/settings_service.py`, `ui/settings_dialog.py` (tabs: general, bot, transcription, data)
 - All Persian UI text: `ui/strings.py`; bot-facing text: top of `services/bale_bot.py`
 - Shell chrome: `ui/main_window.py` (sidebar = title + search + nav + undo/redo + settings/theme), nav/chrome icons painted in `ui/icons.py`
-- Tests (essential only): tag_matching, tag_limit, activation_window, smart_link_ranking, undo_history, list_filter, navigation_history
+- Tests (essential only): tag_matching, tag_limit, activation_window, smart_link_ranking, undo_history, list_filter, navigation_history, publish_checklist, idea_to_episode (plus the feature tests beside them)
 
 ## Key decisions (why)
 - Audio folder (v1.5): the folder is read, never mirrored into the database. A file becomes a
@@ -138,7 +142,8 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
     that holds audio-length transcripts
   - Recorded in the services, beside the operation they invert, so the UI never learns how to
     reverse anything and every caller (page, hotkey, dialog) gets undo for free
-  - Undoable: episode create/edit/status/tags/link/delete (with its notes), episode notes,
+  - Undoable: episode create/edit/status/tags/link/delete (with its notes), the publish
+    checklist, ideas put into (or started as) an episode from the Ideas page, episode notes,
     ideas, voice tags and voice delete (with its timestamp notes, transcript and links),
     timestamp notes, and every tag action including delete and merge — the two that quietly
     change many items at once
@@ -219,6 +224,47 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
   over the button changes it directly, M mutes. The level is remembered, muting is not. The
   slider is a loudness scale (QtAudio.convertVolume log → linear), so 50 % sounds half as loud
 
+- Ideas → episodes (v1.15):
+  - The bridge lives on the Ideas page, where the review happens: each editor (audio and
+    text) gets an «اپیزودها» row — the episodes it is in, as links that open them — and one
+    menu, the same on the editor's button, a row's right-click and the multi-select pane
+  - The menu: «اپیزود تازه از این ایده» first (the one thing not possible elsewhere), then
+    up to 8 unpublished episodes, most recently worked on first, ticked when the idea is
+    already in it; ticking adds, unticking removes — a label menu. With several ideas a tick
+    means all of them. Published and older episodes are behind «همهٔ اپیزودها…» (picker)
+  - A new episode opens at once with its title selected (it is named after the first idea
+    until renamed; Back returns to the list as it was) and carries the ideas' tags, so the
+    workspace's suggestions work from the start. Adding to an existing episode stays on
+    the Ideas page, says «به «X» اضافه شد» and redraws the rows in place (no reload: a
+    selection being worked through must survive)
+  - One undo step each (`set_linked` records one LINKED/UNLINKED with every name,
+    `create_from` one CREATE). Undoing a link while on the Ideas page refreshes it there
+    instead of jumping to the episode
+  - Rows say «در N اپیزود»: the weekly review's other question is "used yet?"
+- Material preview (v1.15):
+  - Opening a linked item or a suggestion in the workspace turns the materials panel into
+    it, rather than leaving for the Ideas page (which broke the writing thread) or opening
+    a new column (the frame would change under the user). The panel widens to match the
+    note (stretch 1:1, 430–640 px); its arrow or Esc turns it back into the lists
+  - Read, not edit: text ideas are a read-only, selectable text (copy into the note);
+    audio ideas get the player and the transcript (transcribe from there too). «باز کردن در
+    ایده‌ها» is the way to edit; a suggestion gets «پیوند دادن» in the preview
+  - Player keys ride on the preview's audio view only — in the note, Space is a space. The
+    shared player is taken back on show if another page loaded something meanwhile.
+    Another episode, or the item going to the trash, closes the preview. Back restores it
+- Publish checklist (v1.15):
+  - Four ticks (final title, description, clips, cover) and a fifth that is a record rather
+    than a tick: where it was published, one place or link per line, done once non-empty
+  - A chip in the stage row («انتشار ۲ از ۵», filled when complete) with a popup, not a
+    section: for most of an episode's life it is nothing to look at. Ticks save at once;
+    «where» saves as typed and coalesces into one undo step. Every change touches the
+    episode (stale). Exported and restored; older exports import with an empty checklist
+- Untagged filter (v1.15): a toggle chip beside the Ideas tag filter, with the count of
+  untagged ideas in the current kind/archive view — the weekly review's to-do number. It
+  excludes required tag chips (turning it on empties them; choosing a tag turns it off),
+  ANDs with the phrases, lives in the facet state (Back) and resets with «پاک کردن همه».
+  An empty result says the review is done rather than "no match"
+
 ## Gotchas
 - New migration: set `PODCAST_WORKSPACE_HOME=<tmp>` before `alembic revision --autogenerate`, else it diffs your real DB. Replace autogenerated `UTCDateTime()` with `sa.DateTime()`; keep `render_as_batch=True`; `alembic check` must stay clean (env.py ignores `search_*`)
 - Migrations run with foreign keys off (`db.migration_connection`, used by `migrate()` and the CLI env), then `PRAGMA foreign_key_check` must come back empty. A table rebuild would otherwise drop the old table under foreign_keys=ON and every CASCADE child would go with it (tag links, notes, transcripts). Adding a column is still best done with a plain `ALTER TABLE … ADD COLUMN` (see b8d4e6f1a320)
@@ -263,11 +309,21 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 - A NavButton whose label is set at runtime must not let that label decide its width: it reports
   `sizeHint().width() == 0` and elides the text to whatever the rail gives it (the full text goes
   in the tooltip), or a long episode title would widen the sidebar
+- `EpisodeService.update` rebuilds the Episode field by field: a new Episode field must be copied
+  there too (the checklist was reset by every title edit until it was)
+- Removing widgets from a `FlowLayout` for a rebuild: `setParent(None)` before `deleteLater()`,
+  or the old widget is still painted (over the new one) until the event loop turns. Take the
+  widget from the layout item first: after `setParent(None)` the item no longer holds it
 - Palette Highlight is the pastel accent (a fill) and HighlightedText is its dark ink. Row
   selections are the lighter accent_soft, so delegates draw selected text in Text, never
   HighlightedText (unreadable in dark). Lines/focus/markers use the Link role (accent_strong)
 
 ## Status
+- v1.15: ideas → episodes from the Ideas page (the episodes an idea is in, «add to episode» /
+  «new episode from this idea» for one idea or a selection, «in N ep.» on rows); linked
+  material previewed inside the workspace's materials panel (text, or player + transcript);
+  a publish checklist per episode (chip + popup, migration c6e1a8f4b2d7); «بی‌برچسب» filter
+  with a count on the Ideas page
 - v1.13: pause trimming while playing: «حذف سکوت» beside the speed button, a 0–2 s «pause
   to keep» slider, skipped stretches shaded on the waveform, saving shown, remembered
 - v1.12: search from the Bale bot (`services/bale_search.py`, ranking in

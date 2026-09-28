@@ -21,12 +21,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from podcast_workspace.audio.engine import Player
 from podcast_workspace.domain.entities import Episode, Season
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.icons import NAV_ICON_SIZE, list_pane_icon, more_icon
 from podcast_workspace.ui.pages.base import ListPage, ListPageState, Row
 from podcast_workspace.ui.pages.episode_workspace import EpisodeWorkspacePage, stale_text
+from podcast_workspace.ui.player.transcript_panel import TranscriptionJobs
 from podcast_workspace.ui.seasons import create_season, rename_season
 from podcast_workspace.ui.support import (
     AppEvents,
@@ -110,8 +112,11 @@ class EpisodesPage(ListPage):
     open_voice = Signal(int)
     open_idea = Signal(int)
     record_requested = Signal()
+    settings_requested = Signal()  # transcription settings, from a previewed voice
 
-    def __init__(self, workspace: Workspace, events: AppEvents) -> None:
+    def __init__(
+        self, workspace: Workspace, events: AppEvents, player: Player, jobs: TranscriptionJobs
+    ) -> None:
         super().__init__(
             strings.EPISODES_TITLE,
             strings.EPISODE_NEW,
@@ -132,7 +137,7 @@ class EpisodesPage(ListPage):
 
         col = QVBoxLayout(self.editor)
         col.setContentsMargins(0, 0, 0, 0)
-        self.workspace = EpisodeWorkspacePage(workspace, events)
+        self.workspace = EpisodeWorkspacePage(workspace, events, player, jobs)
         col.addWidget(self.workspace)
         self.workspace.episode_saved.connect(self._on_episode_saved)
         self.workspace.episode_gone.connect(lambda: QTimer.singleShot(0, self.refresh))
@@ -141,6 +146,7 @@ class EpisodesPage(ListPage):
         self.workspace.open_voice.connect(self.open_voice)
         self.workspace.open_idea.connect(self.open_idea)
         self.workspace.record_requested.connect(self.record_requested)
+        self.workspace.settings_requested.connect(self.settings_requested)
 
         self.list.itemDoubleClicked.connect(lambda _i: self.focus_editor())
         QShortcut(QKeySequence("Ctrl+Return"), self, activated=self.focus_editor)

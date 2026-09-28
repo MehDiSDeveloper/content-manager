@@ -17,8 +17,9 @@ Persian digits, letter case and punctuation never decide whether a row is shown.
 Substring, not prefix: mid-word is where Persian compounds put the word you remember.
 
 `FacetFilter` is the Ideas page's search: pinned queries and the one being typed, ANDed
-together, plus required tags (each chip standing for a tag and everything under it).
-Pinning a query never changes what it matches — it only keeps it while the next is typed.
+together, plus required tags — or, instead of tags, "no tags at all", the weekly review's
+question. Pinning a query never changes what it matches — it only keeps it while the next
+is typed.
 """
 
 import re
@@ -79,13 +80,15 @@ def parse_list_filter(query: str) -> ListFilter:
 class FacetFilter:
     """Several queries and several tags at once; an item must satisfy every one.
 
-    `tag_ids` are the chosen tags, every one required. `in_content` lets the queries read
-    the item's content as well.
+    `tag_ids` are the chosen tags, every one required; `untagged` asks for items with no
+    tag at all (the two exclude each other, so asking for both matches nothing).
+    `in_content` lets the queries read the item's content as well.
     """
 
     queries: tuple[ListFilter, ...] = ()
     tag_ids: frozenset[int] = frozenset()
     in_content: bool = False
+    untagged: bool = False
     _active: tuple[ListFilter, ...] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -93,7 +96,7 @@ class FacetFilter:
 
     @property
     def is_empty(self) -> bool:
-        return not self._active and not self.tag_ids
+        return not self._active and not self.tag_ids and not self.untagged
 
     def matches(
         self,
@@ -102,7 +105,10 @@ class FacetFilter:
         tag_ids: Iterable[int] = (),
         content: str = "",
     ) -> bool:
-        if self.tag_ids and not self.tag_ids <= set(tag_ids):
+        ids = set(tag_ids)
+        if self.tag_ids and not self.tag_ids <= ids:
+            return False
+        if self.untagged and ids:
             return False
         names = tuple(tag_names)
         body = content if self.in_content else ""

@@ -312,7 +312,9 @@ class MainWindow(QMainWindow):
         self.transcription_jobs = TranscriptionJobs(workspace, self)
         self.bot = BotController(workspace.bot, self)
         self._settings_dialog: SettingsDialog | None = None
-        self.episodes_page = EpisodesPage(workspace, self.events)
+        self.episodes_page = EpisodesPage(
+            workspace, self.events, self.player, self.transcription_jobs
+        )
         self.board_page = BoardPage(workspace, self.events)
         self.ideas_page = IdeasPage(workspace, self.events, self.player, self.transcription_jobs)
         self.source_page = SourcePage(workspace, self.events, self.player)
@@ -334,6 +336,7 @@ class MainWindow(QMainWindow):
         self.episodes_page.open_voice.connect(self.open_voice)
         self.episodes_page.open_idea.connect(self.open_idea)
         self.episodes_page.record_requested.connect(self._record)
+        self.episodes_page.settings_requested.connect(lambda: self.open_settings(TAB_TRANSCRIPTION))
         self.board_page.open_episode.connect(self.open_episode)
         self.tags_page.open_episode.connect(lambda i: self.open_episode(i, None))
         self.tags_page.open_voice.connect(self.open_voice)
@@ -341,6 +344,8 @@ class MainWindow(QMainWindow):
         self.source_page.open_voice.connect(self.open_voice)
         self.source_page.record_requested.connect(self._record)
         self.ideas_page.settings_requested.connect(lambda: self.open_settings(TAB_TRANSCRIPTION))
+        self.ideas_page.open_episode.connect(lambda i: self.open_episode(i, None))
+        self.ideas_page.new_episode.connect(self.open_new_episode)
         self.bot.status_changed.connect(self._on_bot_status)
         self.transcription_jobs.queue_changed.connect(self._show_transcribe_progress)
         self.transcription_jobs.progress.connect(lambda *_: self._show_transcribe_progress())
@@ -784,6 +789,13 @@ class MainWindow(QMainWindow):
         self.show_page(self.episodes_page)
         self.episodes_page.open_episode(episode_id, note_id)
 
+    def open_new_episode(self, episode_id: int) -> None:
+        """An episode just started from ideas: open it with its title ready to be named
+        (it is called after the first idea until then)."""
+        self.open_episode(episode_id)
+        self.workspace_page.title_edit.setFocus()
+        self.workspace_page.title_edit.selectAll()
+
     def open_voice(self, voice_id: int) -> None:
         self.show_page(self.ideas_page)
         self.ideas_page.open_voice(voice_id)
@@ -882,6 +894,13 @@ class MainWindow(QMainWindow):
         self.events.data_changed.emit()
         if change.kind is ChangeKind.TRASH and forward:
             self.show_page(self.trash_page, remember=False)
+        elif (
+            change.kind in (ChangeKind.LINKED, ChangeKind.UNLINKED)
+            and self.stack.currentWidget() is self.ideas_page
+        ):
+            # Put into (or taken out of) an episode from the Ideas page: what changed
+            # is shown right here, on the idea, so stay rather than jump to the episode.
+            self.ideas_page.refresh()
         else:
             self._reveal(change.target)
         self._last_change = history.peek_undo()
