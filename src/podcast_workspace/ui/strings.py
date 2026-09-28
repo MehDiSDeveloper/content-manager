@@ -111,7 +111,10 @@ SOURCE_HINT = (
 )
 SOURCE_FILTER_PLACEHOLDER = "پالایش بر پایهٔ نام فایل…"
 SOURCE_ADD = "افزودن به فضای کاری"
-SOURCE_ADD_TOOLTIP = "به ایده‌های صوتی اضافه می‌شود؛ فایل سر جایش می‌ماند  (Ctrl+Enter)"
+SOURCE_ADD_TOOLTIP = (
+    "به ایده‌های صوتی اضافه می‌شود و نسخه‌ای از آن در فضای کاری نگه داشته می‌شود؛ "
+    "بعد از آن پاک کردن فایل از این پوشه چیزی را از بین نمی‌برد  (Ctrl+Enter)"
+)
 SOURCE_ADD_OPEN = "افزودن و باز کردن"
 SOURCE_ADD_OPEN_TOOLTIP = "افزودن، و رفتن به ایده‌ها برای برچسب و یادداشت"
 SOURCE_ADDING = "در حال افزودن…"
@@ -128,6 +131,21 @@ VOICE_IMPORT_DONE = "{imported} فایل وارد شد"
 VOICE_IMPORT_DUP = "{n} فایل از قبل وجود داشت"
 VOICE_IMPORT_UNSUPPORTED = "{n} فایل پشتیبانی نمی‌شود"
 VOICE_IMPORT_FAILED = "{n} فایل خوانده نشد"
+VOICE_IMPORT_SKIPPED = "{n} فایل اضافه نشد"
+VOICES_SECURED = (
+    "{n} فایل صوتی قبلی در پوشهٔ فضای کاری کپی شد؛ پاک کردن اصلشان دیگر چیزی را از بین نمی‌برد"
+)
+NAME_CONFLICT_TITLE = "نام تکراری"
+NAME_CONFLICT_BODY = "صوتی به نام {name} از قبل در ایده‌ها هست."
+NAME_CONFLICT_HINT = (
+    "«جایگزین کن»: صوت قبلی با این فایل عوض می‌شود؛ برچسب‌ها، یادداشت‌ها و اپیزودهایش "
+    "می‌ماند، ولی صدای قبلی و متن پیاده‌شده‌اش از بین می‌رود و برنمی‌گردد.\n"
+    "«هر دو بماند»: این یکی با یک شماره در انتهای نامش اضافه می‌شود."
+)
+NAME_CONFLICT_REPLACE = "جایگزین کن"
+NAME_CONFLICT_KEEP_BOTH = "هر دو بماند"
+NAME_CONFLICT_SKIP = "اضافه نکن"
+NAME_CONFLICT_ALL = "برای {n} فایل تکراری دیگر هم همین"
 VOICE_MISSING = "فایل در این مسیر پیدا نشد."
 VOICE_SHOW_IN_FOLDER = "نمایش در پوشه"
 VOICE_DURATION_UNKNOWN = "مدت نامعلوم"

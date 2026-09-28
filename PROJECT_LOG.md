@@ -20,7 +20,7 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 ## Data model
 - Episode: title, status, next_action, season_id (nullable), created_at, updated_at, last_opened_at; tags; linked voices + ideas; publish checklist (`publish_done` = ticked `PublishStep`s comma-separated, `published_where` = one place/link per line)
 - Season: title, created_at. Ordered by id (season one first). Deleting one keeps its episodes, seasonless
-- Voice: file_path (referenced in place, never copied/moved/deleted), duration_ms, format, imported_at, archived_at, deleted_at; ≤15 tags
+- Voice: file_path (the workspace's own copy in `voices/`, or in place when already inside the data folder, e.g. Bale voices), source_path (the original it was copied from, never touched; "" if not a copy), duration_ms, format, imported_at, archived_at, deleted_at; ≤15 tags
 - IdeaNote: free text, created/updated, archived_at, deleted_at; ≤15 tags. Raw material, no timestamp
 - TimestampNote: voice_id, position_ms, text. Separate entity from IdeaNote, never merge
 - EpisodeNote: episode_id, title, body (unlimited per episode)
@@ -28,7 +28,7 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 - Tag: name (unique, NOCASE), color. Flat: no parents, no nesting
 - Link tables: episode_tags, voice_tags, idea_note_tags, episode_voices, episode_idea_notes. `settings` = key → JSON
 - Status pipeline: idea → outline → recorded → script_ready → edited → published
-- Migrations: 5c0bcd4c8144 schema · a7f3c2d91e10 FTS · c41e8b7d2f05 status remap · e5a91d3c7b28 transcripts · b8d4e6f1a320 seasons · d2c7f9a4b615 archive/trash · f3a8c1e5d907 idea title · a9e2d5c8f314 flat tags (drops tags.parent_id) · c6e1a8f4b2d7 publish checklist (two ALTER TABLE ADD COLUMNs on episodes)
+- Migrations: 5c0bcd4c8144 schema · a7f3c2d91e10 FTS · c41e8b7d2f05 status remap · e5a91d3c7b28 transcripts · b8d4e6f1a320 seasons · d2c7f9a4b615 archive/trash · f3a8c1e5d907 idea title · a9e2d5c8f314 flat tags (drops tags.parent_id) · c6e1a8f4b2d7 publish checklist (two ALTER TABLE ADD COLUMNs on episodes) · e8b3f1c6a492 voices.source_path (ALTER TABLE ADD COLUMN)
 
 ## Where things live
 - Rules: `domain/rules.py` (15-tag limit, names, colors), `entities.py` (Taggable mixin enforces limit)
@@ -42,6 +42,7 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
 - Workspace/board/resume: `ui/pages/{episode_workspace,board_page,resume_page}.py`; smart links `domain/smart_links.py`; stale `domain/pipeline.py`
 - Idea → episode: `EpisodeService.set_linked` (several items, one undo step), `create_from` (new episode named after the first item, with all their tags), `episodes_with`, `link_counts` (`EpisodeRepository.link_counts`, one GROUP BY per link table); UI `ui/widgets/episode_links.py` (`EpisodeMenu`, `EpisodeLinksRow`), wired in `IdeasPage` (editor rows, selection pane, row context menu, «in N ep.» in row subtitles) and `MainWindow.open_new_episode`. The list picker is `ui/widgets/picker.py`
 - Material preview: `ui/pages/material_preview.py` (`MaterialPreview`), shown by `MaterialsPanel.set_previewing` / `EpisodeWorkspacePage._preview` / `close_preview`; its player is `PlayerWidget(compact=True)` (transport on its own line)
+- Voice store: `services/voice_store.py` (`voices_dir()`, `NameChoice`, same-file = size + mtime, `free_name` → «name (2)»). `VoiceService.import_files(paths, choices)` copies files from outside the data folder in; `name_conflicts` finds names a voice already has, asked about by `ui/widgets/name_conflict.py` (Ideas import, audio folder «add»); unasked clashes come in numbered, never overwritten. REPLACE keeps the voice (tags, notes, episodes) and drops its transcript; not undoable. `secure_external` copies older voices in, run at startup by `MainWindow`. Purge deletes the stored copy only. Tested in `test_voice_store.py`
 - Publish checklist: `domain/publish.py` (`PublishStep`, `PublishChecklist`, tested in `test_publish_checklist.py`), `EpisodeService.check_publish_step` / `set_published_where`, chip + popup `ui/widgets/publish_checklist.py` in the workspace's stage row
 - Untagged filter: `FacetFilter.untagged` (`domain/list_filter.py`), the «بی‌برچسب N» toggle chip in `FacetSearchBar`; `IdeasPage.rows` feeds it the count
 - Idea inbox hotkey: `ui/hotkey.py` (RegisterHotKey, Ctrl+Alt+I), `ui/idea_inbox.py`

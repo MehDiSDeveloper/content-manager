@@ -96,6 +96,7 @@ from podcast_workspace.ui.theme import section_ink
 from podcast_workspace.ui.widgets.episode_links import EpisodeLinksRow, EpisodeMenu
 from podcast_workspace.ui.widgets.facet_search import FacetSearchBar, FacetState
 from podcast_workspace.ui.widgets.key_hint import attach_key_hint
+from podcast_workspace.ui.widgets.name_conflict import ask_name_choices
 from podcast_workspace.ui.widgets.scope_switch import ChoiceSwitch, ScopeSwitch
 from podcast_workspace.ui.widgets.tag_input import TagInput
 
@@ -1034,6 +1035,8 @@ class IdeasPage(ShelfListPage):
             self.import_paths([Path(f) for f in files])
 
     def import_paths(self, paths: list[Path]) -> None:
+        # A name a voice already has is asked about first: nothing is overwritten unasked.
+        choices = ask_name_choices(self, self._ws.voices.name_conflicts(paths))
         self.clear_filter(reload=False)  # imported files must not land behind a filter box
         if self.scope is ArchiveScope.ARCHIVED:  # ...nor behind the archive switch
             self.set_scope(ArchiveScope.ACTIVE)
@@ -1041,7 +1044,7 @@ class IdeasPage(ShelfListPage):
         self.import_button.setEnabled(False)
         self.status.setText(strings.VOICE_IMPORTING)
         run_async(
-            lambda: self._ws.voices.import_files(paths),
+            lambda: self._ws.voices.import_files(paths, choices),
             self._on_imported,
             self._on_import_failed,
         )
@@ -1053,6 +1056,8 @@ class IdeasPage(ShelfListPage):
             parts.append(
                 strings.VOICE_IMPORT_DUP.format(n=local_digits(len(report.already_present)))
             )
+        if report.skipped:
+            parts.append(strings.VOICE_IMPORT_SKIPPED.format(n=local_digits(len(report.skipped))))
         if report.unsupported:
             parts.append(
                 strings.VOICE_IMPORT_UNSUPPORTED.format(n=local_digits(len(report.unsupported)))

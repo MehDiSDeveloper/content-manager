@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from podcast_workspace.audio.engine import Player
 from podcast_workspace.domain.entities import Voice
 from podcast_workspace.services.source_folder import SourceFile
+from podcast_workspace.services.voice_store import NameChoice
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.pages.base import ID_ROLE, ListPage, Row
@@ -37,6 +38,7 @@ from podcast_workspace.ui.support import (
     show_error,
 )
 from podcast_workspace.ui.widgets.key_hint import add_key_hint
+from podcast_workspace.ui.widgets.name_conflict import ask_name_choices
 
 WATCH_DELAY_MS = 400  # a recorder writes in bursts; settle before reading the folder
 
@@ -228,17 +230,25 @@ class SourcePage(ListPage):
         file = self._file
         if file is None or self._busy:
             return
+        conflicts = self._ws.voices.name_conflicts([file.path])
+        choice = next(iter(ask_name_choices(self, conflicts).values()), None)
+        if choice is NameChoice.SKIP:
+            return
         self._busy = True
         self._sync_buttons()
         self.status.setText(strings.SOURCE_ADDING)
         run_async(
-            lambda: self._ws.source.add(file.path),
+            lambda: self._ws.source.add(file.path, choice),
             lambda voice: self._on_added(voice, file, open_after),
             self._on_add_failed,
         )
 
-    def _on_added(self, voice: Voice, file: SourceFile, open_after: bool) -> None:
+    def _on_added(self, voice: Voice | None, file: SourceFile, open_after: bool) -> None:
         self._busy = False
+        if voice is None:  # left out after all
+            self.status.setText("")
+            self._sync_buttons()
+            return
         self.status.setText(strings.SOURCE_ADDED.format(name=file.name))
         QTimer.singleShot(6000, lambda: self.status.setText(""))
         # The next file down takes its place, so a session can be reviewed top to bottom.

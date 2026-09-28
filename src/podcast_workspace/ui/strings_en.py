@@ -108,7 +108,10 @@ SOURCE_HINT = (
 )
 SOURCE_FILTER_PLACEHOLDER = "Filter by file name…"
 SOURCE_ADD = "Add to workspace"
-SOURCE_ADD_TOOLTIP = "Adds it to audio ideas; the file stays where it is  (Ctrl+Enter)"
+SOURCE_ADD_TOOLTIP = (
+    "Adds it to audio ideas and keeps a copy in the workspace; "
+    "deleting it from this folder afterwards loses nothing  (Ctrl+Enter)"
+)
 SOURCE_ADD_OPEN = "Add and open"
 SOURCE_ADD_OPEN_TOOLTIP = "Add it, then go to Ideas to tag it and take notes"
 SOURCE_ADDING = "Adding…"
@@ -125,6 +128,22 @@ VOICE_IMPORT_DONE = "{imported} files imported"
 VOICE_IMPORT_DUP = "{n} already there"
 VOICE_IMPORT_UNSUPPORTED = "{n} not supported"
 VOICE_IMPORT_FAILED = "{n} could not be read"
+VOICE_IMPORT_SKIPPED = "{n} not added"
+VOICES_SECURED = (
+    "{n} earlier audio files were copied into the workspace; "
+    "deleting the originals now loses nothing"
+)
+NAME_CONFLICT_TITLE = "Name already used"
+NAME_CONFLICT_BODY = "There is already audio called {name} in Ideas."
+NAME_CONFLICT_HINT = (
+    "Replace: the existing audio gets this file; its tags, notes and episodes stay, "
+    "but the old sound and its transcript are gone for good.\n"
+    "Keep both: this one comes in with a number added to its name."
+)
+NAME_CONFLICT_REPLACE = "Replace"
+NAME_CONFLICT_KEEP_BOTH = "Keep both"
+NAME_CONFLICT_SKIP = "Don't add"
+NAME_CONFLICT_ALL = "Do the same for the {n} other duplicates"
 VOICE_MISSING = "The file is no longer at this path."
 VOICE_SHOW_IN_FOLDER = "Show in folder"
 VOICE_DURATION_UNKNOWN = "Unknown length"

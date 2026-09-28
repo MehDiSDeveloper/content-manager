@@ -1172,6 +1172,14 @@ class MainWindow(QMainWindow):
             text = strings.TR_ALL_SIDEBAR.format(n=n, total=total)
         self.transcribe_label.setText(text)
 
+    def _on_voices_secured(self, copied: int) -> None:
+        if not copied:
+            return
+        self.events.data_changed.emit()
+        self.ideas_page.external_change()
+        self.ideas_page.status.setText(strings.VOICES_SECURED.format(n=local_digits(copied)))
+        QTimer.singleShot(10000, lambda: self.ideas_page.status.setText(""))
+
     def _on_bot_item(self, ref: ItemRef) -> None:
         self.events.tags_changed.emit()  # the bot may have created tags
         self.events.data_changed.emit()
@@ -1220,6 +1228,8 @@ class MainWindow(QMainWindow):
             self._first_show = False
             self.hotkey.register(int(self.winId()), *IDEA_HOTKEY)
             self.bot.restart()  # quietly does nothing unless enabled with a token
+            # Voices added before the store existed still play from the recorder's folder.
+            run_async(self._ws.voices.secure_external, self._on_voices_secured, lambda _e: None)
             QTimer.singleShot(BACKUP_CHECK_DELAY_MS, self._check_backup)
             if self._auto_purged:  # the one toast at a time: news of a deletion comes first
                 purged = self._auto_purged
