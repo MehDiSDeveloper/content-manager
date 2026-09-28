@@ -40,6 +40,8 @@ SINK_BUFFER_MS = 300
 DECODE_AHEAD_MS = 2000
 POSITION_INTERVAL_MS = 30
 CUTS_SETTLE_MS = 300  # a keep-pause change reaches the engine once the slider rests
+MAX_VOLUME = 100
+VOLUME_SETTLE_MS = 500  # the level is written to settings once the slider rests
 
 
 class PlayerState(StrEnum):
@@ -156,6 +158,7 @@ class _Engine(QObject):
         self._frame_bytes = 0
         self._duration = 0
         self._speed = 1.0
+        self._gain = 1.0  # linear sink volume
         self._cuts: tuple[Span, ...] = ()
         self._seg_start = 0
         self._playing = False
@@ -271,6 +274,12 @@ class _Engine(QObject):
         if self._path is not None:
             self._start_segment(current)
 
+    @Slot(float)
+    def set_gain(self, gain: float) -> None:
+        self._gain = max(0.0, min(1.0, gain))
+        if self._sink is not None:
+            self._sink.setVolume(self._gain)
+
     @Slot()
     def unload(self) -> None:
         self._teardown()
@@ -307,6 +316,7 @@ class _Engine(QObject):
         self._frame_bytes = chosen.bytesPerFrame()
         self._sink = QAudioSink(device, chosen, self)
         self._sink.setBufferSize(self._bytes_for_ms(SINK_BUFFER_MS))
+        self._sink.setVolume(self._gain)
         self._io = None
 
     def _bytes_for_ms(self, ms: int) -> int:
@@ -461,7 +471,9 @@ class Player(QObject):
     speed_changed = Signal(float)
     error = Signal(str)
     silence_changed = Signal()  # the setting, or the pauses found in the file
-    silence_settings_changed = Signal(bool, int)  # skip, keep_ms: once settled, to remember
+    keep_pause_settled = Signal(int)  # keep_ms once the slider rests, to remember
+    volume_changed = Signal()  # level or mute
+    volume_settled = Signal(int)  # an audible level once the slider rests, to remember
 
     _cmd_load = Signal(str, int, int)
     _cmd_play = Signal()
@@ -470,6 +482,7 @@ class Player(QObject):
     _cmd_speed = Signal(float, int)
     _cmd_duration = Signal(int)
     _cmd_cuts = Signal(object, int)
+    _cmd_gain = Signal(float)
     _cmd_seek_cache = Signal()
     _cmd_warm_up = Signal()
     _cmd_unload = Signal()
@@ -489,6 +502,7 @@ class Player(QObject):
         self._cmd_speed.connect(self._engine.set_speed, queued)
         self._cmd_duration.connect(self._engine.set_duration, queued)
         self._cmd_cuts.connect(self._engine.set_cuts, queued)
+        self._cmd_gain.connect(self._engine.set_gain, queued)
         self._cmd_unload.connect(self._engine.unload, queued)
         self._cmd_seek_cache.connect(self._engine.seek_cache_ready, queued)
         self._cmd_warm_up.connect(self._engine.warm_up, queued)
@@ -509,12 +523,17 @@ class Player(QObject):
         self._generation = 0
         self._source = ""
         self._exact_duration = False
-        self._skip_silence = False
+        self._skip_silence = True  # on by default; turning it off lasts for the session
         self._keep_ms = DEFAULT_KEEP_MS
         self._pauses: tuple[Span, ...] | None = None  # None until the waveform is read
         self._cuts: tuple[Span, ...] = ()
         self._settle = QTimer(self, singleShot=True, interval=CUTS_SETTLE_MS)
         self._settle.timeout.connect(self._settle_keep)
+        self._volume = MAX_VOLUME
+        self._last_audible = MAX_VOLUME  # what unmuting a slider pulled down to 0 goes back to
+        self._muted = False  # for the session only
+        self._volume_settle = QTimer(self, singleShot=True, interval=VOLUME_SETTLE_MS)
+        self._volume_settle.timeout.connect(lambda: self.volume_settled.emit(self._last_audible))
 
     # state ------------------------------------------------------------------------------
     @property
@@ -552,6 +571,15 @@ class Player(QObject):
     @property
     def pauses_known(self) -> bool:
         return self._pauses is not None
+
+    @property
+    def volume(self) -> int:
+        """What is heard, 0–100: 0 while muted."""
+        return 0 if self._muted else self._volume
+
+    @property
+    def muted(self) -> bool:
+        return self._muted or self._volume == 0
 
     def silence_cuts(self) -> tuple[Span, ...]:
         """What the current keep setting skips in this file, whether or not skipping is on."""
@@ -635,9 +663,8 @@ class Player(QObject):
         self._send_cuts()
         self.silence_changed.emit()
 
-    def restore_silence_settings(self, skip: bool, keep_ms: int | None) -> None:
-        """The remembered setting at startup, applied without being reported back."""
-        self._skip_silence = skip
+    def restore_keep_pause(self, keep_ms: int | None) -> None:
+        """The remembered pause length at startup, applied without being reported back."""
         if keep_ms is not None:
             self._keep_ms = clamp_keep(keep_ms)
         self._send_cuts()
@@ -647,10 +674,11 @@ class Player(QObject):
         if skip == self._skip_silence:
             return
         self._skip_silence = skip
-        self._settle.stop()
         self._send_cuts()
         self.silence_changed.emit()
-        self.silence_settings_changed.emit(self._skip_silence, self._keep_ms)
+
+    def toggle_skip_silence(self) -> None:
+        self.set_skip_silence(not self._skip_silence)
 
     def set_keep_pause(self, keep_ms: int) -> None:
         """Takes effect on screen at once and in the audio once the value stops moving,
@@ -662,9 +690,52 @@ class Player(QObject):
         self.silence_changed.emit()
         self._settle.start()
 
+    def restore_volume(self, level: int | None) -> None:
+        """The remembered level at startup, applied without being reported back."""
+        if level is not None and 0 < level <= MAX_VOLUME:
+            self._volume = self._last_audible = level
+        self._send_gain()
+
+    def set_volume(self, level: int) -> None:
+        """0–100 on a loudness scale. Moving the level unmutes."""
+        level = max(0, min(MAX_VOLUME, level))
+        if level == self.volume:
+            return
+        self._volume = level
+        self._muted = False
+        if level > 0:
+            self._last_audible = level
+            self._volume_settle.start()
+        self._send_gain()
+
+    def step_volume(self, delta: int) -> None:
+        """From the set level even while muted, so a step up while muted resumes near it."""
+        self.set_volume(self._volume + delta)
+
+    def toggle_mute(self) -> None:
+        if self.muted:
+            self._muted = False
+            if self._volume == 0:
+                self._volume = self._last_audible
+        else:
+            self._muted = True
+        self._send_gain()
+
+    def _send_gain(self) -> None:
+        # Loudness is logarithmic: a linear gain would crowd everything audible into the
+        # slider's top quarter.
+        self._cmd_gain.emit(
+            QtAudio.convertVolume(
+                self.volume / MAX_VOLUME,
+                QtAudio.VolumeScale.LogarithmicVolumeScale,
+                QtAudio.VolumeScale.LinearVolumeScale,
+            )
+        )
+        self.volume_changed.emit()
+
     def _settle_keep(self) -> None:
         self._send_cuts()
-        self.silence_settings_changed.emit(self._skip_silence, self._keep_ms)
+        self.keep_pause_settled.emit(self._keep_ms)
 
     def _forget_pauses(self) -> None:
         self._pauses = None

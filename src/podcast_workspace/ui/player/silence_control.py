@@ -1,11 +1,12 @@
-"""«حذف سکوت» beside the speed button: a switch and a 0–2 s «pause to keep» slider in a popup.
+"""«حذف سکوت» beside the speed button: a one-click switch, and a ▾ beside it opening a popup
+with the 0–2 s «pause to keep» slider.
 
 Everything is held by the shared `Player`, so the players on different pages show the same
 setting; this widget only reflects it and forwards changes.
 """
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt
-from PySide6.QtGui import QGuiApplication, QKeyEvent, QPalette
+from PySide6.QtCore import QEvent, QSize, Qt
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -20,23 +21,11 @@ from PySide6.QtWidgets import (
 from podcast_workspace.audio.engine import Player
 from podcast_workspace.audio.silence import KEEP_STEP_MS, MAX_KEEP_MS, total_ms
 from podcast_workspace.ui import strings
-from podcast_workspace.ui.player.icons import ICON_SIZE, silence_icon
+from podcast_workspace.ui.player.icons import ICON_SIZE, chevron_icon, silence_icon
+from podcast_workspace.ui.player.popup import PlayerPopup
 from podcast_workspace.ui.support import format_clock, local_digits
 
 POPUP_WIDTH = 320
-# Keys the slider keeps for itself: the page binds the arrows to seeking.
-SLIDER_KEYS = frozenset(
-    {
-        Qt.Key.Key_Left,
-        Qt.Key.Key_Right,
-        Qt.Key.Key_Up,
-        Qt.Key.Key_Down,
-        Qt.Key.Key_Home,
-        Qt.Key.Key_End,
-        Qt.Key.Key_PageUp,
-        Qt.Key.Key_PageDown,
-    }
-)
 
 
 def seconds_label(ms: int) -> str:
@@ -51,14 +40,10 @@ def _repolish(widget: QWidget) -> None:
     widget.style().polish(widget)
 
 
-class SilencePopup(QFrame):
+class SilencePopup(PlayerPopup):
     def __init__(self, player: Player, parent: QWidget) -> None:
-        super().__init__(parent, Qt.WindowType.Popup, objectName="silencePopup")
+        super().__init__(parent, "silencePopup")
         self.player = player
-        # The transport row is always left-to-right; the popup reads like the rest of the UI.
-        self.setLayoutDirection(QGuiApplication.layoutDirection())
-        # A click on the button while open only closes the popup, it does not reopen it.
-        self.setAttribute(Qt.WidgetAttribute.WA_NoMouseReplay)
         self.setFixedWidth(POPUP_WIDTH)
 
         col = QVBoxLayout(self)
@@ -83,7 +68,7 @@ class SilencePopup(QFrame):
         self.slider.setSingleStep(1)  # 0.05 s with the arrows
         self.slider.setPageStep(500 // KEEP_STEP_MS)  # 0.5 s with PgUp/PgDn
         self.slider.valueChanged.connect(self._on_slider)
-        self.slider.installEventFilter(self)
+        self.keep_slider_keys(self.slider)
         # A time scale, like the waveform and the transport: left to right in every language.
         track = QWidget()
         track.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
@@ -105,21 +90,6 @@ class SilencePopup(QFrame):
         player.silence_changed.connect(self.refresh)
         player.duration_changed.connect(lambda _ms: self.refresh())
         self.refresh()
-
-    def show_under(self, anchor: QWidget) -> None:
-        self.refresh()
-        self.adjustSize()
-        screen = (anchor.screen() or QGuiApplication.primaryScreen()).availableGeometry()
-        below = anchor.mapToGlobal(QPoint(0, anchor.height() + 4))
-        # Line the popup's far edge up with the button's, on the side the UI reads from.
-        x = below.x() + anchor.width() - self.width() if self.isRightToLeft() else below.x()
-        y = below.y()
-        if y + self.height() > screen.bottom():
-            y = anchor.mapToGlobal(QPoint(0, 0)).y() - self.height() - 4
-        x = max(screen.left(), min(x, screen.right() - self.width()))
-        self.move(x, y)
-        self.show()
-        self.slider.setFocus()
 
     def refresh(self) -> None:
         player = self.player
@@ -148,56 +118,65 @@ class SilencePopup(QFrame):
             saved=format_clock(saved), percent=percent, total=format_clock(player.duration)
         )
 
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if (
-            watched is self.slider
-            and event.type() == QEvent.Type.ShortcutOverride
-            and isinstance(event, QKeyEvent)
-            and event.key() in SLIDER_KEYS
-        ):
-            event.accept()  # the key reaches the slider instead of the page's shortcut
-            return True
-        return super().eventFilter(watched, event)
-
     def _on_slider(self, steps: int) -> None:
         # Choosing how much pause to keep means wanting the pauses trimmed.
         self.player.set_keep_pause(steps * KEEP_STEP_MS)
         self.player.set_skip_silence(True)
 
 
-class SilenceButton(QToolButton):
+class SilenceControl(QFrame):
+    """A split button: the wide part switches trimming on and off in one click (or S), the
+    narrow ▾ beside it opens the pause-length popup."""
+
     def __init__(self, player: Player) -> None:
-        super().__init__(objectName="silenceButton")
+        super().__init__(objectName="silenceGroup")
         self.player = player
-        self.setText(strings.PLAYER_SILENCE)
-        self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.setIconSize(QSize(ICON_SIZE - 2, ICON_SIZE - 2))
-        self.popup = SilencePopup(player, self)
-        self.clicked.connect(lambda: self.popup.show_under(self))
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        self.toggle = QToolButton(objectName="silenceButton")
+        self.toggle.setText(strings.PLAYER_SILENCE)
+        self.toggle.setCheckable(True)
+        self.toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.toggle.setIconSize(QSize(ICON_SIZE - 2, ICON_SIZE - 2))
+        self.toggle.toggled.connect(player.set_skip_silence)
+        row.addWidget(self.toggle)
+        self.more = QToolButton(objectName="silenceMore")
+        self.more.setToolTip(strings.PLAYER_SILENCE_MORE_TOOLTIP)
+        self.more.setIconSize(QSize(ICON_SIZE - 4, ICON_SIZE - 4))
+        row.addWidget(self.more)
+        self.popup = SilencePopup(player, self.more)
+        self.more.clicked.connect(lambda: self.popup.show_under(self))
         player.silence_changed.connect(self._sync)
         self._sync()
 
     def _sync(self) -> None:
         on = self.player.skip_silence
-        if self.property("active") != on:
-            self.setProperty("active", on)
-            _repolish(self)
-        self.setToolTip(
+        self.toggle.blockSignals(True)
+        self.toggle.setChecked(on)
+        self.toggle.blockSignals(False)
+        for button in (self.toggle, self.more):
+            if button.property("active") != on:
+                button.setProperty("active", on)
+                _repolish(button)
+        self.toggle.setToolTip(
             strings.PLAYER_SILENCE_TOOLTIP_ON.format(keep=seconds_label(self.player.keep_pause_ms))
             if on
             else strings.PLAYER_SILENCE_TOOLTIP_OFF
         )
-        self._paint_icon()
+        self._paint_icons()
 
-    def _paint_icon(self) -> None:
+    def _paint_icons(self) -> None:
         role = (
             QPalette.ColorRole.HighlightedText  # ink on the accent fill
             if self.player.skip_silence
             else QPalette.ColorRole.ButtonText
         )
-        self.setIcon(silence_icon(self.palette().color(role)))
+        color = self.palette().color(role)
+        self.toggle.setIcon(silence_icon(color))
+        self.more.setIcon(chevron_icon(color))
 
     def changeEvent(self, event: QEvent) -> None:
         if event.type() == QEvent.Type.PaletteChange:
-            self._paint_icon()
+            self._paint_icons()
         super().changeEvent(event)

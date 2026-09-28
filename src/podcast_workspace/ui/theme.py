@@ -372,19 +372,37 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     }}
     QToolButton#speedButton:hover {{ background: {c.hover}; border-color: {c.accent}; }}
     QToolButton#speedButton::menu-indicator {{ image: none; width: 0; }}
-    QToolButton#silenceButton {{
-        background: {c.panel}; color: {c.text}; border: 1px solid {c.border};
-        border-radius: 10px; padding: 5px 10px; font-weight: 600;
+    QToolButton#volumeButton {{
+        background: transparent; border: 2px solid transparent; border-radius: 8px; padding: 3px;
     }}
-    QToolButton#silenceButton:hover {{ background: {c.hover}; border-color: {c.accent}; }}
-    QToolButton#silenceButton:focus {{ border-color: {c.accent_strong}; }}
-    QToolButton#silenceButton[active="true"] {{
+    QToolButton#volumeButton:hover {{ background: {c.hover}; }}
+    QToolButton#volumeButton:focus {{ border-color: {c.accent_strong}; }}
+    /* One split button (the transport row never mirrors): switch on the left, ▾ on the right. */
+    QToolButton#silenceButton, QToolButton#silenceMore {{
+        background: {c.panel}; color: {c.text}; border: 1px solid {c.border}; font-weight: 600;
+    }}
+    QToolButton#silenceButton {{
+        border-top-left-radius: 10px; border-bottom-left-radius: 10px; padding: 5px 10px;
+    }}
+    QToolButton#silenceMore {{
+        border-left: none; padding: 5px 5px;
+        border-top-right-radius: 10px; border-bottom-right-radius: 10px;
+    }}
+    QToolButton#silenceButton:hover, QToolButton#silenceMore:hover {{
+        background: {c.hover}; border-color: {c.accent};
+    }}
+    QToolButton#silenceButton:focus, QToolButton#silenceMore:focus {{
+        border-color: {c.accent_strong};
+    }}
+    QToolButton#silenceButton[active="true"], QToolButton#silenceMore[active="true"] {{
         background: {c.accent}; color: {c.accent_text}; border-color: {c.accent};
     }}
-    QToolButton#silenceButton[active="true"]:hover {{ border-color: {c.accent_strong}; }}
-    QToolButton#silenceButton:disabled {{ color: {c.muted}; }}
-    #silencePopup {{ background: {c.surface}; border: 1px solid {c.border}; }}
-    #silenceValue {{ color: {c.text}; font-weight: 700; }}
+    QToolButton#silenceButton[active="true"] {{ border-right-color: {c.accent_strong}; }}
+    QToolButton#silenceButton[active="true"]:hover,
+    QToolButton#silenceMore[active="true"]:hover {{ border-color: {c.accent_strong}; }}
+    QToolButton#silenceButton:disabled, QToolButton#silenceMore:disabled {{ color: {c.muted}; }}
+    #silencePopup, #volumePopup {{ background: {c.surface}; border: 1px solid {c.border}; }}
+    #silenceValue, #volumeValue {{ color: {c.text}; font-weight: 700; }}
     QSlider::groove:horizontal {{ height: 4px; background: {c.border}; border-radius: 2px; }}
     QSlider::sub-page:horizontal {{ background: {c.accent_strong}; border-radius: 2px; }}
     QSlider::add-page:horizontal {{ background: {c.border}; border-radius: 2px; }}

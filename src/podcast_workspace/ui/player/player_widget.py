@@ -1,4 +1,5 @@
-"""Player panel: waveform + transport (−10 s, play/pause, +10 s), clock, speed and pause trimming.
+"""Player panel: waveform + transport (−10 s, play/pause, +10 s), clock, volume, speed and
+pause trimming.
 
 The shared `Player` (audio engine facade) is owned by the main window; this widget shows
 whichever voice is open and drives the player for it.
@@ -33,7 +34,8 @@ from podcast_workspace.audio.waveform import (
 )
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.player.icons import ICON_SIZE, pause_icon, play_icon, skip_icon
-from podcast_workspace.ui.player.silence_control import SilenceButton
+from podcast_workspace.ui.player.silence_control import SilenceControl
+from podcast_workspace.ui.player.volume_control import VolumeButton
 from podcast_workspace.ui.player.waveform_view import WaveformView
 from podcast_workspace.ui.support import format_clock, local_digits
 
@@ -69,6 +71,8 @@ def install_player_keys(
         ("-", lambda: player.step_speed(-1)),
         ("=", lambda: player.step_speed(1)),
         ("+", lambda: player.step_speed(1)),
+        ("S", player.toggle_skip_silence),
+        ("M", player.toggle_mute),
         *extra,
     )
     context = Qt.ShortcutContext.WidgetWithChildrenShortcut
@@ -147,6 +151,8 @@ class PlayerWidget(QFrame):
         self.clock = QLabel(format_clock(0), objectName="clock")
         self.clock.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
         row.addWidget(self.clock)
+        self.volume = VolumeButton(player)
+        row.addWidget(self.volume)
         row.addStretch(1)
         self.back = self._transport_button(strings.PLAYER_BACK_TOOLTIP)
         self.back.clicked.connect(lambda: self.player.skip(-SKIP_MS))
@@ -175,7 +181,7 @@ class PlayerWidget(QFrame):
             self._speed_actions[value] = action
         self.speed.setMenu(menu)
         row.addWidget(self.speed)
-        self.silence = SilenceButton(player)
+        self.silence = SilenceControl(player)
         row.addWidget(self.silence)
         self.total = QLabel(format_clock(0), objectName="muted")
         self.total.setLayoutDirection(Qt.LayoutDirection.LeftToRight)

@@ -34,6 +34,7 @@ RECORDER_KEY = "recording.program_path"
 SOURCE_FOLDER_KEY = "voices.source_folder"
 SEASON_FILTER_KEY = "ui.episode_season_filter"
 TRIM_SILENCE_KEY = "player.trim_silence"
+VOLUME_KEY = "player.volume"
 BALE_TOKEN_KEY = "bale.token"
 BALE_ENABLED_KEY = "bale.enabled"
 BALE_OWNER_KEY = "bale.owner"
@@ -131,16 +132,23 @@ class SettingsService:
     def set_season_filter(self, value: str) -> None:
         self._set(SEASON_FILTER_KEY, value)
 
-    def trim_silence(self) -> tuple[bool, int | None]:
-        """Whether playback skips pauses, and the longest pause it keeps (None: never set)."""
+    def silence_keep_ms(self) -> int | None:
+        """The longest pause trimmed playback keeps (None: never set). Whether trimming is
+        on is not remembered: it starts on, and turning it off is for the session."""
         value = self._get(TRIM_SILENCE_KEY)
-        if not isinstance(value, dict):
-            return False, None
-        keep = value.get("keep_ms")
-        return value.get("on") is True, keep if isinstance(keep, int) else None
+        keep = value.get("keep_ms") if isinstance(value, dict) else None
+        return keep if isinstance(keep, int) else None
 
-    def set_trim_silence(self, on: bool, keep_ms: int) -> None:
-        self._set(TRIM_SILENCE_KEY, {"on": bool(on), "keep_ms": int(keep_ms)})
+    def set_silence_keep_ms(self, keep_ms: int) -> None:
+        self._set(TRIM_SILENCE_KEY, {"keep_ms": int(keep_ms)})
+
+    def player_volume(self) -> int | None:
+        """Playback level, 1–100 (None: never set). Muting is not remembered."""
+        value = self._get(VOLUME_KEY)
+        return value if isinstance(value, int) and 0 < value <= 100 else None
+
+    def set_player_volume(self, level: int) -> None:
+        self._set(VOLUME_KEY, int(level))
 
     # Bale bot --------------------------------------------------------------------------
     def bale_token(self) -> str:

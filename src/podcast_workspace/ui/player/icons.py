@@ -91,3 +91,44 @@ def silence_icon(color: QColor) -> QIcon:
         p.drawPath(arrow)
     p.end()
     return QIcon(pixmap)
+
+
+def chevron_icon(color: QColor) -> QIcon:
+    """A small downward chevron: «more settings» beside a button."""
+    pixmap, p = _canvas()
+    p.setPen(
+        QPen(color, 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+    )
+    arrow = QPainterPath(QPointF(6, 8.2))
+    arrow.lineTo(10, 12.2)
+    arrow.lineTo(14, 8.2)
+    p.drawPath(arrow)
+    p.end()
+    return QIcon(pixmap)
+
+
+def volume_icon(color: QColor, waves: int) -> QIcon:
+    """A speaker with 0–2 sound waves; `waves` < 0 draws it muted (a cross instead)."""
+    pixmap, p = _canvas()
+    body = QPainterPath(QPointF(2.5, 7.6))
+    body.lineTo(5.8, 7.6)
+    body.lineTo(9.8, 4.0)
+    body.lineTo(9.8, 16.0)
+    body.lineTo(5.8, 12.4)
+    body.lineTo(2.5, 12.4)
+    body.closeSubpath()
+    p.setPen(
+        QPen(color, 1.3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+    )
+    p.setBrush(color)
+    p.drawPath(body)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.setPen(QPen(color, 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    if waves < 0:
+        p.drawLine(QPointF(12.8, 7.4), QPointF(17.8, 12.6))
+        p.drawLine(QPointF(17.8, 7.4), QPointF(12.8, 12.6))
+    for radius in (3.6, 6.8)[: max(0, waves)]:
+        rect = QRectF(9.8 - radius, 10 - radius, 2 * radius, 2 * radius)
+        p.drawArc(rect, -48 * 16, 96 * 16)
+    p.end()
+    return QIcon(pixmap)

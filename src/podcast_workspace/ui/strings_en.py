@@ -290,8 +290,15 @@ PLAYER_SPEED_TOOLTIP = "Playback speed (- and =)"
 PLAYER_LOADING = "Reading the file…"
 PLAYER_ERROR = "Playback failed: {error}"
 PLAYER_SILENCE = "Trim silence"
-PLAYER_SILENCE_TOOLTIP_OFF = "Trim silence while playing: off"
-PLAYER_SILENCE_TOOLTIP_ON = "Trim silence: pauses at most {keep}"
+PLAYER_SILENCE_TOOLTIP_OFF = "Silence trimming is off — click to turn it on (S)"
+PLAYER_SILENCE_TOOLTIP_ON = (
+    "Silence trimming is on, pauses at most {keep} — click to turn it off (S)"
+)
+PLAYER_SILENCE_MORE_TOOLTIP = "How much of each pause to keep"
+PLAYER_VOLUME_TOOLTIP = "Volume: {level} — the mouse wheel changes it too (M: mute)"
+PLAYER_VOLUME_PERCENT = "{percent}%"
+PLAYER_MUTE_TOOLTIP = "Mute (M)"
+PLAYER_UNMUTE_TOOLTIP = "Unmute (M)"
 SILENCE_ENABLE = "Skip silences while playing"
 SILENCE_HINT = (
     "The file stays as it is; playback only skips the long pauses, "
