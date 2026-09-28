@@ -610,11 +610,12 @@ class MainWindow(QMainWindow):
         palette = self.palette()
         text = palette.color(QPalette.ColorRole.Text)
         muted = palette.color(QPalette.ColorRole.PlaceholderText)
+        rtl = self.isRightToLeft()
         self.undo_button.set_icon(
-            history_icon(text if self.undo_button.isEnabled() else muted, False)
+            history_icon(text if self.undo_button.isEnabled() else muted, False, rtl)
         )
         self.redo_button.setIcon(
-            history_icon(text if self.redo_button.isEnabled() else muted, True)
+            history_icon(text if self.redo_button.isEnabled() else muted, True, rtl)
         )
 
     def _build_content(self) -> QWidget:

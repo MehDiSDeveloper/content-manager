@@ -43,7 +43,7 @@ class VolumePopup(PlayerPopup):
         self.mute.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         self.mute.clicked.connect(player.toggle_mute)
         row.addWidget(self.mute)
-        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider = QSlider(Qt.Orientation.Horizontal, objectName="volumeSlider")
         self.slider.setRange(0, MAX_VOLUME)
         self.slider.setSingleStep(STEP)
         self.slider.setPageStep(2 * STEP)

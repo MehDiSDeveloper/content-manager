@@ -204,6 +204,14 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     on_soft = c.text if dark else c.accent_text  # text on an accent_soft fill
     # QSS does not mirror: the rail's inner edge is on the left in RTL, the right in LTR.
     inner_edge = "left" if rtl else "right"
+    # Qt mirrors a slider's handle in RTL but still paints the stylesheet's sub-page on the
+    # left, so the volume (which reads like the UI) fills from the right by hand.
+    volume_fill = (
+        f"QSlider#volumeSlider::sub-page:horizontal {{ background: {c.border}; }}\n"
+        f"    QSlider#volumeSlider::add-page:horizontal {{ background: {c.accent_strong}; }}"
+        if rtl
+        else ""
+    )
     return f"""
     QMainWindow, #content {{ background: {c.window}; }}
     #sidebar {{ background: {c.sidebar}; border-{inner_edge}: 1px solid {c.border}; }}
@@ -411,6 +419,7 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
         width: 12px; height: 12px; margin: -6px 0; border-radius: 8px;
     }}
     QSlider::handle:horizontal:hover {{ background: {c.accent_soft}; }}
+    {volume_fill}
 
     #noteScroll, #noteHost {{ background: transparent; }}
     #noteRow {{ background: transparent; border-radius: 10px; border: 2px solid transparent; }}

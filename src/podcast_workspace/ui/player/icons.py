@@ -43,19 +43,19 @@ def pause_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
-def skip_icon(color: QColor, forward: bool, label: str = "10") -> QIcon:
-    """Circular arrow with the skip amount inside; `forward` turns clockwise."""
+def skip_icon(color: QColor, clockwise: bool, label: str = "10") -> QIcon:
+    """Circular arrow with the skip amount inside, turning clockwise or against it."""
     pixmap, p = _canvas()
     center, radius = QPointF(10, 10.5), 7.2
     pen = QPen(color, 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
     p.setPen(pen)
     rect = QRectF(center.x() - radius, center.y() - radius, 2 * radius, 2 * radius)
     # Gap at the top; the arrow head sits at the end of the arc.
-    start, span = (60, 290) if not forward else (120, -290)
+    start, span = (60, 290) if clockwise else (120, -290)
     p.drawArc(rect, start * 16, span * 16)
     angle = math.radians(start)
     tip = QPointF(center.x() + radius * math.cos(angle), center.y() - radius * math.sin(angle))
-    direction = -1 if forward else 1
+    direction = 1 if clockwise else -1
     head = QPainterPath(tip + QPointF(direction * 3.2, 0))
     head.lineTo(tip + QPointF(-direction * 0.6, -2.6))
     head.lineTo(tip + QPointF(-direction * 0.6, 2.6))
