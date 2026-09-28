@@ -132,6 +132,7 @@ class EpisodeService:
     def update(
         self, episode_id: int, *, title: str, status: EpisodeStatus, next_action: str
     ) -> Episode:
+        status = EpisodeStatus(status)  # a UI may hand over the plain value
         with UnitOfWork(self._sf) as uow:
             current = uow.episodes.get(episode_id)
             edited = Episode(
@@ -194,6 +195,7 @@ class EpisodeService:
         return saved
 
     def set_status(self, episode_id: int, status: EpisodeStatus) -> Episode:
+        status = EpisodeStatus(status)
         with UnitOfWork(self._sf) as uow:
             episode = uow.episodes.get(episode_id)
             if episode.status is status:

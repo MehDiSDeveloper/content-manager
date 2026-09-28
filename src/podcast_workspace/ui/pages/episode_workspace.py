@@ -764,7 +764,8 @@ class EpisodeWorkspacePage(QWidget):
             saved = self._ws.episodes.update(
                 episode.id,
                 title=self.title_edit.text(),
-                status=self.status_box.currentData(),
+                # Qt hands a StrEnum back as a plain str.
+                status=EpisodeStatus(self.status_box.currentData()),
                 next_action=self.next_action.text(),
             )
         except Exception as exc:
