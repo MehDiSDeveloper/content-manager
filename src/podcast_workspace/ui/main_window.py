@@ -123,6 +123,7 @@ COUNTS_DELAY_MS = 250
 BACKUP_CHECK_DELAY_MS = 1200  # after the window has settled, not in the way of startup
 PURGE_INTERVAL_MS = 60 * 60 * 1000  # the 30-day trash is emptied hourly while the app is open
 IDEA_HOTKEY_ID = 0xB0B1
+START_PAGE = 2  # Ideas: the app opens where new ideas land
 # Changes worth a toast: the ones that take something away, where noticing late is the
 # whole problem. Everything else is visible on the page as it happens.
 UNDO_OFFERED = frozenset(
@@ -683,15 +684,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("F6"), self, activated=self._cycle_pane_focus)
 
     def _start_page(self) -> None:
-        try:
-            info = self._ws.episodes.resume()
-        except Exception:
-            info = None  # resume is a convenience; never block startup on it
-        if info is None:
-            self.navigate(0)
-            return
-        self.resume_page.show_info(info)
-        self.show_page(self.resume_page, remember=False)
+        self.navigate(START_PAGE)
 
     # navigation ------------------------------------------------------------------------
     def show_page(self, page: QWidget, focus: bool = False, remember: bool = True) -> None:
