@@ -5,12 +5,13 @@ comes back or goes for good. Purging is the one real delete in the app (the Idea
 «delete forever» is the same delete, skipping the trash): the rows go,
 and the database cascades their tag links, timestamp notes, transcript and episode
 links after them (the tags themselves stay — other items may carry them). A voice's
-audio file is never touched.
+copy in the workspace's store goes with it; a file anywhere else is never touched.
 
 Neither restoring nor purging is recorded for undo: restoring is undone by deleting
 again, and a purge is exactly the thing that cannot be taken back — the UI asks first.
 """
 
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -18,8 +19,12 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from podcast_workspace.domain.entities import Voice
 from podcast_workspace.domain.lifecycle import TrashKind, purge_at, purge_cutoff
 from podcast_workspace.repositories.unit_of_work import UnitOfWork
+from podcast_workspace.services.voice_store import discard
+
+log = logging.getLogger(__name__)
 
 TrashKey = tuple[TrashKind, int]
 
@@ -127,6 +132,7 @@ class TrashService:
 
     def _delete(self, keys: Iterable[TrashKey], trashed_only: bool) -> PurgeReport:
         report = PurgeReport()
+        files: list[str] = []
         with UnitOfWork(self._sf) as uow:
             for kind, item_id in keys:
                 repo = uow.voices if kind is TrashKind.VOICE else uow.idea_notes
@@ -135,6 +141,13 @@ class TrashService:
                     continue
                 repo.delete(item_id)
                 (report.voices if kind is TrashKind.VOICE else report.ideas).add(item_id)
+                if isinstance(item, Voice):
+                    files.append(item.file_path)
+        for path in files:  # only once the rows are gone for good
+            try:
+                discard(path)
+            except OSError:
+                log.warning("stored copy %s not deleted", path, exc_info=True)
         return report
 
     def purge_expired(self, now: datetime | None = None) -> PurgeReport:

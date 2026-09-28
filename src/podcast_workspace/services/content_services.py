@@ -14,7 +14,8 @@ Voices and ideas are never deleted from here: `delete` puts them in the trash
 hand or after 30 days — is `services/trash.py`, and is the only real delete.
 """
 
-from collections.abc import Iterable
+import logging
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -41,9 +42,22 @@ from podcast_workspace.domain.smart_links import (
     SmartLink,
     rank_smart_links,
 )
+from podcast_workspace.paths import voices_dir
 from podcast_workspace.repositories.unit_of_work import UnitOfWork
 from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS, probe
 from podcast_workspace.services.history import ChangeKind, HistoryService, Target, TargetKind
+from podcast_workspace.services.voice_store import (
+    NameChoice,
+    free_name,
+    is_kept,
+    is_stored,
+    name_key,
+    path_key,
+    same_file,
+    store,
+)
+
+log = logging.getLogger(__name__)
 
 
 def _short(text: str, width: int = 60) -> str:
@@ -877,16 +891,38 @@ class IdeaService:
             uow.idea_notes.delete(idea_id)
 
 
+def _same_voice(voices: list[Voice], path: Path) -> Voice | None:
+    """The voice this very file already is: by its own path, or as the original of a
+    stored copy that still matches it (a recorder reusing a name makes a different file)."""
+    key = path_key(path)
+    for voice in voices:
+        if path_key(voice.file_path) == key:
+            return voice
+    for voice in voices:
+        source = voice.source_path
+        if source and path_key(source) == key and same_file(Path(voice.file_path), path):
+            return voice
+    return None
+
+
+def _namesake(voices: list[Voice], path: Path) -> Voice | None:
+    """A voice outside the trash shown under the same name."""
+    wanted = name_key(path)
+    return next((v for v in voices if not v.in_trash and name_key(v.file_path) == wanted), None)
+
+
 @dataclass
 class ImportReport:
-    imported: list[Voice] = field(default_factory=list)
+    imported: list[Voice] = field(default_factory=list)  # new ones, and any replaced
     already_present: list[Path] = field(default_factory=list)
+    skipped: list[Path] = field(default_factory=list)  # the user kept the existing namesake
     unsupported: list[Path] = field(default_factory=list)
     failed: list[tuple[Path, str]] = field(default_factory=list)
 
 
 class VoiceService:
-    """Voices reference files in place; the workspace never copies, moves or deletes audio."""
+    """Voices play from the workspace's own copy of their file (`voice_store.py`); the
+    original is never moved, changed or deleted."""
 
     def __init__(self, session_factory: sessionmaker[Session], history: HistoryService) -> None:
         self._sf = session_factory
@@ -909,32 +945,150 @@ class VoiceService:
         with UnitOfWork(self._sf) as uow:
             return uow.voices.get(voice_id)
 
-    def import_files(self, paths: Iterable[Path]) -> ImportReport:
-        """Blocking (runs ffprobe per file). Call it off the UI thread."""
+    def name_conflicts(self, paths: Iterable[Path]) -> dict[Path, Voice]:
+        """The files that would come in under a name a voice already has (voices are shown
+        by file name), each with that voice — for the UI to ask about before importing.
+        Keyed by the resolved path, as `import_files` looks the answers up. Quick: no
+        probing, no copying."""
+        with UnitOfWork(self._sf) as uow:
+            voices = uow.voices.list_all(include_trashed=True)
+        conflicts: dict[Path, Voice] = {}
+        for raw in paths:
+            path = raw.resolve()
+            if path.suffix.lower() not in SUPPORTED_EXTENSIONS or is_kept(path):
+                continue
+            if _same_voice(voices, path) is None and (clash := _namesake(voices, path)):
+                conflicts[path] = clash
+        return conflicts
+
+    def import_files(
+        self, paths: Iterable[Path], choices: Mapping[Path, NameChoice] | None = None
+    ) -> ImportReport:
+        """Blocking (copies and probes each file). Call it off the UI thread.
+
+        A file from outside the workspace is copied into its store (`voice_store.py`) and
+        the voice plays from the copy. A file whose name a voice already has is handled as
+        `choices` says, and when nobody was asked, comes in beside it as «name (2)»:
+        an import never overwrites anything on its own.
+        """
+        choices = choices or {}
         report = ImportReport()
+        with UnitOfWork(self._sf) as uow:
+            voices = uow.voices.list_all(include_trashed=True)
         for raw in paths:
             path = raw.resolve()
             if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
                 report.unsupported.append(path)
                 continue
             try:
-                with UnitOfWork(self._sf) as uow:
-                    known = uow.voices.find_by_path(str(path))
-                    if known is not None and known.in_trash:
-                        # Imported again on purpose: it comes back out of the trash.
+                known = _same_voice(voices, path)
+                if known is not None and known.in_trash:
+                    # Imported again on purpose: it comes back out of the trash.
+                    with UnitOfWork(self._sf) as uow:
                         known.deleted_at = None
                         report.imported.append(uow.voices.update(known))
+                    continue
+                if known is not None:
+                    report.already_present.append(path)
+                    continue
+                if is_kept(path):  # already the workspace's (a Bale voice): used in place
+                    info = probe(path)
+                    voice = Voice(
+                        file_path=str(path), duration_ms=info.duration_ms, format=info.format
+                    )
+                    with UnitOfWork(self._sf) as uow:
+                        voice = uow.voices.add(voice)
+                else:
+                    clash = _namesake(voices, path)
+                    choice = choices.get(path, NameChoice.KEEP_BOTH) if clash else None
+                    if choice is NameChoice.SKIP:
+                        report.skipped.append(path)
                         continue
-                    if known is not None:
-                        report.already_present.append(path)
-                        continue
-                info = probe(path)
-                voice = Voice(file_path=str(path), duration_ms=info.duration_ms, format=info.format)
-                with UnitOfWork(self._sf) as uow:
-                    report.imported.append(uow.voices.add(voice))
+                    if clash is not None and choice is NameChoice.REPLACE:
+                        voice = self._replace(clash, path, voices)
+                        voices.remove(clash)
+                    else:
+                        voice = self._copy_in(path, voices)
+                voices.append(voice)
+                report.imported.append(voice)
             except (OSError, DomainError) as exc:
                 report.failed.append((path, str(exc)))
         return report
+
+    def _copy_in(self, path: Path, voices: list[Voice]) -> Voice:
+        target = voices_dir() / free_name(path.name, {name_key(v.file_path) for v in voices})
+        store(path, target)
+        try:
+            info = probe(target)
+            voice = Voice(
+                file_path=str(target),
+                duration_ms=info.duration_ms,
+                format=info.format,
+                source_path=str(path),
+            )
+            with UnitOfWork(self._sf) as uow:
+                return uow.voices.add(voice)
+        except BaseException:
+            target.unlink(missing_ok=True)
+            raise
+
+    def _replace(self, voice: Voice, path: Path, voices: list[Voice]) -> Voice:
+        """Give an existing voice the audio of `path`. Its tags, notes and episodes stay;
+        its transcript goes, since it was of the old audio. Not undoable: the old audio is
+        written over (the UI says so when it asks)."""
+        assert voice.id is not None
+        old = Path(voice.file_path)
+        if is_stored(old) and name_key(old) == name_key(path):
+            target = old
+        else:  # it still plays from outside the store: that file is left alone
+            others = {name_key(v.file_path) for v in voices if v.id != voice.id}
+            target = voices_dir() / free_name(path.name, others)
+        store(path, target)
+        info = probe(target)
+        with UnitOfWork(self._sf) as uow:
+            current = uow.voices.get(voice.id)
+            current.file_path = str(target)
+            current.source_path = str(path)
+            current.duration_ms = info.duration_ms
+            current.format = info.format
+            current.imported_at = utcnow()  # new audio: it goes to the top like a new one
+            saved = uow.voices.update(current)
+            transcript = uow.transcripts.for_voice(voice.id)
+            if transcript is not None and transcript.id is not None:
+                uow.transcripts.delete(transcript.id)
+        return saved
+
+    def secure_external(self) -> int:
+        """Copy into the store every voice still playing from a file outside the workspace
+        (added before the store existed), so clearing that folder loses nothing. Blocking:
+        run it off the UI thread. Returns how many were copied; a file that cannot be read
+        is left as it is and tried again next time."""
+        with UnitOfWork(self._sf) as uow:
+            voices = uow.voices.list_all(include_trashed=True)
+        taken = {name_key(v.file_path) for v in voices}
+        copied = 0
+        for voice in voices:
+            old = Path(voice.file_path)
+            if is_kept(old) or not old.is_file():
+                continue
+            taken.discard(name_key(old))
+            name = free_name(old.name, taken)
+            taken.add(name.casefold())
+            try:
+                target = store(old, voices_dir() / name)
+            except OSError:
+                log.warning("could not copy %s into the store", old, exc_info=True)
+                continue
+            with UnitOfWork(self._sf) as uow:
+                current = uow.voices.find(voice.id or 0)
+                if current is None or current.file_path != voice.file_path:
+                    target.unlink(missing_ok=True)  # changed meanwhile (replaced, purged)
+                    continue
+                current.file_path = str(target)
+                current.source_path = current.source_path or str(old)
+                uow.voices.update(current)
+            copied += 1
+        return copied
 
     def set_tags(self, voice_id: int, tag_ids: Iterable[int]) -> Voice:
         with UnitOfWork(self._sf) as uow:

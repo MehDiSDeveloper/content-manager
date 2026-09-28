@@ -145,6 +145,9 @@ class Voice(Taggable, Shelved):
     tag_ids: set[int] = field(default_factory=set)
     archived_at: datetime | None = None
     deleted_at: datetime | None = None
+    # Where the file was copied from ("" when the workspace did not copy it): the audio
+    # folder must not offer that file again while it is the same file.
+    source_path: str = ""
     id: int | None = None
 
     def __post_init__(self) -> None:

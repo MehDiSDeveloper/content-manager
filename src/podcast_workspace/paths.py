@@ -50,6 +50,12 @@ def bale_voices_dir() -> Path:
     return _subdir("bale_voices")
 
 
+def voices_dir() -> Path:
+    """The workspace's own copy of every audio file added from elsewhere (the audio
+    folder, the file picker, a drop), so deleting the original loses nothing."""
+    return _subdir("voices")  # services/voice_store.STORE_DIR
+
+
 def library_dir() -> Path:
     """Audio files restored from an export whose original path no longer exists."""
     return _subdir("library")

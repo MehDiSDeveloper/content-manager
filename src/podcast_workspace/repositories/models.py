@@ -121,6 +121,8 @@ class VoiceRow(Base):
     # Archive / trash (migration d2c7f9a4b615): plain nullable columns, None = not.
     archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # The file a stored copy was made from (migration e8b3f1c6a492); "" = not a copy.
+    source_path: Mapped[str] = mapped_column(Text, default="")
 
     tags: Mapped[list[TagRow]] = relationship(secondary=voice_tags)
 

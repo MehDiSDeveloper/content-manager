@@ -239,6 +239,7 @@ class BackupService:
                     "imported_at": _dt(v.imported_at),
                     "archived_at": _dt(v.archived_at),
                     "deleted_at": _dt(v.deleted_at),
+                    "source_path": v.source_path,
                     "tag_ids": sorted(v.tag_ids),
                 }
                 for v in snap.voices
@@ -407,6 +408,7 @@ class BackupService:
                     # Exports made before archive/trash existed have neither.
                     archived_at=_parse_dt(v.get("archived_at")),
                     deleted_at=_parse_dt(v.get("deleted_at")),
+                    source_path=v.get("source_path") or "",
                 )
                 for v in data["voices"]
             ],

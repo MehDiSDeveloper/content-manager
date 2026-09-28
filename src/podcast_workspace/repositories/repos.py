@@ -287,6 +287,7 @@ class VoiceRepository(SqlRepository[Voice, VoiceRow]):
             tag_ids={tag.id for tag in row.tags},
             archived_at=row.archived_at,
             deleted_at=row.deleted_at,
+            source_path=row.source_path or "",
         )
 
     def _apply(self, entity: Voice, row: VoiceRow) -> None:
@@ -298,6 +299,7 @@ class VoiceRepository(SqlRepository[Voice, VoiceRow]):
         row.imported_at = entity.imported_at
         row.archived_at = entity.archived_at
         row.deleted_at = entity.deleted_at
+        row.source_path = entity.source_path
         row.tags = self._tag_rows(entity.tag_ids)
 
     def find_by_path(self, file_path: str) -> Voice | None:
