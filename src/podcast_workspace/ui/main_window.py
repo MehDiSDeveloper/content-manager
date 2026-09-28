@@ -303,6 +303,8 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1100, 680)
 
         self.player = Player(self)
+        self.player.restore_silence_settings(*workspace.settings.trim_silence())
+        self.player.silence_settings_changed.connect(workspace.settings.set_trim_silence)
         self.transcription_jobs = TranscriptionJobs(workspace, self)
         self.bot = BotController(workspace.bot, self)
         self._settings_dialog: SettingsDialog | None = None

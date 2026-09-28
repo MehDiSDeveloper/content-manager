@@ -1,4 +1,5 @@
-"""Waveform with playhead, played/unplayed colouring, note markers, click/drag seeking.
+"""Waveform with playhead, played/unplayed colouring, skipped pauses, note markers,
+click/drag seeking.
 
 Always left-to-right (media timelines are not mirrored in RTL UIs).
 """
@@ -28,6 +29,8 @@ PAD_Y = 12
 MARKER_ZONE = 8
 LOUDNESS_PERCENTILE = 99.5
 GAMMA = 0.75  # lifts quiet speech so it stays visible next to loud peaks
+CUT_VEIL = 0.7  # how far a skipped pause fades toward the background
+CUT_BAND = 0.18  # strength of the band that marks it
 
 
 class WaveformView(QWidget):
@@ -45,6 +48,7 @@ class WaveformView(QWidget):
         self._duration = 0
         self._position = 0
         self._markers: list[tuple[int, int]] = []
+        self._cuts: tuple[tuple[int, int], ...] = ()
         self._active: frozenset[int] = frozenset()
         self._hover_x: float | None = None
         self._drag_ms: int | None = None
@@ -86,6 +90,12 @@ class WaveformView(QWidget):
         """(note_id, position_ms) pairs."""
         self._markers = markers
         self.update()
+
+    def set_cuts(self, cuts: tuple[tuple[int, int], ...]) -> None:
+        """[start_ms, end_ms) stretches playback skips; drawn faded."""
+        if cuts != self._cuts:
+            self._cuts = cuts
+            self.update()
 
     def set_active(self, active: frozenset[int]) -> None:
         if active != self._active:
@@ -177,6 +187,19 @@ class WaveformView(QWidget):
         painter.setBrush(strong)
         painter.drawPath(self._path)
         painter.restore()
+
+        # skipped pauses: bars veiled and a band over them, so what will be heard stands out
+        if self._cuts and self._duration > 0:
+            veil = palette.color(QPalette.ColorRole.Base)
+            veil.setAlphaF(CUT_VEIL)
+            band = QColor(muted)
+            band.setAlphaF(CUT_BAND)
+            for start, end in self._cuts:
+                left, right = self._x_for(start), self._x_for(end)
+                if right - left >= 0.5:
+                    area = QRectF(left, plot.top() - 1, right - left, plot.height() + 2)
+                    painter.fillRect(area, veil)
+                    painter.fillRect(area, band)
 
         # note markers under the plot
         base_y = plot.bottom() + MARKER_ZONE - 1

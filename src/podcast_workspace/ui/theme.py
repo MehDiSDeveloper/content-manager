@@ -372,6 +372,27 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     }}
     QToolButton#speedButton:hover {{ background: {c.hover}; border-color: {c.accent}; }}
     QToolButton#speedButton::menu-indicator {{ image: none; width: 0; }}
+    QToolButton#silenceButton {{
+        background: {c.panel}; color: {c.text}; border: 1px solid {c.border};
+        border-radius: 10px; padding: 5px 10px; font-weight: 600;
+    }}
+    QToolButton#silenceButton:hover {{ background: {c.hover}; border-color: {c.accent}; }}
+    QToolButton#silenceButton:focus {{ border-color: {c.accent_strong}; }}
+    QToolButton#silenceButton[active="true"] {{
+        background: {c.accent}; color: {c.accent_text}; border-color: {c.accent};
+    }}
+    QToolButton#silenceButton[active="true"]:hover {{ border-color: {c.accent_strong}; }}
+    QToolButton#silenceButton:disabled {{ color: {c.muted}; }}
+    #silencePopup {{ background: {c.surface}; border: 1px solid {c.border}; }}
+    #silenceValue {{ color: {c.text}; font-weight: 700; }}
+    QSlider::groove:horizontal {{ height: 4px; background: {c.border}; border-radius: 2px; }}
+    QSlider::sub-page:horizontal {{ background: {c.accent_strong}; border-radius: 2px; }}
+    QSlider::add-page:horizontal {{ background: {c.border}; border-radius: 2px; }}
+    QSlider::handle:horizontal {{
+        background: {c.surface}; border: 2px solid {c.accent_strong};
+        width: 12px; height: 12px; margin: -6px 0; border-radius: 8px;
+    }}
+    QSlider::handle:horizontal:hover {{ background: {c.accent_soft}; }}
 
     #noteScroll, #noteHost {{ background: transparent; }}
     #noteRow {{ background: transparent; border-radius: 10px; border: 2px solid transparent; }}

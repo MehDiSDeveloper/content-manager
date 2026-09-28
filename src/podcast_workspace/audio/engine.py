@@ -7,6 +7,9 @@ Threads:
 
 Timing: position = segment start + processedUSecs * speed. Every seek or speed change
 starts a new ffmpeg segment with input seeking (-ss before -i, frame-accurate for audio).
+Pause trimming: the reader passes each chunk through a `Splicer`, which leaves the cut
+stretches out and maps a played frame back to the file's timeline, so positions never leave
+it. The decode-ahead bound counts kept audio, so a long pause is read past at decode speed.
 Sample rate: output runs at the device mix rate. If the file differs, ffmpeg resamples once
 with soxr (or high-quality swr); Windows' shared-mode mixer then gets a native-rate stream.
 """
@@ -16,6 +19,7 @@ import threading
 from enum import StrEnum
 from pathlib import Path
 
+import numpy as np
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtMultimedia import QAudioDevice, QAudioFormat, QAudioSink, QMediaDevices, QtAudio
 
@@ -26,6 +30,7 @@ from podcast_workspace.audio.ffmpeg import (
     probe_stream,
     require_ffmpeg,
 )
+from podcast_workspace.audio.silence import DEFAULT_KEEP_MS, Span, Splicer, clamp_keep, cuts_for
 from podcast_workspace.audio.waveform import seek_cache
 
 SPEEDS = (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
@@ -34,6 +39,7 @@ PUMP_INTERVAL_MS = 10
 SINK_BUFFER_MS = 300
 DECODE_AHEAD_MS = 2000
 POSITION_INTERVAL_MS = 30
+CUTS_SETTLE_MS = 300  # a keep-pause change reaches the engine once the slider rests
 
 
 class PlayerState(StrEnum):
@@ -47,8 +53,9 @@ class PlayerState(StrEnum):
 class _Decoder:
     """One ffmpeg process decoding from a start position into a bounded byte buffer."""
 
-    def __init__(self, args: list[str], max_bytes: int) -> None:
+    def __init__(self, args: list[str], max_bytes: int, splicer: Splicer) -> None:
         self._max = max_bytes
+        self._splicer = splicer
         self._buf = bytearray()
         self._cond = threading.Condition()
         self._closed = False
@@ -79,10 +86,11 @@ class _Decoder:
                 chunk = b""
             with self._cond:
                 if not chunk:
+                    self._buf += self._splicer.flush()
                     self.eof = True
                     return
-                self._buf += chunk
-                self.produced += len(chunk)
+                self._buf += self._splicer.feed(chunk)
+                self.produced += len(chunk)  # source bytes, cut ones included
 
     def available(self) -> int:
         with self._cond:
@@ -94,6 +102,10 @@ class _Decoder:
             del self._buf[:n]
             self._cond.notify()
             return data
+
+    def source_ms(self, out_frame: int) -> float:
+        with self._cond:
+            return self._splicer.source_ms(out_frame)
 
     @property
     def drained(self) -> bool:
@@ -144,6 +156,7 @@ class _Engine(QObject):
         self._frame_bytes = 0
         self._duration = 0
         self._speed = 1.0
+        self._cuts: tuple[Span, ...] = ()
         self._seg_start = 0
         self._playing = False
         self._generation = 0
@@ -247,6 +260,17 @@ class _Engine(QObject):
         if self._path is not None:
             self._start_segment(current)
 
+    @Slot(object, int)
+    def set_cuts(self, cuts: tuple[Span, ...], generation: int) -> None:
+        """Stretches to leave out while playing (file timeline), from the current position on."""
+        if cuts == self._cuts:
+            return
+        current = self._position_now()
+        self._cuts = cuts
+        self._generation = generation
+        if self._path is not None:
+            self._start_segment(current)
+
     @Slot()
     def unload(self) -> None:
         self._teardown()
@@ -320,9 +344,16 @@ class _Engine(QObject):
             self._sink.stop()
             self._io = None
         self._seg_start = start_ms
+        splicer = Splicer(
+            self._cuts,
+            start_ms,
+            1000 * self._speed / self._out_rate,
+            self._out_channels,
+            np.float32 if self._float else np.int16,
+        )
         try:
             self._decoder = _Decoder(
-                self._decode_args(start_ms), self._bytes_for_ms(DECODE_AHEAD_MS)
+                self._decode_args(start_ms), self._bytes_for_ms(DECODE_AHEAD_MS), splicer
             )
         except OSError as exc:
             self.failed.emit(str(exc))
@@ -374,10 +405,10 @@ class _Engine(QObject):
         return self._duration > 0 and self._position_now() >= self._duration - 50
 
     def _position_now(self) -> int:
-        if self._sink is None or self._io is None:
+        if self._sink is None or self._io is None or self._decoder is None:
             return self._seg_start
-        played = self._sink.processedUSecs() / 1000 * self._speed
-        return self._clamp(self._seg_start + int(played))
+        played_frames = self._sink.processedUSecs() * self._out_rate // 1_000_000
+        return self._clamp(int(self._decoder.source_ms(played_frames)))
 
     def _clamp(self, ms: int) -> int:
         upper = self._duration if self._duration > 0 else ms
@@ -416,6 +447,7 @@ class _Engine(QObject):
         self._path = None
         self._decode_path = None
         self._duration = 0
+        self._cuts = ()
         self._seg_start = 0
         self._last_emitted = -1
 
@@ -428,6 +460,8 @@ class Player(QObject):
     duration_changed = Signal(int)
     speed_changed = Signal(float)
     error = Signal(str)
+    silence_changed = Signal()  # the setting, or the pauses found in the file
+    silence_settings_changed = Signal(bool, int)  # skip, keep_ms: once settled, to remember
 
     _cmd_load = Signal(str, int, int)
     _cmd_play = Signal()
@@ -435,6 +469,7 @@ class Player(QObject):
     _cmd_seek = Signal(int, int)
     _cmd_speed = Signal(float, int)
     _cmd_duration = Signal(int)
+    _cmd_cuts = Signal(object, int)
     _cmd_seek_cache = Signal()
     _cmd_warm_up = Signal()
     _cmd_unload = Signal()
@@ -453,6 +488,7 @@ class Player(QObject):
         self._cmd_seek.connect(self._engine.seek, queued)
         self._cmd_speed.connect(self._engine.set_speed, queued)
         self._cmd_duration.connect(self._engine.set_duration, queued)
+        self._cmd_cuts.connect(self._engine.set_cuts, queued)
         self._cmd_unload.connect(self._engine.unload, queued)
         self._cmd_seek_cache.connect(self._engine.seek_cache_ready, queued)
         self._cmd_warm_up.connect(self._engine.warm_up, queued)
@@ -473,6 +509,12 @@ class Player(QObject):
         self._generation = 0
         self._source = ""
         self._exact_duration = False
+        self._skip_silence = False
+        self._keep_ms = DEFAULT_KEEP_MS
+        self._pauses: tuple[Span, ...] | None = None  # None until the waveform is read
+        self._cuts: tuple[Span, ...] = ()
+        self._settle = QTimer(self, singleShot=True, interval=CUTS_SETTLE_MS)
+        self._settle.timeout.connect(self._settle_keep)
 
     # state ------------------------------------------------------------------------------
     @property
@@ -499,6 +541,22 @@ class Player(QObject):
     def is_playing(self) -> bool:
         return self._state is PlayerState.PLAYING
 
+    @property
+    def skip_silence(self) -> bool:
+        return self._skip_silence
+
+    @property
+    def keep_pause_ms(self) -> int:
+        return self._keep_ms
+
+    @property
+    def pauses_known(self) -> bool:
+        return self._pauses is not None
+
+    def silence_cuts(self) -> tuple[Span, ...]:
+        """What the current keep setting skips in this file, whether or not skipping is on."""
+        return cuts_for(self._pauses or (), self._keep_ms, self._duration)
+
     # commands ---------------------------------------------------------------------------
     def load(self, path: str, duration_hint_ms: int = 0) -> None:
         self._source = path
@@ -506,6 +564,7 @@ class Player(QObject):
         self._generation += 1
         self._position = 0
         self._duration = duration_hint_ms
+        self._forget_pauses()  # the engine drops its cuts on load
         self.position_changed.emit(0)
         self.duration_changed.emit(duration_hint_ms)
         self._cmd_load.emit(path, duration_hint_ms, self._generation)
@@ -515,6 +574,7 @@ class Player(QObject):
         self._generation += 1
         self._position = 0
         self._duration = 0
+        self._forget_pauses()
         self._cmd_unload.emit()
 
     def play(self) -> None:
@@ -566,6 +626,58 @@ class Player(QObject):
 
     def seek_cache_ready(self) -> None:
         self._cmd_seek_cache.emit()
+
+    def set_pauses(self, source: str, pauses: tuple[Span, ...]) -> None:
+        """The pauses found in `source` (from its waveform); ignored if another file is open."""
+        if source != self._source:
+            return
+        self._pauses = pauses
+        self._send_cuts()
+        self.silence_changed.emit()
+
+    def restore_silence_settings(self, skip: bool, keep_ms: int | None) -> None:
+        """The remembered setting at startup, applied without being reported back."""
+        self._skip_silence = skip
+        if keep_ms is not None:
+            self._keep_ms = clamp_keep(keep_ms)
+        self._send_cuts()
+        self.silence_changed.emit()
+
+    def set_skip_silence(self, skip: bool) -> None:
+        if skip == self._skip_silence:
+            return
+        self._skip_silence = skip
+        self._settle.stop()
+        self._send_cuts()
+        self.silence_changed.emit()
+        self.silence_settings_changed.emit(self._skip_silence, self._keep_ms)
+
+    def set_keep_pause(self, keep_ms: int) -> None:
+        """Takes effect on screen at once and in the audio once the value stops moving,
+        so dragging the slider does not restart the decoder at every step."""
+        keep_ms = clamp_keep(keep_ms)
+        if keep_ms == self._keep_ms:
+            return
+        self._keep_ms = keep_ms
+        self.silence_changed.emit()
+        self._settle.start()
+
+    def _settle_keep(self) -> None:
+        self._send_cuts()
+        self.silence_settings_changed.emit(self._skip_silence, self._keep_ms)
+
+    def _forget_pauses(self) -> None:
+        self._pauses = None
+        self._cuts = ()
+        self.silence_changed.emit()
+
+    def _send_cuts(self) -> None:
+        cuts = self.silence_cuts() if self._skip_silence and self._source else ()
+        if cuts == self._cuts:
+            return
+        self._cuts = cuts
+        self._generation += 1
+        self._cmd_cuts.emit(cuts, self._generation)
 
     def shutdown(self) -> None:
         if self._thread.isRunning():

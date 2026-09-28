@@ -1,4 +1,4 @@
-"""Player panel: waveform + transport (−10 s, play/pause, +10 s), clock and speed.
+"""Player panel: waveform + transport (−10 s, play/pause, +10 s), clock, speed and pause trimming.
 
 The shared `Player` (audio engine facade) is owned by the main window; this widget shows
 whichever voice is open and drives the player for it.
@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from podcast_workspace.audio.engine import SPEEDS, Player, PlayerState
+from podcast_workspace.audio.silence import find_pauses
 from podcast_workspace.audio.waveform import (
     ExtractionCancelledError,
     Waveform,
@@ -32,6 +33,7 @@ from podcast_workspace.audio.waveform import (
 )
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.player.icons import ICON_SIZE, pause_icon, play_icon, skip_icon
+from podcast_workspace.ui.player.silence_control import SilenceButton
 from podcast_workspace.ui.player.waveform_view import WaveformView
 from podcast_workspace.ui.support import format_clock, local_digits
 
@@ -80,10 +82,11 @@ def speed_label(speed: float) -> str:
 
 
 class _WaveformLoader(QObject):
-    """Runs waveform extraction on a plain thread; results arrive on the GUI thread."""
+    """Runs waveform extraction (and pause detection) on a plain thread; results arrive on
+    the GUI thread."""
 
     progress = Signal(int, object)
-    done = Signal(int, object)
+    done = Signal(int, object, object)  # token, Waveform, pauses
     failed = Signal(int, str)
 
     def __init__(self, parent: QObject) -> None:
@@ -100,12 +103,13 @@ class _WaveformLoader(QObject):
         def work() -> None:
             try:
                 waveform = extract(path, cancel, lambda w: self.progress.emit(token, w))
+                pauses = find_pauses(waveform)
             except ExtractionCancelledError:
                 return
             except Exception as exc:  # reported to the GUI thread, never swallowed
                 self.failed.emit(token, str(exc))
                 return
-            self.done.emit(token, waveform)
+            self.done.emit(token, waveform, pauses)
 
         threading.Thread(target=work, name="waveform", daemon=True).start()
         return token
@@ -171,6 +175,8 @@ class PlayerWidget(QFrame):
             self._speed_actions[value] = action
         self.speed.setMenu(menu)
         row.addWidget(self.speed)
+        self.silence = SilenceButton(player)
+        row.addWidget(self.silence)
         self.total = QLabel(format_clock(0), objectName="muted")
         self.total.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
         row.addWidget(self.total)
@@ -184,6 +190,7 @@ class PlayerWidget(QFrame):
         player.duration_changed.connect(self._on_duration)
         player.speed_changed.connect(self._on_speed)
         player.error.connect(self._on_error)
+        player.silence_changed.connect(self._show_cuts)
         self._paint_icons()
         self._on_speed(player.speed)
         self._set_enabled(False)
@@ -268,7 +275,7 @@ class PlayerWidget(QFrame):
         if self._loader.current(token):
             self.waveform.set_waveform(waveform)
 
-    def _on_wave_done(self, token: int, waveform: Waveform) -> None:
+    def _on_wave_done(self, token: int, waveform: Waveform, pauses: tuple) -> None:
         if not self._loader.current(token):
             return
         self.waveform.set_message("")
@@ -278,6 +285,13 @@ class PlayerWidget(QFrame):
         if waveform.duration_ms > 0 and self._voice_id is not None:
             self.player.set_exact_duration(waveform.duration_ms)
             self.exact_duration.emit(self._voice_id, waveform.duration_ms)
+        if self._path is not None:  # after the exact duration: trailing silence ends there
+            self.player.set_pauses(str(self._path), pauses)
+
+    def _show_cuts(self) -> None:
+        """Shade what playback skips, following the slider as it moves."""
+        skipping = self.is_current() and self.player.skip_silence
+        self.waveform.set_cuts(self.player.silence_cuts() if skipping else ())
 
     def _on_wave_failed(self, token: int, message: str) -> None:
         if self._loader.current(token):
@@ -285,7 +299,7 @@ class PlayerWidget(QFrame):
 
     # look -------------------------------------------------------------------------------
     def _set_enabled(self, enabled: bool) -> None:
-        for widget in (self.back, self.play, self.forward, self.speed):
+        for widget in (self.back, self.play, self.forward, self.speed, self.silence):
             widget.setEnabled(enabled)
         if not enabled:
             self.clock.setText(format_clock(0))

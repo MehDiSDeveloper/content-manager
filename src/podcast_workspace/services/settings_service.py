@@ -33,6 +33,7 @@ GEOMETRY_KEY = "ui.window_geometry"
 RECORDER_KEY = "recording.program_path"
 SOURCE_FOLDER_KEY = "voices.source_folder"
 SEASON_FILTER_KEY = "ui.episode_season_filter"
+TRIM_SILENCE_KEY = "player.trim_silence"
 BALE_TOKEN_KEY = "bale.token"
 BALE_ENABLED_KEY = "bale.enabled"
 BALE_OWNER_KEY = "bale.owner"
@@ -129,6 +130,17 @@ class SettingsService:
 
     def set_season_filter(self, value: str) -> None:
         self._set(SEASON_FILTER_KEY, value)
+
+    def trim_silence(self) -> tuple[bool, int | None]:
+        """Whether playback skips pauses, and the longest pause it keeps (None: never set)."""
+        value = self._get(TRIM_SILENCE_KEY)
+        if not isinstance(value, dict):
+            return False, None
+        keep = value.get("keep_ms")
+        return value.get("on") is True, keep if isinstance(keep, int) else None
+
+    def set_trim_silence(self, on: bool, keep_ms: int) -> None:
+        self._set(TRIM_SILENCE_KEY, {"on": bool(on), "keep_ms": int(keep_ms)})
 
     # Bale bot --------------------------------------------------------------------------
     def bale_token(self) -> str:

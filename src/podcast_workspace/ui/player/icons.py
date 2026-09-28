@@ -71,3 +71,23 @@ def skip_icon(color: QColor, forward: bool, label: str = "10") -> QIcon:
     p.drawText(rect.adjusted(0, 1, 0, 0), Qt.AlignmentFlag.AlignCenter, label)
     p.end()
     return QIcon(pixmap)
+
+
+def silence_icon(color: QColor) -> QIcon:
+    """Two runs of waveform bars with arrows squeezing out the pause between them."""
+    pixmap, p = _canvas()
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    for x, height in ((1.6, 6.0), (4.2, 11.0), (14.2, 9.0), (16.8, 5.0)):
+        p.drawRoundedRect(QRectF(x, 10 - height / 2, 1.7, height), 0.85, 0.85)
+    p.setPen(
+        QPen(color, 1.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+    )
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    for tip, back in ((9.0, 7.3), (11.0, 12.7)):
+        arrow = QPainterPath(QPointF(back, 7.6))
+        arrow.lineTo(tip, 10)
+        arrow.lineTo(back, 12.4)
+        p.drawPath(arrow)
+    p.end()
+    return QIcon(pixmap)
