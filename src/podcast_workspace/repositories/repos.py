@@ -373,6 +373,18 @@ class TimestampNoteRepository(SqlRepository[TimestampNote, TimestampNoteRow]):
         )
         return {voice_id: count for voice_id, count in rows}
 
+    def texts_by_voice(self) -> dict[int, str]:
+        """Voice id -> its notes' text in playback order, one per line (for searches)."""
+        rows = self.session.execute(
+            select(TimestampNoteRow.voice_id, TimestampNoteRow.text).order_by(
+                TimestampNoteRow.voice_id, TimestampNoteRow.position_ms, TimestampNoteRow.id
+            )
+        )
+        texts: dict[int, list[str]] = {}
+        for voice_id, note in rows:
+            texts.setdefault(voice_id, []).append(note)
+        return {voice_id: "\n".join(notes) for voice_id, notes in texts.items()}
+
 
 class EpisodeNoteRepository(SqlRepository[EpisodeNote, EpisodeNoteRow]):
     row_type = EpisodeNoteRow

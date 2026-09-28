@@ -246,6 +246,12 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
   HighlightedText (unreadable in dark). Lines/focus/markers use the Link role (accent_strong)
 
 ## Status
+- v1.12: search from the Bale bot (`services/bale_search.py`, ranking in
+  `domain/pocket_search.py`): «؟ words #tag», /search (tag menu, next text is the query) or
+  «🔍 جستجو» under the save question. Same matching as the Ideas page, content always read
+  (idea text, voice notes + transcript); named hits before content hits, newest first. Five per
+  page; a number sends the idea's text or uploads the voice (file id cached per run); tag
+  buttons narrow in place, ✖ loosens. Searches live in memory, archived items included (🗄)
 - v1.11: transcript copy as paragraphs, with or without header and times; the Bale bot asks
   before saving a text idea too, and a «no» stores nothing
 - v1.10: multi-select on the Ideas page (Ctrl/Shift+click, Ctrl+A): a selection pane

@@ -4,16 +4,52 @@ Conventions (messenger style):
 - `#name` is a tag; `_` inside a hashtag stands for a space (#روان_شناسی -> "روان شناسی").
 - A message made only of hashtags tags the last received item instead of creating an idea.
 - A free-text tag reply may separate names with commas, «،», «؛», new lines or hashtags.
+- A message starting with «؟» (or «?») is a search, not an idea.
 """
 
 import re
 from dataclasses import dataclass
+from enum import StrEnum
 
 from podcast_workspace.domain.rules import MAX_TAG_NAME_LENGTH, normalize_persian
 
 # A hashtag starts at a word boundary and runs until whitespace or punctuation (not _ or ZWNJ).
 _HASHTAG = re.compile(r"(?:(?<=\s)|^)[#＃]([^\s#＃,،;؛.!?؟:«»()\[\]{}\"']+)")
 _LIST_SEPARATORS = re.compile(r"[,،;؛\n\r#＃]+")
+
+
+_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
+SEARCH_MARKS = ("؟", "?")
+
+
+class ItemKind(StrEnum):
+    IDEA = "i"
+    VOICE = "v"
+
+
+@dataclass(frozen=True)
+class ItemRef:
+    """A workspace item as the bot refers to it (also inside button callback data)."""
+
+    kind: ItemKind
+    item_id: int
+
+
+def persian_digits(value: object) -> str:
+    return str(value).translate(_FA_DIGITS)
+
+
+def shorten(text: str, width: int = 80) -> str:
+    flat = " ".join(text.split())
+    return flat if len(flat) <= width else flat[:width].rstrip() + "…"
+
+
+def search_query(text: str) -> str | None:
+    """The query of a «؟ ...» message (possibly empty), None for any other message."""
+    stripped = text.strip()
+    if stripped.startswith(SEARCH_MARKS):
+        return stripped[1:].strip()
+    return None
 
 
 @dataclass(frozen=True)

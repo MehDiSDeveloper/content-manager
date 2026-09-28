@@ -59,6 +59,7 @@ class Workspace:
             self.voices,
             self.tags,
             self.timestamp_notes,
+            self.transcripts,
             self.history,
         )
 

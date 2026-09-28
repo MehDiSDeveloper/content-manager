@@ -11,6 +11,8 @@ import requests
 
 API_BASE = "https://tapi.bale.ai"
 MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024  # Bale's getFile limit for bots
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # what a bot may send
+UPLOAD_TIMEOUT_S = 300
 CONNECT_TIMEOUT_S = 10
 
 
@@ -45,11 +47,21 @@ class BaleClient:
     def close(self) -> None:
         self._http.close()
 
-    def call(self, method: str, read_timeout: float = 30, **params: Any) -> Any:
+    def call(
+        self,
+        method: str,
+        read_timeout: float = 30,
+        files: dict[str, Any] | None = None,
+        **params: Any,
+    ) -> Any:
+        """`files` (field -> (name, open file)) turns the request into a multipart upload."""
         url = f"{API_BASE}/bot{self._token}/{method}"
         payload = {k: v for k, v in params.items() if v is not None}
+        body_args: dict[str, Any] = (
+            {"data": payload, "files": files} if files else {"json": payload}
+        )
         try:
-            response = self._http.post(url, json=payload, timeout=(CONNECT_TIMEOUT_S, read_timeout))
+            response = self._http.post(url, timeout=(CONNECT_TIMEOUT_S, read_timeout), **body_args)
         except requests.RequestException as exc:
             raise BaleNetworkError(str(exc)) from exc
         if response.status_code in (401, 403, 404) and not _looks_like_json(response):
@@ -111,6 +123,23 @@ class BaleClient:
         self.call(
             "answerCallbackQuery", callback_query_id=callback_id, text=text, show_alert=show_alert
         )
+
+    def send_file(
+        self, chat_id: int, field: str, file: Path | str, caption: str | None = None
+    ) -> dict[str, Any]:
+        """sendAudio / sendVoice / sendDocument, by `field` ("audio", "voice", "document").
+        `file` is a local file to upload, or the file_id of one Bale already has."""
+        method = "send" + field.capitalize()
+        if isinstance(file, str):
+            return self.call(method, chat_id=chat_id, caption=caption, **{field: file})
+        with file.open("rb") as handle:
+            return self.call(
+                method,
+                read_timeout=UPLOAD_TIMEOUT_S,
+                files={field: (file.name, handle)},
+                chat_id=chat_id,
+                caption=caption,
+            )
 
     def get_file(self, file_id: str) -> dict[str, Any]:
         return self.call("getFile", file_id=file_id)

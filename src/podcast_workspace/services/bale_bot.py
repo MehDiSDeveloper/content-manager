@@ -11,6 +11,8 @@
   ideas (caption hashtags become tags, the rest of the caption a TimestampNote at 0:00).
 - Tags: inline keyboard of the 20 most-used tags (toggle), or free text / hashtags, which go
   through TagService.resolve_or_create so no near-duplicate tag is ever created.
+- Search (`services/bale_search.py`): «؟ words #tag», /search, or «🔍 جستجو» under the save
+  question finds ideas and voices; a result opens as the idea's text or the voice's audio.
 - The first private chat to message the bot becomes its owner; anyone else is refused.
 - Network or API trouble never escapes the worker: it reports a status and retries.
 """
@@ -26,7 +28,15 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from podcast_workspace.domain.bot_input import parse_message, split_tag_list
+from podcast_workspace.domain.bot_input import (
+    ItemKind,
+    ItemRef,
+    parse_message,
+    persian_digits,
+    search_query,
+    shorten,
+    split_tag_list,
+)
 from podcast_workspace.domain.errors import DomainError, NotFoundError
 from podcast_workspace.domain.rules import MAX_TAGS_PER_ITEM
 from podcast_workspace.integrations.bale_api import (
@@ -38,6 +48,8 @@ from podcast_workspace.integrations.bale_api import (
 )
 from podcast_workspace.paths import bale_voices_dir
 from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS
+from podcast_workspace.services.bale_search import PREFIX as SEARCH_PREFIX
+from podcast_workspace.services.bale_search import SearchFlow
 from podcast_workspace.services.content_services import (
     IdeaService,
     TimestampNoteService,
@@ -46,6 +58,7 @@ from podcast_workspace.services.content_services import (
 from podcast_workspace.services.history import HistoryService
 from podcast_workspace.services.settings_service import BotOwner, SettingsService
 from podcast_workspace.services.tag_service import TagService
+from podcast_workspace.services.transcription import TranscriptionService
 
 log = logging.getLogger(__name__)
 
@@ -58,8 +71,8 @@ MAX_PROMPTS_REMEMBERED = 50
 MAX_PENDING = 50
 SAVE_YES = "iy"
 SAVE_NO = "in"
+SAVE_SEARCH = "is"  # search for the text instead of saving it
 
-_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 _MIME_EXTENSIONS = {
     "audio/ogg": ".ogg",
     "audio/opus": ".opus",
@@ -85,7 +98,8 @@ T_WELCOME = (
     "پیش از ذخیره می‌پرسم که ذخیره شود یا نه.\n"
     "• برچسب: روی دکمه‌ها بزنید یا نامش را با # بفرستید (مثلاً #روان_شناسی).\n"
     "• پیامی که فقط هشتگ دارد، به آخرین مورد برچسب می‌زند.\n"
-    "/cancel لغو انتظار برای برچسب"
+    "• جستجو: پیام را با ؟ شروع کنید (مثلاً «؟ خواب #سلامت») یا /search را بزنید.\n"
+    "/cancel لغو انتظار برای برچسب یا جستجو"
 )
 T_PRIVATE = "این بازو خصوصی است."
 T_ONLY_TEXT_AND_VOICE = "فقط پیام متنی (ایدهٔ متنی) و صوتی (ایدهٔ صوتی) ذخیره می‌شود."
@@ -123,6 +137,7 @@ T_BUTTON_IMPORT_YES = "✅ اضافه شود"
 T_TEXT_ASK = "ایدهٔ متنی ذخیره شود؟\n«{summary}»"
 T_BUTTON_SAVE_YES = "✅ ذخیره شود"
 T_BUTTON_NO = "❌ نه"
+T_BUTTON_SEARCH = "🔍 جستجو"
 T_IMPORT_ACCEPTED = "✅ در حال افزودن…"
 T_DECLINED = "ذخیره نشد."
 T_TEXT_DECLINED = "❌ ذخیره نشد: «{summary}»"
@@ -137,17 +152,6 @@ class BotStatus(StrEnum):
     ONLINE = "online"
     OFFLINE = "offline"  # no network / server trouble; retrying
     UNAUTHORIZED = "unauthorized"  # token rejected; waits for a new token
-
-
-class ItemKind(StrEnum):
-    IDEA = "i"
-    VOICE = "v"
-
-
-@dataclass(frozen=True)
-class ItemRef:
-    kind: ItemKind
-    item_id: int
 
 
 StatusCallback = Callable[[BotStatus, str], None]
@@ -170,7 +174,9 @@ class TagReport:
             out.append(T_CORRECTED.format(pairs=pairs))
         if self.dropped:
             out.append(
-                T_DROPPED.format(limit=_fa(MAX_TAGS_PER_ITEM), names="، ".join(self.dropped))
+                T_DROPPED.format(
+                    limit=persian_digits(MAX_TAGS_PER_ITEM), names="، ".join(self.dropped)
+                )
             )
         if self.invalid:
             out.append(T_INVALID.format(names="، ".join(self.invalid)))
@@ -199,18 +205,10 @@ class _PendingText:
 class _ChatState:
     last_item: ItemRef | None = None
     awaiting_tags: ItemRef | None = None
+    awaiting_query: bool = False  # after /search: the next text is what to look for
     active_prompt: _Prompt | None = None
     prompts: dict[int, _Prompt] = field(default_factory=dict)
     pending: dict[int, _PendingVoice | _PendingText] = field(default_factory=dict)  # by question
-
-
-def _fa(value: object) -> str:
-    return str(value).translate(_FA_DIGITS)
-
-
-def _shorten(text: str, width: int = 80) -> str:
-    flat = " ".join(text.split())
-    return flat if len(flat) <= width else flat[:width].rstrip() + "…"
 
 
 class BaleBotService:
@@ -224,6 +222,7 @@ class BaleBotService:
         voices: VoiceService,
         tags: TagService,
         timestamp_notes: TimestampNoteService,
+        transcripts: TranscriptionService,
         history: HistoryService,
     ) -> None:
         self._settings = settings
@@ -231,6 +230,7 @@ class BaleBotService:
         self._voices = voices
         self._tags = tags
         self._notes = timestamp_notes
+        self._transcripts = transcripts
         self.history = history
         self._worker: _Worker | None = None
         self.status = BotStatus.STOPPED
@@ -285,6 +285,17 @@ class _Worker(threading.Thread):
         self._stop_event = threading.Event()
         self._status: BotStatus | None = None
         self._chats: dict[int, _ChatState] = {}
+        self._search = SearchFlow(
+            client,
+            self._send,
+            self._edit,
+            self._answer,
+            service._ideas,
+            service._voices,
+            service._tags,
+            service._notes,
+            service._transcripts,
+        )
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -430,7 +441,10 @@ class _Worker(threading.Thread):
         state = self._state(chat_id)
         if command == "/cancel":
             state.awaiting_tags = None
+            state.awaiting_query = False
             self._send(chat_id, T_CANCELLED)
+        elif command == "/search":
+            self._open_search_menu(chat_id)
         else:  # /start, /help and anything unknown
             self._send(chat_id, T_WELCOME)
 
@@ -447,8 +461,25 @@ class _Worker(threading.Thread):
                 return {**document, "_kind": "document"}
         return None
 
+    def _open_search_menu(self, chat_id: int) -> None:
+        state = self._state(chat_id)
+        state.awaiting_tags = None
+        state.awaiting_query = True
+        self._search.menu(chat_id)
+
     def _receive_text(self, chat_id: int, text: str) -> None:
         state = self._state(chat_id)
+        query = search_query(text)
+        if query is None and state.awaiting_query:
+            query = text
+        state.awaiting_query = False
+        if query == "":
+            self._open_search_menu(chat_id)
+            return
+        if query is not None:
+            state.awaiting_tags = None
+            self._search.search(chat_id, query)
+            return
         if state.awaiting_tags is not None:
             target, state.awaiting_tags = state.awaiting_tags, None
             names = split_tag_list(text)
@@ -465,8 +496,9 @@ class _Worker(threading.Thread):
         self._ask_save(
             chat_id,
             _PendingText(text),
-            T_TEXT_ASK.format(summary=_shorten(parsed.text)),
+            T_TEXT_ASK.format(summary=shorten(parsed.text)),
             T_BUTTON_SAVE_YES,
+            searchable=True,
         )
 
     def _save_text(self, chat_id: int, message_id: int, pending: _PendingText) -> None:
@@ -508,16 +540,19 @@ class _Worker(threading.Thread):
         self._ask_save(chat_id, _PendingVoice(target, caption), T_IMPORT_ASK, T_BUTTON_IMPORT_YES)
 
     def _ask_save(
-        self, chat_id: int, pending: _PendingVoice | _PendingText, question: str, yes: str
+        self,
+        chat_id: int,
+        pending: _PendingVoice | _PendingText,
+        question: str,
+        yes: str,
+        searchable: bool = False,
     ) -> None:
-        markup = {
-            "inline_keyboard": [
-                [
-                    {"text": yes, "callback_data": SAVE_YES},
-                    {"text": T_BUTTON_NO, "callback_data": SAVE_NO},
-                ]
-            ]
-        }
+        """`searchable` adds «🔍 جستجو»: a text meant as a query needs no /search first."""
+        buttons = [{"text": yes, "callback_data": SAVE_YES}]
+        if searchable:
+            buttons.append({"text": T_BUTTON_SEARCH, "callback_data": SAVE_SEARCH})
+        buttons.append({"text": T_BUTTON_NO, "callback_data": SAVE_NO})
+        markup = {"inline_keyboard": [buttons]}
         message_id = self._send(chat_id, question, markup)
         if message_id is None:  # couldn't even ask
             self._discard(pending)
@@ -535,7 +570,7 @@ class _Worker(threading.Thread):
         return True
 
     def _on_save_decision(
-        self, callback_id: str, chat_id: int, message_id: int, accept: bool
+        self, callback_id: str, chat_id: int, message_id: int, decision: str
     ) -> None:
         state = self._state(chat_id)
         pending = state.pending.pop(message_id, None)
@@ -544,11 +579,15 @@ class _Worker(threading.Thread):
             # asked before a restart (or fell off the cap) and is gone.
             self._answer(callback_id, None if message_id in state.prompts else T_ASK_EXPIRED)
             return
-        if not accept:
+        if decision == SAVE_SEARCH and isinstance(pending, _PendingText):
+            self._answer(callback_id)
+            self._search.search(chat_id, pending.text, reuse_message_id=message_id)
+            return
+        if decision != SAVE_YES:
             kept_file = not self._discard(pending)
             self._answer(callback_id, T_DECLINED)
             if isinstance(pending, _PendingText):
-                summary = _shorten(parse_message(pending.text).text)
+                summary = shorten(parse_message(pending.text).text)
                 self._edit(chat_id, message_id, T_TEXT_DECLINED.format(summary=summary))
             else:
                 reply = T_IMPORT_MOVE_FAILED if kept_file else T_IMPORT_MOVED
@@ -682,17 +721,20 @@ class _Worker(threading.Thread):
     # prompt with inline keyboard -------------------------------------------------------
     def _summary(self, ref: ItemRef) -> str:
         if ref.kind is ItemKind.IDEA:
-            return f"«{_shorten(self._svc._ideas.get(ref.item_id).text)}»"
+            return f"«{shorten(self._svc._ideas.get(ref.item_id).text)}»"
         voice = self._svc._voices.get(ref.item_id)
         seconds = voice.duration_ms // 1000
-        return f"{Path(voice.file_path).name} ({_fa(f'{seconds // 60}:{seconds % 60:02d}')})"
+        clock = persian_digits(f"{seconds // 60}:{seconds % 60:02d}")
+        return f"{Path(voice.file_path).name} ({clock})"
 
     def _tags_line(self, tag_ids: set[int]) -> str:
         names = [t.name for t in self._svc._tags.by_ids(tag_ids)]
         if not names:
             return T_TAGS_NONE
         return T_TAGS_LINE.format(
-            n=_fa(len(names)), limit=_fa(MAX_TAGS_PER_ITEM), names="، ".join(sorted(names))
+            n=persian_digits(len(names)),
+            limit=persian_digits(MAX_TAGS_PER_ITEM),
+            names="، ".join(sorted(names)),
         )
 
     def _prompt_text(self, ref: ItemRef, header: str, report: TagReport | None) -> str:
@@ -772,10 +814,14 @@ class _Worker(threading.Thread):
             return
         chat_id, message_id = int(chat["id"]), int(message.get("message_id") or 0)
         data = str(query.get("data") or "")
-        if data in (SAVE_YES, SAVE_NO):
-            self._on_save_decision(callback_id, chat_id, message_id, data == SAVE_YES)
+        if data in (SAVE_YES, SAVE_NO, SAVE_SEARCH):
+            self._on_save_decision(callback_id, chat_id, message_id, data)
             return
         parts = data.split("|")
+        if parts[0] == SEARCH_PREFIX:
+            self._state(chat_id).awaiting_query = False  # a tap answered /search instead
+            self._search.on_callback(callback_id, chat_id, message_id, parts[1:])
+            return
         try:
             ref = ItemRef(ItemKind(parts[1]), int(parts[2]))
         except (IndexError, ValueError):
@@ -813,7 +859,9 @@ class _Worker(threading.Thread):
             current.discard(tag_id)
             note = T_TAG_REMOVED.format(name=tag.name)
         elif len(current) >= MAX_TAGS_PER_ITEM:
-            self._answer(callback_id, T_LIMIT_ALERT.format(limit=_fa(MAX_TAGS_PER_ITEM)), True)
+            self._answer(
+                callback_id, T_LIMIT_ALERT.format(limit=persian_digits(MAX_TAGS_PER_ITEM)), True
+            )
             return
         else:
             current.add(tag_id)

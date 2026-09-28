@@ -861,6 +861,10 @@ class TimestampNoteService:
         with UnitOfWork(self._sf) as uow:
             return uow.timestamp_notes.counts_by_voice()
 
+    def texts_by_voice(self) -> dict[int, str]:
+        with UnitOfWork(self._sf) as uow:
+            return uow.timestamp_notes.texts_by_voice()
+
     def add(self, voice_id: int, position_ms: int, text: str) -> TimestampNote:
         with UnitOfWork(self._sf) as uow:
             uow.voices.get(voice_id)  # NotFoundError if the voice is gone
