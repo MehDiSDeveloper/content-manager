@@ -31,6 +31,7 @@ from podcast_workspace.services.source_folder import SourceFolderService
 from podcast_workspace.services.tag_service import TagService
 from podcast_workspace.services.transcription import TranscriptionService
 from podcast_workspace.services.trash import TrashService
+from podcast_workspace.services.voice_render import VoiceRenderService
 
 
 class Workspace:
@@ -46,6 +47,7 @@ class Workspace:
         self.episode_notes = EpisodeNoteService(session_factory, self.history)
         self.ideas = IdeaService(session_factory, self.history)
         self.voices = VoiceService(session_factory, self.history)
+        self.voice_render = VoiceRenderService(session_factory)
         self.timestamp_notes = TimestampNoteService(session_factory, self.history)
         self.trash = TrashService(session_factory)
         self.source = SourceFolderService(self.settings, self.voices)

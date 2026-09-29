@@ -585,6 +585,24 @@ class Player(QObject):
     def muted(self) -> bool:
         return self._muted or self._volume == 0
 
+    @property
+    def level(self) -> int:
+        """The set level, 0–100, mute aside: the level saving a voice "as heard" applies."""
+        return self._volume or self._last_audible
+
+    @property
+    def level_gain(self) -> float:
+        """`level` as a linear gain (what the sink gets for it)."""
+        return QtAudio.convertVolume(
+            self.level / MAX_VOLUME,
+            QtAudio.VolumeScale.LogarithmicVolumeScale,
+            QtAudio.VolumeScale.LinearVolumeScale,
+        )
+
+    def active_cuts(self) -> tuple[Span, ...]:
+        """What playback skips right now: nothing while trimming is off."""
+        return self.silence_cuts() if self._skip_silence else ()
+
     def silence_cuts(self) -> tuple[Span, ...]:
         """What the current keep setting skips in this file, whether or not skipping is on."""
         return cuts_for(self._pauses or (), self._keep_ms, self._duration)

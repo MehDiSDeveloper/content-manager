@@ -97,6 +97,7 @@ from podcast_workspace.ui.widgets.episode_links import EpisodeLinksRow, EpisodeM
 from podcast_workspace.ui.widgets.facet_search import FacetSearchBar, FacetState
 from podcast_workspace.ui.widgets.key_hint import attach_key_hint
 from podcast_workspace.ui.widgets.name_conflict import ask_name_choices
+from podcast_workspace.ui.widgets.save_as_heard import SaveAsHeard
 from podcast_workspace.ui.widgets.scope_switch import ChoiceSwitch, ScopeSwitch
 from podcast_workspace.ui.widgets.tag_input import TagInput
 
@@ -292,6 +293,7 @@ class VoicePane(QWidget):
     settings_requested = Signal()
     voice_changed = Signal(object)  # Voice whose row should be redrawn
     transcript_changed = Signal(int)  # voice id
+    saved_as_heard = Signal(object, bool, bool)  # Voice to show, saved, replaced
 
     def __init__(
         self,
@@ -366,6 +368,14 @@ class VoicePane(QWidget):
         show = QPushButton(strings.VOICE_SHOW_IN_FOLDER)
         show.clicked.connect(self._show_in_folder)
         actions.addWidget(show)
+        self.save_as_heard = QPushButton(strings.VOICE_SAVE_AS_HEARD)
+        self.save_as_heard.setToolTip(strings.VOICE_SAVE_AS_HEARD_TOOLTIP)
+        self._saver = SaveAsHeard(self, workspace, self.player)
+        self._saver.finished.connect(self.saved_as_heard)
+        self.save_as_heard.clicked.connect(
+            lambda: self.voice is not None and self._saver.start(self.voice)
+        )
+        actions.addWidget(self.save_as_heard)
         actions.addStretch(1)
         shelf.add_buttons(actions)
         col.addLayout(actions)
@@ -375,7 +385,9 @@ class VoicePane(QWidget):
         self.voice = voice
         self.name.setText(Path(voice.file_path).name)
         self.path.set_path(voice.file_path)
-        self.missing.setVisible(not Path(voice.file_path).exists())
+        exists = Path(voice.file_path).exists()
+        self.missing.setVisible(not exists)
+        self.save_as_heard.setEnabled(exists)
         self.meta.setText(self._meta_text(voice))
         self.shelf.sync(voice)
         self.tag_input.set_tag_ids(voice.tag_ids)
@@ -721,6 +733,7 @@ class IdeasPage(ShelfListPage):
         self.voice_pane.settings_requested.connect(self.settings_requested)
         self.voice_pane.voice_changed.connect(lambda v: self.update_row(self._voice_row(v)))
         self.voice_pane.transcript_changed.connect(self._on_transcript_changed)
+        self.voice_pane.saved_as_heard.connect(self._on_saved_as_heard)
         self.panes.addWidget(self.voice_pane)
         self.text_pane = TextPane(
             workspace, events, ShelfControls(self.toggle_current, self.trash_current)
@@ -1069,6 +1082,20 @@ class IdeasPage(ShelfListPage):
         self._events.data_changed.emit()
         first = report.imported[0].id if report.imported else None
         self.refresh(select_id=None if first is None else audio_key(first))
+
+    def _on_saved_as_heard(self, voice: Voice, saved: bool, replaced: bool) -> None:
+        """A voice written out as it plays: show the new one (or the replaced one, or after
+        a cancel the original, which the player let go of) like a fresh import."""
+        if saved:
+            self._events.data_changed.emit()
+            name = strings.QUOTE.format(text=Path(voice.file_path).name)
+            template = strings.VOICE_SAVED_REPLACED if replaced else strings.VOICE_SAVED_NEW
+            self.status.setText(template.format(name=name))
+            QTimer.singleShot(8000, lambda: self.status.setText(""))
+            if self.scope is ArchiveScope.ARCHIVED:  # a new copy is an active voice
+                self.set_scope(ArchiveScope.ACTIVE)
+            self._show_kind(IdeaKind.AUDIO)
+        self.refresh(select_id=audio_key(voice.id or 0))
 
     def _on_import_failed(self, exc: BaseException) -> None:
         self.import_button.setEnabled(True)

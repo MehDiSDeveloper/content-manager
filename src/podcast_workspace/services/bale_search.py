@@ -10,19 +10,26 @@ other word is looked for in titles, tag names and content (`domain/pocket_search
 
 A result message lists five per page, numbered across pages. A number opens its item: an
 idea comes back as its full text, a voice as the audio itself (uploaded once, then resent by
-Bale's file id). Tag buttons narrow the results in the same message, ✖ loosens them again;
-taking the last one away leads back to the tag menu.
+Bale's file id). The voice goes with its pauses trimmed the way the player trims them, at
+the remembered pause setting (`services/voice_render.py`), and the note times in its
+caption follow the trimmed audio. One whose pauses cannot be read goes as it is.
+
+Tag buttons narrow the results in the same message, ✖ loosens them again; taking the last
+one away leads back to the tag menu.
 
 Searches are remembered per message, in memory only: after a restart their tag and page
 buttons ask for a new search. Opening an item still works, since its button names the item.
 """
 
 import logging
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from podcast_workspace.audio.render import trimmed_ms
+from podcast_workspace.audio.silence import Span, total_ms
 from podcast_workspace.domain.bot_input import (
     ItemKind,
     ItemRef,
@@ -48,6 +55,7 @@ from podcast_workspace.services.content_services import (
 )
 from podcast_workspace.services.tag_service import TagService
 from podcast_workspace.services.transcription import TranscriptionService
+from podcast_workspace.services.voice_render import trimmed_for_sending
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +86,7 @@ T_FILE_TOO_LARGE = "این فایل بیش از ۵۰ مگابایت است و ب
 T_SEND_FAILED = "فرستادن فایل ممکن نشد؛ دوباره امتحان کنید."
 T_TAGS = "🏷 {names}"
 T_ARCHIVED = "🗄 بایگانی‌شده"
+T_TRIMMED = "✂️ مکث‌ها کوتاه شد: {saved} کمتر"
 ICON_IDEA = "💡"
 ICON_VOICE = "🎙"
 ICON_ARCHIVED = "🗄"
@@ -139,6 +148,7 @@ class SearchFlow:
         tags: TagService,
         notes: TimestampNoteService,
         transcripts: TranscriptionService,
+        keep_pause_ms: Callable[[], int],
     ) -> None:
         self._client = client
         self._send = send
@@ -149,8 +159,11 @@ class SearchFlow:
         self._tags = tags
         self._notes = notes
         self._transcripts = transcripts
+        self._keep_pause_ms = keep_pause_ms
         self._searches: dict[tuple[int, int], _Search] = {}  # by (chat, message)
-        self._file_ids: dict[int, tuple[str, str]] = {}  # voice id -> (field, Bale file id)
+        # What Bale already has, by (voice id, pause setting, file time): the upload field,
+        # Bale's file id, and the stretches that upload left out.
+        self._sent: dict[tuple[int, int, int], tuple[str, str, tuple[Span, ...]]] = {}
 
     # entry points ----------------------------------------------------------------------
     def menu(self, chat_id: int) -> None:
@@ -356,32 +369,60 @@ class SearchFlow:
             return
         self._answer(callback_id, T_SENDING, False)
         path = Path(item.file_path)
-        notes = [
-            f"{_clock(n.position_ms)} {n.text}" for n in self._notes.list_for_voice(ref.item_id)
-        ]
-        head = f"{ICON_VOICE} {path.name} · {_clock(item.duration_ms)}"
-        caption = "\n\n".join(p for p in [head, "\n".join(extra), "\n".join(notes)] if p)
-        if len(caption) > MAX_CAPTION:
-            caption = caption[:MAX_CAPTION].rstrip() + "…"
-        self._send_voice(chat_id, ref.item_id, path, caption)
-
-    def _send_voice(self, chat_id: int, voice_id: int, path: Path, caption: str) -> None:
-        cached = self._file_ids.get(voice_id)
+        try:
+            key = (ref.item_id, self._keep_pause_ms(), path.stat().st_mtime_ns)
+        except OSError:
+            self._send(chat_id, T_FILE_MISSING.format(name=path.name), None)
+            return
+        cached = self._sent.get(key)
         if cached is not None:
+            upload_field, file_id, cuts = cached
+            caption = self._caption(ref.item_id, path, item.duration_ms, cuts, extra)
             try:
-                self._client.send_file(chat_id, cached[0], cached[1], caption)
+                self._client.send_file(chat_id, upload_field, file_id, caption)
                 return
             except BaleError:
                 log.warning("resending by file id failed; uploading again", exc_info=True)
-                self._file_ids.pop(voice_id, None)
+                self._sent.pop(key, None)
+        with tempfile.TemporaryDirectory(prefix="bale-send-") as folder:
+            try:
+                upload, cuts = trimmed_for_sending(path, key[1], Path(folder))
+            except Exception:  # pauses that cannot be read must not keep the voice back
+                log.warning("could not trim %s; sending it as it is", path, exc_info=True)
+                upload, cuts = path, ()
+            caption = self._caption(ref.item_id, path, item.duration_ms, cuts, extra)
+            sent = self._upload(chat_id, upload, caption)
+        if sent is not None:
+            self._sent[key] = (*sent, cuts)
+
+    def _caption(
+        self, voice_id: int, path: Path, duration_ms: int, cuts: tuple[Span, ...], extra: list[str]
+    ) -> str:
+        """Name, length, tags and notes, with the times as they fall in the audio sent."""
+        notes = [
+            f"{_clock(trimmed_ms(n.position_ms, cuts))} {n.text}"
+            for n in self._notes.list_for_voice(voice_id)
+        ]
+        saved = total_ms(cuts)
+        head = f"{ICON_VOICE} {path.name} · {_clock(duration_ms - saved)}"
+        if saved:
+            head += "\n" + T_TRIMMED.format(saved=_clock(saved))
+        caption = "\n\n".join(p for p in [head, "\n".join(extra), "\n".join(notes)] if p)
+        if len(caption) > MAX_CAPTION:
+            caption = caption[:MAX_CAPTION].rstrip() + "…"
+        return caption
+
+    def _upload(self, chat_id: int, path: Path, caption: str) -> tuple[str, str] | None:
+        """Send `path` as a voice, an audio or a plain file. The field and Bale's file id,
+        when Bale says what it stored."""
         try:
             size = path.stat().st_size
         except OSError:
             self._send(chat_id, T_FILE_MISSING.format(name=path.name), None)
-            return
+            return None
         if size > MAX_UPLOAD_BYTES:
             self._send(chat_id, T_FILE_TOO_LARGE.format(name=path.name), None)
-            return
+            return None
         preferred = _UPLOAD_FIELDS.get(path.suffix.lower(), "document")
         for upload_field in dict.fromkeys((preferred, "document")):
             try:
@@ -393,10 +434,9 @@ class SearchFlow:
                 log.warning("voice upload failed", exc_info=True)
                 break
             file_id = self._file_id(sent, upload_field)
-            if file_id:
-                self._file_ids[voice_id] = (upload_field, file_id)
-            return
+            return (upload_field, file_id) if file_id else None
         self._send(chat_id, T_SEND_FAILED, None)
+        return None
 
     @staticmethod
     def _file_id(message: Any, upload_field: str) -> str | None:

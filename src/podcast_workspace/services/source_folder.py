@@ -15,7 +15,12 @@ from podcast_workspace.domain.entities import Voice
 from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS
 from podcast_workspace.services.content_services import ImportReport, VoiceService
 from podcast_workspace.services.settings_service import SettingsService
-from podcast_workspace.services.voice_store import NameChoice, path_key, same_file
+from podcast_workspace.services.voice_store import (
+    MTIME_SLACK_S,
+    NameChoice,
+    path_key,
+    same_file,
+)
 
 # A folder picked by mistake (a whole drive, Documents) must not hang the page.
 MAX_FILES = 3000
@@ -30,6 +35,18 @@ class SourceFile:
     @property
     def name(self) -> str:
         return self.path.name
+
+
+def _still_known(copy: Path, original: Path, original_mtime: float) -> bool:
+    """The stored copy is of this very file: the same file, or one written from it later
+    (saved over with its pauses trimmed). A new take under a reused name is newer than the
+    copy of the old one."""
+    if same_file(copy, original):
+        return True
+    try:
+        return original_mtime + MTIME_SLACK_S < copy.stat().st_mtime
+    except OSError:
+        return False
 
 
 class SourceFolderService:
@@ -66,13 +83,15 @@ class SourceFolderService:
                 if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
                     continue
                 key = path_key(path)
-                if key in known or (key in copies and same_file(copies[key], path)):
+                if key in known:
                     continue
                 try:
                     stat = path.stat()
                 except OSError:
                     continue  # vanished or locked while we looked
                 modified = datetime.fromtimestamp(stat.st_mtime, UTC)
+                if key in copies and _still_known(copies[key], path, stat.st_mtime):
+                    continue
                 found.append(SourceFile(path, stat.st_size, modified))
                 if len(found) >= MAX_FILES:
                     break

@@ -28,6 +28,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from podcast_workspace.audio.silence import DEFAULT_KEEP_MS
 from podcast_workspace.domain.bot_input import (
     ItemKind,
     ItemRef,
@@ -235,6 +236,11 @@ class BaleBotService:
         self._worker: _Worker | None = None
         self.status = BotStatus.STOPPED
 
+    def keep_pause_ms(self) -> int:
+        """The pause length the player keeps, which voices sent back are trimmed to."""
+        keep = self._settings.silence_keep_ms()
+        return DEFAULT_KEEP_MS if keep is None else keep
+
     def start(self, on_status: StatusCallback, on_item: ItemCallback) -> bool:
         """Start polling if enabled and a token is set. Returns whether it started."""
         self.stop()
@@ -295,6 +301,7 @@ class _Worker(threading.Thread):
             service._tags,
             service._notes,
             service._transcripts,
+            service.keep_pause_ms,
         )
 
     def stop(self) -> None:
