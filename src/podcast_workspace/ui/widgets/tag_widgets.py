@@ -55,7 +55,8 @@ class TagChip(QFrame):
         if removable:
             close = QToolButton(text="×", objectName="chipClose")
             close.setToolTip(strings.TAG_REMOVE_TOOLTIP)
-            close.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # keyboard: Backspace in the input
+            # Tab reaches it; Backspace in the input never eats an attached tag.
+            close.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             close.setCursor(Qt.CursorShape.PointingHandCursor)
             close.clicked.connect(lambda: self.remove_requested.emit(self.tag_id))
             row.addWidget(close)

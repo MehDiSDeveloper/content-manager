@@ -330,7 +330,7 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     #hitTitle {{ font-size: 11pt; font-weight: 600; color: {c.text}; }}
     #hitSnippet {{ color: {c.muted}; }}
     #chipClose {{ border: none; background: transparent; color: {c.muted}; padding: 0 4px; }}
-    #chipClose:hover {{ color: {c.danger}; }}
+    #chipClose:hover, #chipClose:focus {{ color: {c.danger}; }}
     /* A kept search phrase: the accent's tint, so it never reads as one of the tags. */
     #phraseChip {{
         background: {c.accent_soft}; border: 1px solid {c.accent}; border-radius: 11px;

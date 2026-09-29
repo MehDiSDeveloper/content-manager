@@ -181,9 +181,6 @@ class TagInput(QWidget):
                 self.edit.clear()
                 self._list.setVisible(False)
                 return True
-            if key == Qt.Key.Key_Backspace and not self.edit.text() and self._ids:
-                self._remove(self._ids[-1])
-                return True
         if watched is self.edit and event.type() == QEvent.Type.FocusOut:
             self._list.setVisible(False)
         return super().eventFilter(watched, event)
