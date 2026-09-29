@@ -33,8 +33,10 @@ from podcast_workspace.audio.ffmpeg import (
 from podcast_workspace.audio.silence import DEFAULT_KEEP_MS, Span, Splicer, clamp_keep, cuts_for
 from podcast_workspace.audio.waveform import seek_cache
 
-SPEEDS = (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
+SPEEDS = (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)  # the presets, and what - and = step through
 MIN_SPEED, MAX_SPEED = SPEEDS[0], SPEEDS[-1]
+SPEED_STEP = 0.05  # the speed slider's resolution
+SPEED_SETTLE_MS = 200  # a slider speed reaches the engine once the slider rests
 PUMP_INTERVAL_MS = 10
 SINK_BUFFER_MS = 300
 DECODE_AHEAD_MS = 2000
@@ -529,6 +531,8 @@ class Player(QObject):
         self._cuts: tuple[Span, ...] = ()
         self._settle = QTimer(self, singleShot=True, interval=CUTS_SETTLE_MS)
         self._settle.timeout.connect(self._settle_keep)
+        self._speed_settle = QTimer(self, singleShot=True, interval=SPEED_SETTLE_MS)
+        self._speed_settle.timeout.connect(self._send_speed)
         self._volume = MAX_VOLUME
         self._last_audible = MAX_VOLUME  # what unmuting a slider pulled down to 0 goes back to
         self._muted = False  # for the session only
@@ -631,19 +635,32 @@ class Player(QObject):
     def skip(self, delta_ms: int) -> None:
         self.seek(self._position + delta_ms)
 
-    def set_speed(self, speed: float) -> None:
-        speed = min(MAX_SPEED, max(MIN_SPEED, round(speed, 2)))
+    def set_speed(self, speed: float, settle: bool = False) -> None:
+        """Snapped to the 5% grid. `settle` (the slider) shows the speed at once and sends it
+        to the audio once it stops moving, so dragging does not restart the decoder at every
+        step."""
+        speed = round(round(speed / SPEED_STEP) * SPEED_STEP, 2)
+        speed = min(MAX_SPEED, max(MIN_SPEED, speed))
         if speed == self._speed:
             return
         self._speed = speed
-        self._generation += 1
         self.speed_changed.emit(speed)
-        self._cmd_speed.emit(speed, self._generation)
+        if settle:
+            self._speed_settle.start()
+        else:
+            self._send_speed()
 
     def step_speed(self, direction: int) -> None:
-        index = min(range(len(SPEEDS)), key=lambda i: abs(SPEEDS[i] - self._speed))
-        index = max(0, min(len(SPEEDS) - 1, index + direction))
-        self.set_speed(SPEEDS[index])
+        """To the next preset that way, so an in-between speed goes to its neighbour."""
+        if direction > 0:
+            self.set_speed(next((s for s in SPEEDS if s > self._speed + 1e-6), MAX_SPEED))
+        elif direction < 0:
+            self.set_speed(next((s for s in reversed(SPEEDS) if s < self._speed - 1e-6), MIN_SPEED))
+
+    def _send_speed(self) -> None:
+        self._speed_settle.stop()
+        self._generation += 1
+        self._cmd_speed.emit(self._speed, self._generation)
 
     def set_exact_duration(self, duration_ms: int) -> None:
         if duration_ms > 0 and duration_ms != self._duration:

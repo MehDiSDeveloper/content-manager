@@ -10,21 +10,19 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal
-from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QPalette, QShortcut
+from PySide6.QtGui import QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
-    QMenu,
     QPushButton,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from podcast_workspace.audio.engine import SPEEDS, Player, PlayerState
+from podcast_workspace.audio.engine import Player, PlayerState
 from podcast_workspace.audio.silence import find_pauses
 from podcast_workspace.audio.waveform import (
     ExtractionCancelledError,
@@ -35,6 +33,7 @@ from podcast_workspace.audio.waveform import (
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.player.icons import ICON_SIZE, pause_icon, play_icon, skip_icon
 from podcast_workspace.ui.player.silence_control import SilenceControl
+from podcast_workspace.ui.player.speed_control import SpeedButton
 from podcast_workspace.ui.player.volume_control import VolumeButton
 from podcast_workspace.ui.player.waveform_view import WaveformView
 from podcast_workspace.ui.support import format_clock, local_digits
@@ -79,10 +78,6 @@ def install_player_keys(
     for keys, handler in bindings:
         guarded = handler if keys == "Space" else only_when_enabled(handler)
         QShortcut(QKeySequence(keys), page, activated=guarded, context=context)
-
-
-def speed_label(speed: float) -> str:
-    return local_digits(f"{speed:g}").replace(".", strings.DECIMAL_SEPARATOR) + "×"
 
 
 class _WaveformLoader(QObject):
@@ -173,19 +168,7 @@ class PlayerWidget(QFrame):
         if compact:
             transport.insertStretch(0, 1)
         transport.addStretch(1)
-        self.speed = QToolButton(objectName="speedButton")
-        self.speed.setToolTip(strings.PLAYER_SPEED_TOOLTIP)
-        self.speed.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        menu = QMenu(self.speed)
-        group = QActionGroup(menu)
-        self._speed_actions: dict[float, QAction] = {}
-        for value in SPEEDS:
-            action = menu.addAction(speed_label(value))
-            action.setCheckable(True)
-            action.triggered.connect(lambda _c=False, v=value: self.player.set_speed(v))
-            group.addAction(action)
-            self._speed_actions[value] = action
-        self.speed.setMenu(menu)
+        self.speed = SpeedButton(player)
         row.addWidget(self.speed)
         self.silence = SilenceControl(player)
         row.addWidget(self.silence)
@@ -201,11 +184,9 @@ class PlayerWidget(QFrame):
         player.position_changed.connect(self._on_position)
         player.state_changed.connect(self._on_state)
         player.duration_changed.connect(self._on_duration)
-        player.speed_changed.connect(self._on_speed)
         player.error.connect(self._on_error)
         player.silence_changed.connect(self._show_cuts)
         self._paint_icons()
-        self._on_speed(player.speed)
         self._set_enabled(False)
 
     def _transport_button(self, tooltip: str) -> QPushButton:
@@ -272,12 +253,6 @@ class PlayerWidget(QFrame):
         if self.is_current():
             self.waveform.set_duration(duration_ms)
             self.total.setText(format_clock(duration_ms))
-
-    def _on_speed(self, speed: float) -> None:
-        self.speed.setText(speed_label(speed))
-        action = self._speed_actions.get(speed)
-        if action is not None:
-            action.setChecked(True)
 
     def _on_error(self, message: str) -> None:
         if self.is_current():

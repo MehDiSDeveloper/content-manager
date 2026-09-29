@@ -388,7 +388,6 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
         border-radius: 10px; padding: 5px 11px; min-width: 44px; font-weight: 600;
     }}
     QToolButton#speedButton:hover {{ background: {c.hover}; border-color: {c.accent}; }}
-    QToolButton#speedButton::menu-indicator {{ image: none; width: 0; }}
     QToolButton#volumeButton {{
         background: transparent; border: 2px solid transparent; border-radius: 8px; padding: 3px;
     }}
@@ -418,10 +417,25 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     QToolButton#silenceButton[active="true"]:hover,
     QToolButton#silenceMore[active="true"]:hover {{ border-color: {c.accent_strong}; }}
     QToolButton#silenceButton:disabled, QToolButton#silenceMore:disabled {{ color: {c.muted}; }}
-    #silencePopup, #volumePopup, #publishPopup {{
+    #silencePopup, #volumePopup, #speedPopup, #publishPopup {{
         background: {c.surface}; border: 1px solid {c.border};
     }}
-    #silenceValue, #volumeValue {{ color: {c.text}; font-weight: 700; }}
+    #silenceValue, #volumeValue, #speedValue {{ color: {c.text}; font-weight: 700; }}
+    QToolButton#speedStep {{
+        background: {c.panel}; color: {c.text}; border: 1px solid {c.border};
+        border-radius: 13px; min-width: 24px; min-height: 24px; font-weight: 700;
+    }}
+    QToolButton#speedPreset {{
+        background: {c.panel}; color: {c.text}; border: 1px solid {c.border};
+        border-radius: 10px; padding: 3px 4px; font-weight: 600;
+    }}
+    QToolButton#speedStep:hover, QToolButton#speedPreset:hover {{
+        background: {c.hover}; border-color: {c.accent};
+    }}
+    QToolButton#speedStep:disabled {{ color: {c.muted}; }}
+    QToolButton#speedPreset:checked {{
+        background: {c.accent}; color: {c.accent_text}; border-color: {c.accent};
+    }}
     QSlider::groove:horizontal {{ height: 4px; background: {c.border}; border-radius: 2px; }}
     QSlider::sub-page:horizontal {{ background: {c.accent_strong}; border-radius: 2px; }}
     QSlider::add-page:horizontal {{ background: {c.border}; border-radius: 2px; }}
