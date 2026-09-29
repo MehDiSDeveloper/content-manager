@@ -92,6 +92,24 @@ SEASON_DELETE = "حذف این فصل"
 SEASON_DELETE_CONFIRM = "فصل «{title}» حذف شود؟ اپیزودهایش حذف نمی‌شوند؛ فقط بدون فصل می‌مانند."
 SEASON_EMPTY = "این فصل هنوز اپیزودی ندارد. «اپیزود تازه» را بزنید تا در همین فصل ساخته شود."
 SEASON_NONE_EMPTY = "همهٔ اپیزودها فصل دارند."
+# A season's brief: the card over its episodes, and the page it opens
+SEASON_BRIEF_CAPTION = "دربارهٔ این فصل"
+SEASON_BRIEF_CARD_EMPTY = "هدف و ساختار این فصل هنوز نوشته نشده. برای نوشتن بزنید."
+SEASON_BRIEF_TOOLTIP = "دربارهٔ فصل، هدف‌ها و ساختارش"
+SEASON_TITLE_PLACEHOLDER = "نام فصل"
+SEASON_SUMMARY = "دربارهٔ فصل"
+SEASON_SUMMARY_PLACEHOLDER = (
+    "این فصل دربارهٔ چیست و برای چه ساخته می‌شود؟\n"
+    "مخاطب در پایان فصل باید به کجا رسیده باشد؟\n"
+    "ایده‌های کلی، لحن و خط قرمزها…"
+)
+SEASON_OUTLINE = "ساختار"
+SEASON_OUTLINE_PLACEHOLDER = (
+    "مسیر فصل از آغاز تا پایان: بخش‌ها، نقطهٔ اوج و اپیزودهای برنامه‌ریزی‌شده، هر کدام در یک خط."
+)
+SEASON_PROGRESS = "{n} اپیزود  ·  {stages}"
+SEASON_PROGRESS_STAGE = "{stage} {n}"
+SEASON_PROGRESS_EMPTY = "هنوز اپیزودی در این فصل نیست."
 
 NAV_SOURCE = "پوشهٔ صوت"
 SOURCE_TITLE = "پوشهٔ صوت"

@@ -257,7 +257,13 @@ class BackupService:
                 for i in snap.ideas
             ],
             "seasons": [
-                {"id": s.id, "title": s.title, "created_at": _dt(s.created_at)}
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "summary": s.summary,
+                    "outline": s.outline,
+                    "created_at": _dt(s.created_at),
+                }
                 for s in snap.seasons
             ],
             "episodes": [
@@ -479,9 +485,16 @@ class BackupService:
                 )
                 for t in data.get("transcripts", [])
             ],
-            # Exports made before seasons existed simply have none.
+            # Exports made before seasons existed simply have none, and older seasons
+            # no brief.
             seasons=[
-                Season(id=s["id"], title=s["title"], created_at=_req_dt(s["created_at"]))
+                Season(
+                    id=s["id"],
+                    title=s["title"],
+                    summary=s.get("summary", ""),
+                    outline=s.get("outline", ""),
+                    created_at=_req_dt(s["created_at"]),
+                )
                 for s in data.get("seasons") or ()
             ],
         )

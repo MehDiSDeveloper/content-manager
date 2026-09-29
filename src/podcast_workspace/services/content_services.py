@@ -570,6 +570,10 @@ class SeasonService:
         with UnitOfWork(self._sf) as uow:
             return uow.seasons.list_all()
 
+    def get(self, season_id: int) -> Season:
+        with UnitOfWork(self._sf) as uow:
+            return uow.seasons.get(season_id)
+
     def create(self, title: str) -> Season:
         with UnitOfWork(self._sf) as uow:
             season = uow.seasons.add(Season(title=title))
@@ -604,6 +608,28 @@ class SeasonService:
         )
         return saved
 
+    def write_brief(self, season_id: int, summary: str, outline: str) -> Season:
+        """Save what the season is about and how it is laid out."""
+        with UnitOfWork(self._sf) as uow:
+            season = uow.seasons.get(season_id)
+            before = (season.summary, season.outline)
+            season.write_brief(summary, outline)
+            if (season.summary, season.outline) == before:
+                return season
+            saved = uow.seasons.update(season)
+        after = (saved.summary, saved.outline)
+        # Like a note: the editor's own Ctrl+Z covers keystrokes, this a whole writing run.
+        self._history.record(
+            ChangeKind.EDIT,
+            Target(TargetKind.SEASON, season_id),
+            undo=lambda: self._set_brief(season_id, before),
+            redo=lambda: self._set_brief(season_id, after),
+            details=(saved.title,),
+            weight=len(saved.summary) + len(saved.outline),
+            merge_key=f"season-brief:{season_id}",
+        )
+        return saved
+
     def delete(self, season_id: int) -> None:
         """Its episodes stay, in no season; undo files them back under it."""
         with UnitOfWork(self._sf) as uow:
@@ -624,6 +650,12 @@ class SeasonService:
         with UnitOfWork(self._sf) as uow:
             season = uow.seasons.get(season_id)
             season.rename(title)
+            uow.seasons.update(season)
+
+    def _set_brief(self, season_id: int, brief: tuple[str, str]) -> None:
+        with UnitOfWork(self._sf) as uow:
+            season = uow.seasons.get(season_id)
+            season.write_brief(*brief)
             uow.seasons.update(season)
 
     def _restore(self, season: Season, episodes: frozenset[int]) -> None:

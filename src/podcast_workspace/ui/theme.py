@@ -575,6 +575,16 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     #card {{
         background: {c.surface}; border: 1px solid {c.border}; border-radius: 16px;
     }}
+    /* The season brief's card over the episode list; filled while the brief is open. */
+    QPushButton#seasonCard {{
+        background: {c.surface}; border: 1px solid {c.border}; border-radius: 14px;
+        padding: 0; text-align: left;
+    }}
+    QPushButton#seasonCard:hover {{ border-color: {c.accent}; background: {c.surface}; }}
+    QPushButton#seasonCard:checked {{ background: {c.accent_soft}; border-color: {c.accent}; }}
+    QPushButton#seasonCard:focus {{ border: 2px solid {c.accent_strong}; }}
+    #seasonCardText {{ color: {c.text}; }}
+    #seasonCardText[empty="true"] {{ color: {c.muted}; }}
 
     /* Toast: floats over the page, reads as a raised surface in both themes. */
     #toast {{

@@ -1,6 +1,6 @@
 """The Episodes page, and the pieces its sibling list pages share (`ideas_page.py`)."""
 
-from collections.abc import Iterable
+from collections.abc import Hashable, Iterable
 from dataclasses import replace
 
 from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QPushButton,
     QSizePolicy,
+    QStackedWidget,
     QToolButton,
     QVBoxLayout,
 )
@@ -28,6 +29,7 @@ from podcast_workspace.ui import strings
 from podcast_workspace.ui.icons import NAV_ICON_SIZE, list_pane_icon, more_icon
 from podcast_workspace.ui.pages.base import ListPage, ListPageState, Row
 from podcast_workspace.ui.pages.episode_workspace import EpisodeWorkspacePage, stale_text
+from podcast_workspace.ui.pages.season_brief import SeasonBriefPage, SeasonCard
 from podcast_workspace.ui.player.transcript_panel import TranscriptionJobs
 from podcast_workspace.ui.seasons import create_season, rename_season
 from podcast_workspace.ui.support import (
@@ -107,6 +109,9 @@ class EpisodesPage(ListPage):
     pick something. A click selects and shows; Enter or a double-click only moves the
     caret into the episode. The list can be hidden for room to write (Ctrl+L), and that
     choice is remembered, because it is the user's and not a mode.
+
+    A season on show has a brief (`season_brief.py`): its card over the list opens it in
+    the detail pane, with no episode selected, until an episode is chosen again.
     """
 
     open_voice = Signal(int)
@@ -133,12 +138,19 @@ class EpisodesPage(ListPage):
         self.primary.setObjectName("")
         self._seasons: list[Season] = []
         self._season = workspace.settings.season_filter()
+        self._brief_open = False
         self._build_season_row()
 
         col = QVBoxLayout(self.editor)
         col.setContentsMargins(0, 0, 0, 0)
+        self.editor_stack = QStackedWidget()
+        col.addWidget(self.editor_stack)
         self.workspace = EpisodeWorkspacePage(workspace, events, player, jobs)
-        col.addWidget(self.workspace)
+        self.editor_stack.addWidget(self.workspace)
+        self.brief = SeasonBriefPage(workspace, events)
+        self.brief.saved.connect(self._on_brief_saved)
+        self.brief.list_toggle_requested.connect(self.toggle_list)
+        self.editor_stack.addWidget(self.brief)
         self.workspace.episode_saved.connect(self._on_episode_saved)
         self.workspace.episode_gone.connect(lambda: QTimer.singleShot(0, self.refresh))
         self.workspace.delete_requested.connect(self.delete_item)
@@ -171,16 +183,16 @@ class EpisodesPage(ListPage):
         if remember:
             self._ws.settings.set_episode_list_hidden(hidden)
         if hidden and had_focus:
-            self.workspace.focus_main()
+            self._detail_focus()
         elif not hidden and remember:
             self.list.setFocus()
 
     def _paint_list_toggle(self) -> None:
         color = self.palette().color(QPalette.ColorRole.Text)
-        button = self.workspace.list_toggle
-        button.setIcon(list_pane_icon(color, self.isRightToLeft(), self._list_hidden))
-        button.setIconSize(QSize(NAV_ICON_SIZE, NAV_ICON_SIZE))
-        button.setToolTip(strings.LIST_SHOW if self._list_hidden else strings.LIST_HIDE)
+        for button in (self.workspace.list_toggle, self.brief.list_toggle):
+            button.setIcon(list_pane_icon(color, self.isRightToLeft(), self._list_hidden))
+            button.setIconSize(QSize(NAV_ICON_SIZE, NAV_ICON_SIZE))
+            button.setToolTip(strings.LIST_SHOW if self._list_hidden else strings.LIST_HIDE)
         self.workspace.more_button.setIcon(more_icon(color))
 
     def changeEvent(self, event: QEvent) -> None:
@@ -189,9 +201,15 @@ class EpisodesPage(ListPage):
         super().changeEvent(event)
 
     # focus -----------------------------------------------------------------------------
+    def _detail_focus(self) -> None:
+        if self._brief_open:
+            self.brief.focus_main()
+        else:
+            self.workspace.focus_main()
+
     def focus_main(self) -> None:
         if self._list_hidden:
-            self.workspace.focus_main()
+            self._detail_focus()
         else:
             self.list.setFocus()
 
@@ -204,6 +222,8 @@ class EpisodesPage(ListPage):
         """Enter or a double-click on a row: carry on writing in that episode."""
         if self.current_id() is not None:
             self.workspace.focus_main()
+        elif self._brief_open:
+            self.brief.focus_main()
 
     def new_shortcut(self) -> None:
         """Ctrl+N means "another one of what I am in": a note inside the episode, an
@@ -235,6 +255,10 @@ class EpisodesPage(ListPage):
         side = self.list_side.layout()
         assert isinstance(side, QVBoxLayout)
         side.insertLayout(2, row)  # under the title and status, over the filter box
+        self.season_card = SeasonCard()
+        self.season_card.clicked.connect(self.open_brief)
+        self.season_card.hide()
+        side.insertWidget(3, self.season_card)
 
     def _fill_seasons(self, episodes: list[Episode] | None = None) -> None:
         """Rebuild the season box: all, each season with its count, then the unfiled."""
@@ -262,6 +286,10 @@ class EpisodesPage(ListPage):
             box.addItem(strings.SEASON_ITEM.format(title=strings.SEASON_NONE, n=n), SEASON_NONE)
         box.setCurrentIndex(max(0, box.findData(self._season)))
         box.blockSignals(False)
+        season = self._current_season()
+        self.season_card.setVisible(season is not None)
+        if season is not None:
+            self.season_card.set_summary(season.summary)
 
     def _fill_season_menu(self) -> None:
         menu = self.season_menu
@@ -293,11 +321,54 @@ class EpisodesPage(ListPage):
         self.refresh()
 
     def show_season(self, season_id: int) -> None:
-        """Bring a season into view (after an undo touched it); all of them if it is gone."""
+        """Bring a season and its brief into view (after an undo touched it); all of
+        them if it is gone."""
         known = {s.id for s in self._ws.seasons.list_all()}
         self._set_season(str(season_id) if season_id in known else SEASON_ALL)
+        if season_id in known:
+            self._enter_brief()
         self.clear_filter(reload=False)
         self.refresh()
+
+    # the season's brief ------------------------------------------------------------------
+    def open_brief(self) -> None:
+        """The card was clicked: the season on show takes the detail pane."""
+        if self._current_season() is None:
+            return
+        self._enter_brief()
+        self.refresh()
+
+    def _enter_brief(self) -> None:
+        if not self._brief_open:
+            self.workspace.clear()  # saves what it was holding
+            self._brief_open = True
+
+    def _leave_brief(self) -> None:
+        if self._brief_open:
+            self.brief.clear()
+            self._brief_open = False
+        self.editor_stack.setCurrentWidget(self.workspace)
+        self.season_card.setChecked(False)
+
+    def _show_brief(self, season: Season) -> None:
+        """The list stays as it is, with no row chosen: the brief is what is shown."""
+        assert season.id is not None
+        self.list.blockSignals(True)
+        self.list.setCurrentItem(None)
+        self.list.clearSelection()
+        self.list.blockSignals(False)
+        self.detail.setCurrentIndex(1)
+        self.editor_stack.setCurrentWidget(self.brief)
+        self.season_card.setChecked(True)
+        self.brief.open(season.id)
+
+    def _on_brief_saved(self, season: Season) -> None:
+        renamed = any(s.id == season.id and s.title != season.title for s in self._seasons)
+        self._seasons = [season if s.id == season.id else s for s in self._seasons]
+        if renamed:
+            self._fill_seasons()  # the box names it
+        else:
+            self.season_card.set_summary(season.summary)
 
     def _new_season(self) -> None:
         season = create_season(self, self._ws)
@@ -318,6 +389,7 @@ class EpisodesPage(ListPage):
             return
         if not confirm(self, strings.SEASON_DELETE_CONFIRM.format(title=season.title)):
             return
+        self.brief.flush()
         try:
             self._ws.seasons.delete(season.id)
         except Exception as exc:
@@ -350,6 +422,22 @@ class EpisodesPage(ListPage):
     def update_rows(self) -> None:
         """Season names changed: redraw the subtitles without reloading the episode."""
         self.refresh(load=False)
+
+    def refresh(self, select_id: Hashable | None = None, load: bool = True) -> None:
+        """While the brief is open, the list is rebuilt beside it and nothing in it is
+        chosen. Going to an episode (`select_id`), or leaving the season, closes it."""
+        if not self._brief_open or select_id is not None:
+            self._leave_brief()
+            super().refresh(select_id, load)
+            return
+        self.brief.flush()  # the list reads the season's brief for its card
+        super().refresh(load=False)
+        season = self._current_season()
+        if season is None:  # the season was left, deleted or undone meanwhile
+            self._leave_brief()
+            super().refresh(load=load)
+            return
+        self._show_brief(season)
 
     def select(self, item_id: int) -> None:
         self._reveal_episode(item_id)
@@ -396,6 +484,7 @@ class EpisodesPage(ListPage):
         return [self._row(e, tags) for e in episodes if self._in_season(e)]
 
     def show_item(self, item_id: int) -> None:
+        self._leave_brief()  # an episode was chosen in the list
         note_id, focus = None, False
         if self._pending is not None and self._pending[0] == item_id:
             _episode, note_id, focus = self._pending
@@ -414,12 +503,20 @@ class EpisodesPage(ListPage):
 
     # navigation state ------------------------------------------------------------------
     def nav_state(self) -> ListPageState:
-        extra = {"workspace": self.workspace.nav_state(), "season": self._season}
+        extra = {
+            "workspace": self.workspace.nav_state(),
+            "season": self._season,
+            "brief": self._brief_open,
+        }
         return replace(super().nav_state(), extra=extra)
 
     def restore_nav_state(self, state: object) -> None:
         if isinstance(state, ListPageState):
             self._set_season(str(state.extra.get("season", self._season)))
+            if state.extra.get("brief"):
+                self._enter_brief()
+            else:
+                self._leave_brief()
         super().restore_nav_state(state)
         if isinstance(state, ListPageState):
             self.workspace.restore_nav_state(state.extra.get("workspace"))

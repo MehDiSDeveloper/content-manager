@@ -95,17 +95,30 @@ class Tag:
 
 @dataclass(eq=False)
 class Season:
-    """A run of episodes. Episodes belong to at most one; deleting a season keeps them."""
+    """A run of episodes. Episodes belong to at most one; deleting a season keeps them.
+
+    Its brief is what keeps a run of episodes pointed somewhere: `summary` says what the
+    season is about and what it is for, `outline` how it gets there (its arc, the
+    episodes planned). Both are free text, and either may be empty.
+    """
 
     title: str
+    summary: str = ""
+    outline: str = ""
     created_at: datetime = field(default_factory=utcnow)
     id: int | None = None
 
     def __post_init__(self) -> None:
         self.title = normalize_persian(ensure_non_empty(self.title, "Season title"))
+        self.summary = normalize_persian(self.summary)
+        self.outline = normalize_persian(self.outline)
 
     def rename(self, title: str) -> None:
         self.title = normalize_persian(ensure_non_empty(title, "Season title"))
+
+    def write_brief(self, summary: str, outline: str) -> None:
+        self.summary = normalize_persian(summary)
+        self.outline = normalize_persian(outline)
 
 
 @dataclass(eq=False)

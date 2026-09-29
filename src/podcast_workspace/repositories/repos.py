@@ -251,10 +251,18 @@ class SeasonRepository(SqlRepository[Season, SeasonRow]):
     entity_name = "Season"
 
     def _to_domain(self, row: SeasonRow) -> Season:
-        return Season(id=row.id, title=row.title, created_at=row.created_at)
+        return Season(
+            id=row.id,
+            title=row.title,
+            summary=row.summary,
+            outline=row.outline,
+            created_at=row.created_at,
+        )
 
     def _apply(self, entity: Season, row: SeasonRow) -> None:
         row.title = entity.title
+        row.summary = entity.summary
+        row.outline = entity.outline
         row.created_at = entity.created_at
 
     def delete(self, entity_id: int) -> None:

@@ -88,6 +88,25 @@ SEASON_DELETE_CONFIRM = (
 )
 SEASON_EMPTY = "This season has no episodes yet. “New episode” creates one right in it."
 SEASON_NONE_EMPTY = "Every episode belongs to a season."
+# A season's brief: the card over its episodes, and the page it opens
+SEASON_BRIEF_CAPTION = "About this season"
+SEASON_BRIEF_CARD_EMPTY = "No goal or structure written for this season yet. Click to write them."
+SEASON_BRIEF_TOOLTIP = "What the season is about, its goals and its structure"
+SEASON_TITLE_PLACEHOLDER = "Season name"
+SEASON_SUMMARY = "About the season"
+SEASON_SUMMARY_PLACEHOLDER = (
+    "What is this season about, and why make it?\n"
+    "Where should the listener be by its last episode?\n"
+    "Big ideas, tone, and what stays out…"
+)
+SEASON_OUTLINE = "Structure"
+SEASON_OUTLINE_PLACEHOLDER = (
+    "How the season runs from start to finish: its parts, its peak "
+    "and the episodes planned, one per line."
+)
+SEASON_PROGRESS = "{n} episodes  ·  {stages}"
+SEASON_PROGRESS_STAGE = "{stage} {n}"
+SEASON_PROGRESS_EMPTY = "No episodes in this season yet."
 
 NAV_SOURCE = "Audio folder"
 SOURCE_TITLE = "Audio folder"
