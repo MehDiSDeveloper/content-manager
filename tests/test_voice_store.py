@@ -131,3 +131,39 @@ def test_purging_a_voice_deletes_only_the_stored_copy(ws, tmp_path) -> None:
     ws.trash.purge([(TrashKind.VOICE, voice.id)])
     assert not Path(voice.file_path).exists()
     assert original.is_file()
+
+
+def test_a_file_removed_from_the_list_stays_on_disk_and_can_come_back(ws, recorder) -> None:
+    ws.source.set_folder(recorder)
+    keep = _wav(recorder / "keep.wav", mtime=1_000_000)
+    drop = _wav(recorder / "drop.wav", mtime=2_000_000)
+    ws.source.hide(drop)
+    listing = ws.source.listing()
+    assert [f.name for f in listing.pending] == ["keep.wav"]
+    assert [f.name for f in listing.hidden] == ["drop.wav"]
+    assert drop.is_file()
+
+    ws.source.unhide(drop)
+    assert [f.name for f in ws.source.pending()] == ["drop.wav", "keep.wav"]
+    assert ws.source.listing().hidden == []
+    assert keep.is_file()
+
+
+def test_a_new_take_under_a_hidden_name_is_listed(ws, recorder) -> None:
+    ws.source.set_folder(recorder)
+    take = _wav(recorder / "take.wav", mtime=1_000_000)
+    ws.source.hide(take)
+    assert ws.source.pending() == []
+
+    _wav(take, mtime=1_000_100)  # recorded over
+    assert [f.name for f in ws.source.pending()] == ["take.wav"]
+    assert ws.settings.source_hidden() == {}  # the old mark is dropped
+
+
+def test_marks_of_deleted_files_are_dropped(ws, recorder) -> None:
+    ws.source.set_folder(recorder)
+    take = _wav(recorder / "take.wav")
+    ws.source.hide(take)
+    take.unlink()
+    assert ws.source.listing().hidden == []
+    assert ws.settings.source_hidden() == {}

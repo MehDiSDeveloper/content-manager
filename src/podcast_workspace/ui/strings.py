@@ -138,6 +138,36 @@ SOURCE_ADD_OPEN_TOOLTIP = "افزودن، و رفتن به ایده‌ها بر�
 SOURCE_ADDING = "در حال افزودن…"
 SOURCE_ADDED = "«{name}» به ایده‌های صوتی اضافه شد"
 SOURCE_IN_SUBFOLDER = "در {folder}"
+SOURCE_HIDE = "حذف از فهرست"
+SOURCE_HIDE_TOOLTIP = (
+    "از این فهرست برداشته می‌شود و فایل روی دیسک می‌ماند؛ از «پنهان‌شده‌ها» برمی‌گردد  (Delete)"
+)
+SOURCE_UNHIDE = "بازگرداندن به فهرست"
+SOURCE_UNHIDE_TOOLTIP = "دوباره در فهرست پوشهٔ صوت می‌آید  (Delete)"
+SOURCE_HIDDEN_DONE = "«{name}» از فهرست برداشته شد"
+SOURCE_UNHIDDEN_DONE = "«{name}» به فهرست برگشت"
+SOURCE_HIDDEN_TOGGLE = "پنهان‌شده‌ها  {n}"
+SOURCE_HIDDEN_TOGGLE_TOOLTIP = "فایل‌هایی که از فهرست برداشته‌اید و هنوز روی دیسک‌اند"
+SOURCE_HIDDEN_EMPTY = "فایل پنهانی در این پوشه نیست."
+SOURCE_HIDDEN_HINT = (
+    "این فایل از فهرست برداشته شده و هنوز روی دیسک است. "
+    "می‌توانید برش گردانید، به فضای کاری بیاوریدش یا از دیسک پاکش کنید."
+)
+SOURCE_DELETE = "حذف از دیسک…"
+SOURCE_DELETE_TOOLTIP = "فایل به سطل بازیافت ویندوز می‌رود  (Shift+Delete)"
+SOURCE_DELETE_CONFIRM = (
+    "«{name}» از دیسک حذف شود؟ فایل به سطل بازیافت ویندوز می‌رود و تا آن را خالی نکنید "
+    "از آنجا برمی‌گردد."
+)
+SOURCE_DELETE_ACTION = "حذف از دیسک"
+SOURCE_DELETING = "در حال حذف…"
+SOURCE_DELETED = "«{name}» به سطل بازیافت ویندوز رفت"
+SOURCE_DELETE_NO_BIN = (
+    "«{name}» به سطل بازیافت ویندوز نرفت؛ شاید این درایو سطل بازیافت ندارد یا برنامهٔ "
+    "دیگری فایل را باز نگه داشته. برای همیشه حذف شود؟ این کار بازگشت ندارد."
+)
+SOURCE_DELETE_FOREVER = "حذف برای همیشه"
+SOURCE_DELETED_FOREVER = "«{name}» برای همیشه حذف شد"
 SIZE_MB = "{n} مگابایت"
 SIZE_KB = "{n} کیلوبایت"
 

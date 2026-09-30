@@ -4,20 +4,26 @@ Reads the folder live (a file watcher, and again whenever the page comes up) and
 every audio file that is not in the workspace yet. Nothing here is stored: a file can be
 played as often as needed and then either added — a normal voice import, after which it
 leaves this list and gets its tags and notes on the Voices page — or simply left alone.
+
+A take not worth keeping can be removed from the list (Delete: the file stays on the disk,
+and «پنهان‌شده‌ها» under the list brings it back) or deleted from the disk (Shift+Delete:
+to the Windows Recycle Bin, after a confirmation).
 """
 
 import contextlib
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QFileSystemWatcher, QTimer, Signal
-from PySide6.QtGui import QShowEvent
+from PySide6.QtCore import QEvent, QFile, QFileSystemWatcher, QObject, Qt, QTimer, Signal
+from PySide6.QtGui import QKeyEvent, QShowEvent
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QListWidgetItem,
     QPushButton,
+    QToolButton,
     QVBoxLayout,
 )
 
@@ -32,6 +38,7 @@ from podcast_workspace.ui.pages.content_pages import PathLabel
 from podcast_workspace.ui.player.player_widget import PlayerWidget, install_player_keys
 from podcast_workspace.ui.support import (
     AppEvents,
+    confirm,
     format_datetime,
     local_digits,
     run_async,
@@ -41,6 +48,10 @@ from podcast_workspace.ui.widgets.key_hint import add_key_hint
 from podcast_workspace.ui.widgets.name_conflict import ask_name_choices
 
 WATCH_DELAY_MS = 400  # a recorder writes in bursts; settle before reading the folder
+# The player's decoder lets go of a file a moment after it is closed, and Windows will not
+# delete a file that is still open: deleting tries again for a little while.
+DELETE_RETRY_MS = 250
+DELETE_ATTEMPTS = 8
 
 
 def format_size(size: int) -> str:
@@ -70,6 +81,7 @@ class SourcePage(ListPage):
         self._files: dict[int, SourceFile] = {}
         self._file: SourceFile | None = None
         self._busy = False
+        self._hidden_view = False  # the list shows the files taken off it
         # One accent button per screen: here that is "Add to workspace".
         self.primary.setObjectName("")
         self.primary.setToolTip(strings.SOURCE_CHOOSE_TOOLTIP)
@@ -84,6 +96,12 @@ class SourcePage(ListPage):
         self.folder_label = PathLabel()
         side = self.list_side.layout()
         side.insertWidget(side.indexOf(self.status), self.folder_label)
+        # Under the list: the way back to what was taken off it, there only when needed.
+        self.hidden_toggle = QToolButton(objectName="toggleChip", checkable=True)
+        self.hidden_toggle.setToolTip(strings.SOURCE_HIDDEN_TOGGLE_TOOLTIP)
+        self.hidden_toggle.toggled.connect(self._set_hidden_view)
+        self.hidden_toggle.hide()
+        side.addWidget(self.hidden_toggle, 0, Qt.AlignmentFlag.AlignLeading)
 
         col = QVBoxLayout(self.editor)
         col.setContentsMargins(0, 0, 0, 0)
@@ -96,9 +114,9 @@ class SourcePage(ListPage):
         self.player = PlayerWidget(player)
         col.addSpacing(6)
         col.addWidget(self.player)
-        hint = QLabel(strings.SOURCE_HINT, objectName="muted")
-        hint.setWordWrap(True)
-        col.addWidget(hint)
+        self.hint = QLabel(strings.SOURCE_HINT, objectName="muted")
+        self.hint.setWordWrap(True)
+        col.addWidget(self.hint)
         actions = QHBoxLayout()
         actions.setSpacing(8)
         self.add_button = QPushButton(strings.SOURCE_ADD, objectName="primary")
@@ -115,6 +133,19 @@ class SourcePage(ListPage):
         show.clicked.connect(self._show_in_folder)
         actions.addWidget(show)
         col.addLayout(actions)
+        removal = QHBoxLayout()
+        removal.setSpacing(8)
+        self.hide_button = QPushButton(strings.SOURCE_HIDE)
+        self.hide_button.clicked.connect(self.toggle_hidden_current)
+        removal.addWidget(self.hide_button)
+        add_key_hint(removal, self.hide_button, "Delete")
+        self.delete_button = QPushButton(strings.SOURCE_DELETE, objectName="danger")
+        self.delete_button.setToolTip(strings.SOURCE_DELETE_TOOLTIP)
+        self.delete_button.clicked.connect(self.delete_current)
+        removal.addWidget(self.delete_button)
+        add_key_hint(removal, self.delete_button, "Shift+Delete")
+        removal.addStretch(1)
+        col.addLayout(removal)
         col.addStretch(1)
 
         install_player_keys(
@@ -166,17 +197,30 @@ class SourcePage(ListPage):
     # the list ----------------------------------------------------------------------------
     def rows(self) -> list[Row]:
         folder = self._ws.source.folder()
+        pending: list[SourceFile] = []
+        hidden: list[SourceFile] = []
         try:
-            files = self._ws.source.pending()
+            listing = self._ws.source.listing()
         except OSError:
-            files = []
             self.status.setText(strings.SOURCE_FOLDER_MISSING.format(path=folder))
         else:
+            pending, hidden = listing.pending, listing.hidden
             if self.status.text().startswith(strings.SOURCE_FOLDER_MISSING.split("{")[0]):
                 self.status.setText("")  # the folder is back
         self.folder_label.set_path(str(folder) if folder else "")
         self.folder_label.setVisible(folder is not None)
-        self._empty_text = strings.SOURCE_NO_FOLDER if folder is None else strings.SOURCE_EMPTY
+        if self._hidden_view and not hidden:
+            self._leave_hidden_view()  # the last one was put back, added or deleted
+        count = local_digits(len(hidden))
+        self.hidden_toggle.setText(strings.SOURCE_HIDDEN_TOGGLE.format(n=count))
+        self.hidden_toggle.setVisible(bool(hidden))
+        files = hidden if self._hidden_view else pending
+        if folder is None:
+            self._empty_text = strings.SOURCE_NO_FOLDER
+        elif self._hidden_view:
+            self._empty_text = strings.SOURCE_HIDDEN_EMPTY
+        else:
+            self._empty_text = strings.SOURCE_EMPTY
         self._files = {}
         rows: list[Row] = []
         for file in files:
@@ -214,16 +258,137 @@ class SourcePage(ListPage):
         self.add_button.setFocus()
 
     def delete_item(self, item_id: int) -> None:
-        """Delete means nothing here: this page never removes a file from the disk."""
+        """Delete takes the file off the list (among the hidden ones, puts it back); the
+        disk is Shift+Delete's."""
+        self.toggle_hidden_current()
+
+    def row_actions(self, item_id: int) -> list[tuple[str, Callable[[], None]]]:
+        hide = strings.SOURCE_UNHIDE if self._hidden_view else strings.SOURCE_HIDE
+        return [
+            (strings.SOURCE_ADD, lambda: self.add_current(open_after=False)),
+            (hide, self.toggle_hidden_current),
+            (strings.SOURCE_DELETE, self.delete_current),
+        ]
 
     @staticmethod
     def _id_of(item: QListWidgetItem) -> int:
         return int(item.data(ID_ROLE))
 
+    def _neighbour_id(self) -> int | None:
+        """The row that takes the current one's place when it leaves the list, so a
+        session can be reviewed top to bottom."""
+        row = self.list.currentRow()
+        neighbour = self.list.item(row + 1) or self.list.item(row - 1)
+        return self._id_of(neighbour) if neighbour is not None else None
+
     def _sync_buttons(self) -> None:
         enabled = self._file is not None and not self._busy
-        self.add_button.setEnabled(enabled)
-        self.add_open_button.setEnabled(enabled)
+        for button in (self.add_button, self.add_open_button, self.hide_button):
+            button.setEnabled(enabled)
+        self.delete_button.setEnabled(enabled)
+        hidden = self._hidden_view
+        self.hide_button.setText(strings.SOURCE_UNHIDE if hidden else strings.SOURCE_HIDE)
+        self.hide_button.setToolTip(
+            strings.SOURCE_UNHIDE_TOOLTIP if hidden else strings.SOURCE_HIDE_TOOLTIP
+        )
+        self.hint.setText(strings.SOURCE_HIDDEN_HINT if hidden else strings.SOURCE_HINT)
+
+    def _flash(self, message: str) -> None:
+        # The mark keeps the UI's direction when the message opens with a Latin file name.
+        message = strings.DIRECTION_MARK + message
+        self.status.setText(message)
+        QTimer.singleShot(6000, lambda: self._clear_status(message))
+
+    def _clear_status(self, message: str) -> None:
+        if self.status.text() == message:  # not something said since
+            self.status.setText("")
+
+    # hidden files ------------------------------------------------------------------------
+    def _set_hidden_view(self, on: bool) -> None:
+        if on == self._hidden_view:
+            return
+        self._hidden_view = on
+        self.clear_filter(reload=False)
+        self.refresh()
+        self._sync_buttons()
+        self.list.setFocus()
+
+    def _leave_hidden_view(self) -> None:
+        self._hidden_view = False
+        self.hidden_toggle.blockSignals(True)
+        self.hidden_toggle.setChecked(False)
+        self.hidden_toggle.blockSignals(False)
+        self._sync_buttons()
+
+    def toggle_hidden_current(self) -> None:
+        """Take the file off the list, or — among the hidden ones — put it back."""
+        file = self._file
+        if file is None or self._busy:
+            return
+        next_id = self._neighbour_id()
+        try:
+            if self._hidden_view:
+                self._ws.source.unhide(file.path)
+                message = strings.SOURCE_UNHIDDEN_DONE
+            else:
+                self._ws.source.hide(file.path)
+                message = strings.SOURCE_HIDDEN_DONE
+        except OSError as exc:  # gone from the disk meanwhile
+            self.refresh()
+            show_error(self, exc)
+            return
+        self._flash(message.format(name=file.name))
+        self.refresh(select_id=next_id)
+        self.pending_changed.emit()
+
+    # deleting from the disk --------------------------------------------------------------
+    def delete_current(self) -> None:
+        """To the Windows Recycle Bin, after asking; permanently only if that fails and the
+        user says so."""
+        file = self._file
+        if file is None or self._busy:
+            return
+        text = strings.SOURCE_DELETE_CONFIRM.format(name=file.name)
+        if not confirm(self, text, strings.SOURCE_DELETE_ACTION):
+            return
+        next_id = self._neighbour_id()
+        self.player.close_voice()  # its decoder has the file open
+        self._busy = True
+        self._sync_buttons()
+        self.status.setText(strings.SOURCE_DELETING)
+        self._try_delete(file, next_id, DELETE_ATTEMPTS)
+
+    def _try_delete(self, file: SourceFile, next_id: int | None, attempts: int) -> None:
+        path = file.path
+        if not path.exists() or QFile.moveToTrash(str(path)):
+            self._on_deleted(strings.SOURCE_DELETED.format(name=file.name), next_id)
+            return
+        if attempts > 1:
+            QTimer.singleShot(
+                DELETE_RETRY_MS, lambda: self._try_delete(file, next_id, attempts - 1)
+            )
+            return
+        # No Recycle Bin on this drive (a network share, some USB sticks), or still in use.
+        self._busy = False
+        self.status.setText("")
+        text = strings.SOURCE_DELETE_NO_BIN.format(name=file.name)
+        if confirm(self, text, strings.SOURCE_DELETE_FOREVER):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                show_error(self, exc)
+            else:
+                self._on_deleted(strings.SOURCE_DELETED_FOREVER.format(name=file.name), next_id)
+                return
+        self.refresh()  # the file is still there: back in the player
+        self._sync_buttons()
+
+    def _on_deleted(self, message: str, next_id: int | None) -> None:
+        self._busy = False
+        self._flash(message)
+        self.refresh(select_id=next_id)
+        self._sync_buttons()
+        self.pending_changed.emit()
 
     # adding ------------------------------------------------------------------------------
     def add_current(self, open_after: bool) -> None:
@@ -249,12 +414,8 @@ class SourcePage(ListPage):
             self.status.setText("")
             self._sync_buttons()
             return
-        self.status.setText(strings.SOURCE_ADDED.format(name=file.name))
-        QTimer.singleShot(6000, lambda: self.status.setText(""))
-        # The next file down takes its place, so a session can be reviewed top to bottom.
-        row = self.list.currentRow()
-        neighbour = self.list.item(row + 1) or self.list.item(row - 1)
-        next_id = self._id_of(neighbour) if neighbour is not None else None
+        self._flash(strings.SOURCE_ADDED.format(name=file.name))
+        next_id = self._neighbour_id()
         self._events.data_changed.emit()
         self.refresh(select_id=next_id)
         self._sync_buttons()
@@ -275,6 +436,17 @@ class SourcePage(ListPage):
             subprocess.Popen(["explorer", "/select,", str(path)])
         elif path.parent.exists():
             subprocess.Popen(["explorer", str(path.parent)])
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if watched is self.list and event.type() == QEvent.Type.KeyPress:
+            assert isinstance(event, QKeyEvent)
+            if (
+                event.key() == Qt.Key.Key_Delete
+                and event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+            ):
+                self.delete_current()
+                return True
+        return super().eventFilter(watched, event)
 
     def showEvent(self, event: QShowEvent) -> None:
         self._watch()  # the folder may have been created or restored meanwhile

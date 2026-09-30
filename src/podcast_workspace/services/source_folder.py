@@ -4,6 +4,9 @@ Everything in it is shown for review without being stored. A file enters the dat
 only when the user adds it (a normal voice import, which copies it into the workspace's
 store), so listening to a take and deciding it is not worth keeping leaves no trace in
 the workspace — and once it is added, the folder can be cleared without losing it.
+
+A take that is not worth keeping can be taken off the list (the file stays where it is,
+and can be put back) or deleted from the disk.
 """
 
 import os
@@ -24,6 +27,15 @@ from podcast_workspace.services.voice_store import (
 
 # A folder picked by mistake (a whole drive, Documents) must not hang the page.
 MAX_FILES = 3000
+
+
+@dataclass(frozen=True)
+class SourceListing:
+    """What the folder holds that is not in the workspace: the files on the list, and the
+    ones taken off it."""
+
+    pending: list["SourceFile"]
+    hidden: list["SourceFile"]
 
 
 @dataclass(frozen=True)
@@ -64,11 +76,38 @@ class SourceFolderService:
     def pending(self) -> list[SourceFile]:
         """Audio files in the folder (and its subfolders) not yet in the workspace, newest
         first. Empty when no folder is set; FileNotFoundError when it has gone."""
+        return self.listing().pending
+
+    def listing(self) -> SourceListing:
+        """The folder's files not yet in the workspace, newest first, split into the list and
+        the files taken off it. Empty when no folder is set; FileNotFoundError when it has
+        gone."""
         folder = self.folder()
         if folder is None:
-            return []
+            return SourceListing([], [])
         if not folder.is_dir():
             raise FileNotFoundError(str(folder))
+        found, complete = self._scan(folder)
+        hidden_marks = self._settings.source_hidden()
+        pending: list[SourceFile] = []
+        hidden: list[SourceFile] = []
+        still_hidden: set[str] = set()
+        for file in found:
+            key = path_key(file.path)
+            mark = hidden_marks.get(key)
+            # A new take saved under the same name is a different recording: it is listed.
+            if mark is not None and abs(file.modified.timestamp() - mark) <= MTIME_SLACK_S:
+                hidden.append(file)
+                still_hidden.add(key)
+            else:
+                pending.append(file)
+        if complete:
+            self._forget_hidden(folder, hidden_marks, still_hidden)
+        return SourceListing(pending, hidden)
+
+    def _scan(self, folder: Path) -> tuple[list[SourceFile], bool]:
+        """Every audio file under `folder` not in the workspace, and whether that is all of
+        them (False when MAX_FILES cut the walk short)."""
         # A voice in the trash is still the workspace's: its file is not offered again.
         voices = self._voices.list_all(include_trashed=True)
         known = {path_key(v.file_path) for v in voices}
@@ -94,11 +133,34 @@ class SourceFolderService:
                     continue
                 found.append(SourceFile(path, stat.st_size, modified))
                 if len(found) >= MAX_FILES:
-                    break
-            if len(found) >= MAX_FILES:
-                break
-        found.sort(key=lambda f: f.modified, reverse=True)
-        return found
+                    return self._newest_first(found), False
+        return self._newest_first(found), True
+
+    @staticmethod
+    def _newest_first(files: list[SourceFile]) -> list[SourceFile]:
+        return sorted(files, key=lambda f: f.modified, reverse=True)
+
+    def _forget_hidden(self, folder: Path, marks: dict[str, float], kept: set[str]) -> None:
+        """Drop the marks of files under `folder` that are gone, replaced or added, so the
+        setting does not grow for ever. Another folder's marks wait for it to come back."""
+        prefix = path_key(folder).rstrip(os.sep) + os.sep
+        stale = [k for k in marks if k.startswith(prefix) and k not in kept]
+        if stale:
+            for key in stale:
+                del marks[key]
+            self._settings.set_source_hidden(marks)
+
+    def hide(self, path: Path) -> None:
+        """Take a file off the list; it stays on the disk. It comes back if it is recorded
+        over."""
+        marks = self._settings.source_hidden()
+        marks[path_key(path)] = path.stat().st_mtime
+        self._settings.set_source_hidden(marks)
+
+    def unhide(self, path: Path) -> None:
+        marks = self._settings.source_hidden()
+        if marks.pop(path_key(path), None) is not None:
+            self._settings.set_source_hidden(marks)
 
     def subfolders(self) -> list[Path]:
         """The folder and every folder under it, for the file watcher."""

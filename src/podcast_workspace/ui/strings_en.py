@@ -136,6 +136,36 @@ SOURCE_ADD_OPEN_TOOLTIP = "Add it, then go to Ideas to tag it and take notes"
 SOURCE_ADDING = "Adding…"
 SOURCE_ADDED = "“{name}” was added to audio ideas"
 SOURCE_IN_SUBFOLDER = "in {folder}"
+SOURCE_HIDE = "Remove from list"
+SOURCE_HIDE_TOOLTIP = (
+    "Taken off this list; the file stays on the disk. It comes back from “Hidden”  (Delete)"
+)
+SOURCE_UNHIDE = "Put back on the list"
+SOURCE_UNHIDE_TOOLTIP = "Shows up in the audio folder list again  (Delete)"
+SOURCE_HIDDEN_DONE = "“{name}” was taken off the list"
+SOURCE_UNHIDDEN_DONE = "“{name}” is back on the list"
+SOURCE_HIDDEN_TOGGLE = "Hidden  {n}"
+SOURCE_HIDDEN_TOGGLE_TOOLTIP = "Files you took off the list, still on the disk"
+SOURCE_HIDDEN_EMPTY = "No hidden files in this folder."
+SOURCE_HIDDEN_HINT = (
+    "This file was taken off the list and is still on the disk. "
+    "You can put it back, add it to the workspace or delete it from the disk."
+)
+SOURCE_DELETE = "Delete from disk…"
+SOURCE_DELETE_TOOLTIP = "The file goes to the Windows Recycle Bin  (Shift+Delete)"
+SOURCE_DELETE_CONFIRM = (
+    "Delete “{name}” from the disk? It goes to the Windows Recycle Bin and can be "
+    "restored from there until you empty it."
+)
+SOURCE_DELETE_ACTION = "Delete from disk"
+SOURCE_DELETING = "Deleting…"
+SOURCE_DELETED = "“{name}” was moved to the Windows Recycle Bin"
+SOURCE_DELETE_NO_BIN = (
+    "“{name}” could not be moved to the Windows Recycle Bin; the drive may have none, or "
+    "another program has the file open. Delete it permanently? This cannot be undone."
+)
+SOURCE_DELETE_FOREVER = "Delete permanently"
+SOURCE_DELETED_FOREVER = "“{name}” was deleted permanently"
 SIZE_MB = "{n} MB"
 SIZE_KB = "{n} KB"
 

@@ -32,6 +32,7 @@ BACKUP_INTERVAL_KEY = "backup.reminder_days"
 GEOMETRY_KEY = "ui.window_geometry"
 RECORDER_KEY = "recording.program_path"
 SOURCE_FOLDER_KEY = "voices.source_folder"
+SOURCE_HIDDEN_KEY = "voices.source_hidden"
 SEASON_FILTER_KEY = "ui.episode_season_filter"
 TRIM_SILENCE_KEY = "player.trim_silence"
 VOLUME_KEY = "player.volume"
@@ -123,6 +124,16 @@ class SettingsService:
 
     def set_source_folder(self, path: str) -> None:
         self._set(SOURCE_FOLDER_KEY, path.strip())
+
+    def source_hidden(self) -> dict[str, float]:
+        """Files taken off the audio folder's list: path key → the modified time they had."""
+        value = self._get(SOURCE_HIDDEN_KEY)
+        if not isinstance(value, dict):
+            return {}
+        return {k: float(v) for k, v in value.items() if isinstance(v, int | float)}
+
+    def set_source_hidden(self, hidden: dict[str, float]) -> None:
+        self._set(SOURCE_HIDDEN_KEY, hidden)
 
     def season_filter(self) -> str:
         """Which season the Episodes list shows: "all", "none" or a season id."""

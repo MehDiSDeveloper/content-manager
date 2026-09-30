@@ -347,6 +347,12 @@ tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3
   HighlightedText (unreadable in dark). Lines/focus/markers use the Link role (accent_strong)
 
 ## Status
+- v1.18: audio folder — «حذف از فهرست» (Delete) hides a file, which stays on the disk
+  (setting `voices.source_hidden`: path key → mtime, so a new take under the same name is
+  listed again; marks of files gone, replaced or added are dropped), «پنهان‌شده‌ها» under the
+  list shows them and puts them back; «حذف از دیسک…» (Shift+Delete) sends it to the Windows
+  Recycle Bin after a confirmation (player closed first, retried while the decoder lets go;
+  permanent only if that fails and the user says so)
 - v1.17: «خروجی گرفتن» — an audio idea saved with the player's pause trimming and volume,
   as a new voice («name 01», with tags, notes, transcript) or in place, times moved to
   match; the Bale bot sends searched voices trimmed the same way
