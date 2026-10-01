@@ -2,6 +2,7 @@
 
 Local-first Windows desktop workspace for a solo Persian podcaster: episodes, voices, ideas,
 tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3.12, PySide6.
+Source code: GitHub `MehDiSDeveloper/content-manager` (private).
 
 ## Run
 - App: `.venv\Scripts\python -m podcast_workspace` · tests: `.venv\Scripts\python -m pytest` · lint: `ruff check src tests`, `ruff format src`

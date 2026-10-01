@@ -9,3 +9,19 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# downloaded Whisper model files (large, re-downloadable)
+whisper_model/
+
+# editors / OS / logs
+.vscode/
+.idea/
+.claude/settings.local.json
+.DS_Store
+Thumbs.db
+*.log
