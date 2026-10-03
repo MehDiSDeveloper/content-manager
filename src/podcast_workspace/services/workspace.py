@@ -25,6 +25,7 @@ from podcast_workspace.services.content_services import (
     VoiceService,
 )
 from podcast_workspace.services.history import HistoryService
+from podcast_workspace.services.script_prompt import ScriptPromptService
 from podcast_workspace.services.search_service import SearchService
 from podcast_workspace.services.settings_service import SettingsService
 from podcast_workspace.services.source_folder import SourceFolderService
@@ -45,6 +46,7 @@ class Workspace:
         self.episodes = EpisodeService(session_factory, self.history)
         self.seasons = SeasonService(session_factory, self.history)
         self.episode_notes = EpisodeNoteService(session_factory, self.history)
+        self.script_prompt = ScriptPromptService(session_factory)
         self.ideas = IdeaService(session_factory, self.history)
         self.voices = VoiceService(session_factory, self.history)
         self.voice_render = VoiceRenderService(session_factory)

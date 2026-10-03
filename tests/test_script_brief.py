@@ -1,8 +1,12 @@
 """The script brief: its defaults, that it is stored, undone and exported, and the prompt."""
 
+from dataclasses import replace
+
 import pytest
 
 from podcast_workspace.domain.script_brief import Approach, Mood, Register, ScriptBrief
+from podcast_workspace.domain.script_prompt import ScriptMaterial, build_prompt
+from podcast_workspace.domain.smart_links import LinkKind
 from podcast_workspace.services.workspace import Workspace
 
 
@@ -60,3 +64,33 @@ def test_the_brief_survives_an_export_and_restore(ws, tmp_path) -> None:
     ws.episodes.set_brief(episode.id, ScriptBrief())
     ws.backup.restore(archive)
     assert ws.episodes.get(episode.id).brief == brief
+
+
+def test_the_prompt_carries_the_episode_and_asks_before_writing(ws) -> None:
+    season = ws.seasons.create("فصل زمان")
+    ws.seasons.write_brief(season.id, "زمان از نگاه فیزیک و فلسفه", "")
+    first = ws.episodes.create("زمان چیست", season_id=season.id)
+    episode = ws.episodes.create("پیکان زمان", season_id=season.id)
+    ws.episodes.set_brief(episode.id, ScriptBrief(about="چرا گذشته را به یاد می‌آوریم", depth=2))
+    ws.episode_notes.create(episode.id, "شروع", "آنتروپی همیشه بالا می‌رود.")
+    todo = ws.episode_notes.create(episode.id, "کارها", "میکروفون را عوض کنم")
+    idea = ws.ideas.create("بولتزمن و مغزهای شناور")
+    ws.episodes.link(episode.id, LinkKind.IDEA, idea.id, True)
+
+    material = ws.script_prompt.material(episode.id)
+    assert material.season.others == ((first.title, 0),)  # its depth was never set
+    brief = replace(ws.episodes.get(episode.id).brief, left_out_notes=frozenset({todo.id}))
+    prompt = build_prompt(material, brief)
+
+    for expected in ("پیکان زمان", "چرا گذشته", "زمان از نگاه فیزیک", "آنتروپی", "بولتزمن"):
+        assert expected in prompt
+    assert "میکروفون" not in prompt  # a note left out of the draft
+    assert "پلهٔ ۲ از ۵" in prompt
+    assert "درستی‌سنجی" in prompt and "منتظر تأیید" in prompt
+
+
+def test_without_a_draft_there_is_nothing_of_mine_to_check() -> None:
+    prompt = build_prompt(ScriptMaterial(title="اپیزود"), ScriptBrief(minutes=0))
+    assert "درستی‌سنجی" not in prompt
+    assert "## مدت" not in prompt
+    assert "صدای انسانی" in prompt
