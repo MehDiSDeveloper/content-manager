@@ -49,6 +49,7 @@ class ChangeKind(StrEnum):
     TRASH = "trash"
     CHECKLIST = "checklist"
     BRIEF = "brief"
+    SUMMARY = "summary"
 
 
 class TargetKind(StrEnum):

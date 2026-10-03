@@ -1,4 +1,4 @@
-"""A season's brief: what the season is about and how it is laid out.
+"""A season's brief: the producer's readme (into the script prompt) and its about.
 
 Two pieces, both on the Episodes page. The card sits in the list column over the
 episodes of the season on show, so the first lines of what the season is for are in
@@ -108,8 +108,8 @@ class SeasonCard(QPushButton):
 
 
 class SeasonBriefPage(QWidget):
-    """The season's name, where its episodes stand, and its brief in two columns: what
-    it is about beside how it is laid out. Everything saves as it is typed."""
+    """The season's name, where its episodes stand, and its brief in two columns: the
+    producer's readme beside the about for listeners. Everything saves as it is typed."""
 
     saved = Signal(object)  # Season, after its title or brief changed
     list_toggle_requested = Signal()
@@ -142,12 +142,8 @@ class SeasonBriefPage(QWidget):
         # a wide pane, and the goal stays in view while the structure is written.
         body = QHBoxLayout()
         body.setSpacing(18)
-        self.summary = self._column(
-            body, strings.SEASON_SUMMARY, strings.SEASON_SUMMARY_PLACEHOLDER
-        )
-        self.outline = self._column(
-            body, strings.SEASON_OUTLINE, strings.SEASON_OUTLINE_PLACEHOLDER
-        )
+        self.readme = self._column(body, strings.SEASON_README, strings.SEASON_README_PLACEHOLDER)
+        self.about = self._column(body, strings.SEASON_ABOUT, strings.SEASON_ABOUT_PLACEHOLDER)
         root.addLayout(body, 1)
 
         self._timer = QTimer(self, singleShot=True, interval=AUTOSAVE_DELAY_MS)
@@ -185,7 +181,7 @@ class SeasonBriefPage(QWidget):
         if not (same and self.title_edit.text() == season.title):
             self.title_edit.setText(season.title)
             self.title_edit.setCursorPosition(0)
-        for edit, text in ((self.summary, season.summary), (self.outline, season.outline)):
+        for edit, text in ((self.readme, season.readme), (self.about, season.about)):
             if not (same and edit.toPlainText() == text):
                 edit.setPlainText(text)
         self._loading = False
@@ -204,7 +200,7 @@ class SeasonBriefPage(QWidget):
             self._save_brief()
 
     def focus_main(self) -> None:
-        self.summary.setFocus()
+        self.readme.setFocus()
 
     # saving -------------------------------------------------------------------------------
     def _show_progress(self, statuses: list[EpisodeStatus]) -> None:
@@ -251,12 +247,12 @@ class SeasonBriefPage(QWidget):
             return
         try:
             saved = self._ws.seasons.write_brief(
-                season.id, self.summary.toPlainText(), self.outline.toPlainText()
+                season.id, self.readme.toPlainText(), self.about.toPlainText()
             )
         except Exception as exc:
             show_error(self, exc)
             return
-        if (saved.summary, saved.outline) != (season.summary, season.outline):
+        if (saved.readme, saved.about) != (season.readme, season.about):
             self._saved(saved)
 
     def _saved(self, season: Season) -> None:

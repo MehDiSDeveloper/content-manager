@@ -98,28 +98,29 @@ class Tag:
 class Season:
     """A run of episodes. Episodes belong to at most one; deleting a season keeps them.
 
-    Its brief is what keeps a run of episodes pointed somewhere: `summary` says what the
-    season is about and what it is for, `outline` how it gets there (its arc, the
-    episodes planned). Both are free text, and either may be empty.
+    Its brief is what keeps a run of episodes pointed somewhere. `readme` is the
+    producer's own: what the season is for, its strategy, rules and goals, and the path
+    it takes; it is what the script prompt hands the AI. `about` is the season as
+    listeners are told of it. Both are free text, and either may be empty.
     """
 
     title: str
-    summary: str = ""
-    outline: str = ""
+    readme: str = ""
+    about: str = ""
     created_at: datetime = field(default_factory=utcnow)
     id: int | None = None
 
     def __post_init__(self) -> None:
         self.title = normalize_persian(ensure_non_empty(self.title, "Season title"))
-        self.summary = normalize_persian(self.summary)
-        self.outline = normalize_persian(self.outline)
+        self.readme = normalize_persian(self.readme)
+        self.about = normalize_persian(self.about)
 
     def rename(self, title: str) -> None:
         self.title = normalize_persian(ensure_non_empty(title, "Season title"))
 
-    def write_brief(self, summary: str, outline: str) -> None:
-        self.summary = normalize_persian(summary)
-        self.outline = normalize_persian(outline)
+    def write_brief(self, readme: str, about: str) -> None:
+        self.readme = normalize_persian(readme)
+        self.about = normalize_persian(about)
 
 
 @dataclass(eq=False)
@@ -136,17 +137,24 @@ class Episode(Taggable):
     idea_note_ids: set[int] = field(default_factory=set)
     publish: PublishChecklist = field(default_factory=PublishChecklist)
     brief: ScriptBrief = field(default_factory=ScriptBrief)
+    # What the episode ended up saying, in a few lines: the script prompts of the
+    # season's later episodes carry it, so each one knows the story so far.
+    summary: str = ""
     id: int | None = None
 
     def __post_init__(self) -> None:
         self.title = normalize_persian(ensure_non_empty(self.title, "Episode title"))
         self.next_action = normalize_persian(" ".join(self.next_action.split()))
+        self.summary = normalize_persian(self.summary)
 
     def touch(self) -> None:
         self.updated_at = utcnow()
 
     def mark_opened(self) -> None:
         self.last_opened_at = utcnow()
+
+    def write_summary(self, summary: str) -> None:
+        self.summary = normalize_persian(summary)
 
 
 @dataclass(eq=False)

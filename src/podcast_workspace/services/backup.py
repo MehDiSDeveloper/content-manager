@@ -84,6 +84,15 @@ def _req_dt(value: str) -> datetime:
     return parsed
 
 
+def _season_readme(season: dict) -> str:
+    """The readme, or in an export made before it, the old summary and outline as one
+    (as migration e1b7c4a9f2d6 joins them)."""
+    if "readme" in season:
+        return season["readme"] or ""
+    parts = (season.get("summary") or "", season.get("outline") or "")
+    return "\n\n".join(p for p in parts if p)
+
+
 def _safe_name(path: str) -> str:
     name = PureWindowsPath(path).name
     return "".join(ch if ch not in '<>:"/\\|?*' else "_" for ch in name) or "audio"
@@ -261,8 +270,8 @@ class BackupService:
                 {
                     "id": s.id,
                     "title": s.title,
-                    "summary": s.summary,
-                    "outline": s.outline,
+                    "readme": s.readme,
+                    "about": s.about,
                     "created_at": _dt(s.created_at),
                 }
                 for s in snap.seasons
@@ -283,6 +292,7 @@ class BackupService:
                     "publish_done": sorted(s.value for s in e.publish.done),
                     "published_where": e.publish.where,
                     "brief": e.brief.to_dict(),
+                    "summary": e.summary,
                 }
                 for e in snap.episodes
             ],
@@ -451,6 +461,7 @@ class BackupService:
                         e.get("published_where") or "",
                     ),
                     brief=ScriptBrief.from_dict(e.get("brief")),
+                    summary=e.get("summary") or "",
                 )
                 for e in data["episodes"]
             ],
@@ -494,8 +505,8 @@ class BackupService:
                 Season(
                     id=s["id"],
                     title=s["title"],
-                    summary=s.get("summary", ""),
-                    outline=s.get("outline", ""),
+                    readme=_season_readme(s),
+                    about=s.get("about") or "",
                     created_at=_req_dt(s["created_at"]),
                 )
                 for s in data.get("seasons") or ()

@@ -62,6 +62,10 @@ EPISODE_DEFAULT_TITLE = "New episode"
 EPISODE_TITLE_PLACEHOLDER = "Episode title"
 EPISODE_STATUS = "Status"
 EPISODE_NEXT_ACTION = "Next step"
+EPISODE_SUMMARY = "Summary"
+EPISODE_SUMMARY_PLACEHOLDER = (
+    "What the episode says, once written. It goes into the prompts of this season's later episodes."
+)
 EPISODE_NEXT_ACTION_PLACEHOLDER = "One sentence: what is the next thing to do for this episode?"
 EPISODE_EMPTY = "No episodes yet. Start with “New episode”."
 EPISODE_DELETE_CONFIRM = "Delete episode “{title}”? Linked audio and text ideas are kept."
@@ -89,21 +93,18 @@ SEASON_DELETE_CONFIRM = (
 SEASON_EMPTY = "This season has no episodes yet. “New episode” creates one right in it."
 SEASON_NONE_EMPTY = "Every episode belongs to a season."
 # A season's brief: the card over its episodes, and the page it opens
-SEASON_BRIEF_CAPTION = "About this season"
-SEASON_BRIEF_CARD_EMPTY = "No goal or structure written for this season yet. Click to write them."
-SEASON_BRIEF_TOOLTIP = "What the season is about, its goals and its structure"
+SEASON_BRIEF_CAPTION = "This season's readme"
+SEASON_BRIEF_CARD_EMPTY = "No readme written for this season yet. Click to write it."
+SEASON_BRIEF_TOOLTIP = "The season's readme (for you) and about (for listeners)"
 SEASON_TITLE_PLACEHOLDER = "Season name"
-SEASON_SUMMARY = "About the season"
-SEASON_SUMMARY_PLACEHOLDER = (
-    "What is this season about, and why make it?\n"
-    "Where should the listener be by its last episode?\n"
-    "Big ideas, tone, and what stays out…"
+SEASON_README = "Season readme"
+SEASON_README_PLACEHOLDER = (
+    "For you and the AI; it goes into the script prompt.\n"
+    "The season's facts, strategy, rules and goals: why make it, where the listener ends "
+    "up, tone, what stays out, and its path from start to finish…"
 )
-SEASON_OUTLINE = "Structure"
-SEASON_OUTLINE_PLACEHOLDER = (
-    "How the season runs from start to finish: its parts, its peak "
-    "and the episodes planned, one per line."
-)
+SEASON_ABOUT = "About the season"
+SEASON_ABOUT_PLACEHOLDER = "The season as listeners are told of it, as written when publishing."
 SEASON_PROGRESS = "{n} episodes  ·  {stages}"
 SEASON_PROGRESS_STAGE = "{stage} {n}"
 SEASON_PROGRESS_EMPTY = "No episodes in this season yet."
@@ -577,6 +578,12 @@ SP_DRAFT_EMPTY = (
 SP_IDEAS = "Linked ideas"
 SP_IDEAS_COUNT = "{n} ideas go in; audio ideas with their transcript and your notes."
 SP_IDEAS_NONE = "No ideas are linked to this episode."
+SP_SEASON = "Season"
+SP_NO_SEASON = "This episode is in no season."
+SP_SEASON_README = "The readme of “{title}”"
+SP_SEASON_README_EMPTY = "The readme of “{title}” (not written yet)"
+SP_PREVIOUS = "Summaries of the season's earlier episodes ({n} of {total} have one)"
+SP_PREVIOUS_NONE = "This is the season's first episode."
 SP_UNREAD = "No text, so left out of the prompt: {names}. Transcribe it from the idea's preview."
 SP_PROMPT = "Prompt"
 SP_PROMPT_HINT = (
@@ -809,6 +816,7 @@ UNDO_ACTIONS = {
     "trash": "Move {target} {quoted} to the trash",
     "checklist": "Change the publish checklist of {target} {quoted}",
     "brief": "Change the script brief of {target} {quoted}",
+    "summary": "Edit the summary of {target} {quoted}",
 }
 UNDO_SOMETHING = "The last change"
 UNDO_ITEMS = "{n} items"  # a change made to a selection

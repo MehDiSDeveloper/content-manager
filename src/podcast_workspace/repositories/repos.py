@@ -189,6 +189,7 @@ class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
                 row.published_where,
             ),
             brief=ScriptBrief.from_dict(json.loads(row.script_brief or "{}")),
+            summary=row.summary,
         )
 
     def _apply(self, entity: Episode, row: EpisodeRow) -> None:
@@ -205,6 +206,7 @@ class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
         row.publish_done = ",".join(s.value for s in PublishStep if s in entity.publish.done)
         row.published_where = entity.publish.where
         row.script_brief = json.dumps(entity.brief.to_dict(), ensure_ascii=False)
+        row.summary = entity.summary
         row.tags = self._tag_rows(entity.tag_ids)
         row.voices = self._rows(VoiceRow, "Voice", entity.voice_ids)
         row.idea_notes = self._rows(IdeaNoteRow, "IdeaNote", entity.idea_note_ids)
@@ -257,15 +259,15 @@ class SeasonRepository(SqlRepository[Season, SeasonRow]):
         return Season(
             id=row.id,
             title=row.title,
-            summary=row.summary,
-            outline=row.outline,
+            readme=row.readme,
+            about=row.about,
             created_at=row.created_at,
         )
 
     def _apply(self, entity: Season, row: SeasonRow) -> None:
         row.title = entity.title
-        row.summary = entity.summary
-        row.outline = entity.outline
+        row.readme = entity.readme
+        row.about = entity.about
         row.created_at = entity.created_at
 
     def delete(self, entity_id: int) -> None:

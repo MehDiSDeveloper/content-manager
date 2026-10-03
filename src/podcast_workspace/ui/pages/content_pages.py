@@ -300,7 +300,7 @@ class EpisodesPage(ListPage):
         season = self._current_season()
         self.season_card.setVisible(season is not None)
         if season is not None:
-            self.season_card.set_summary(season.summary)
+            self.season_card.set_summary(season.readme)
 
     def _fill_season_menu(self) -> None:
         menu = self.season_menu
@@ -379,7 +379,7 @@ class EpisodesPage(ListPage):
         if renamed:
             self._fill_seasons()  # the box names it
         else:
-            self.season_card.set_summary(season.summary)
+            self.season_card.set_summary(season.readme)
 
     def _new_season(self) -> None:
         season = create_season(self, self._ws)

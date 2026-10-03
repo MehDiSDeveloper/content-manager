@@ -68,6 +68,10 @@ EPISODE_DEFAULT_TITLE = "اپیزود تازه"
 EPISODE_TITLE_PLACEHOLDER = "عنوان اپیزود"
 EPISODE_STATUS = "وضعیت"
 EPISODE_NEXT_ACTION = "قدم بعدی"
+EPISODE_SUMMARY = "خلاصه"
+EPISODE_SUMMARY_PLACEHOLDER = (
+    "خلاصهٔ متن اپیزود، پس از نوشتنش. در پرامپت اپیزودهای بعدی همین فصل می‌آید."
+)
 EPISODE_NEXT_ACTION_PLACEHOLDER = "یک جمله: کار بعدی برای این اپیزود چیست؟"
 EPISODE_EMPTY = "هنوز اپیزودی ندارید. با «اپیزود تازه» شروع کنید."
 EPISODE_DELETE_CONFIRM = "اپیزود «{title}» حذف شود؟ ایده‌های صوتی و متنی پیوندشده حذف نمی‌شوند."
@@ -93,20 +97,18 @@ SEASON_DELETE_CONFIRM = "فصل «{title}» حذف شود؟ اپیزودهایش
 SEASON_EMPTY = "این فصل هنوز اپیزودی ندارد. «اپیزود تازه» را بزنید تا در همین فصل ساخته شود."
 SEASON_NONE_EMPTY = "همهٔ اپیزودها فصل دارند."
 # A season's brief: the card over its episodes, and the page it opens
-SEASON_BRIEF_CAPTION = "دربارهٔ این فصل"
-SEASON_BRIEF_CARD_EMPTY = "هدف و ساختار این فصل هنوز نوشته نشده. برای نوشتن بزنید."
-SEASON_BRIEF_TOOLTIP = "دربارهٔ فصل، هدف‌ها و ساختارش"
+SEASON_BRIEF_CAPTION = "راهنمای این فصل"
+SEASON_BRIEF_CARD_EMPTY = "راهنمای این فصل هنوز نوشته نشده. برای نوشتن بزنید."
+SEASON_BRIEF_TOOLTIP = "راهنمای فصل (برای خودتان) و دربارهٔ فصل (برای شنونده)"
 SEASON_TITLE_PLACEHOLDER = "نام فصل"
-SEASON_SUMMARY = "دربارهٔ فصل"
-SEASON_SUMMARY_PLACEHOLDER = (
-    "این فصل دربارهٔ چیست و برای چه ساخته می‌شود؟\n"
-    "مخاطب در پایان فصل باید به کجا رسیده باشد؟\n"
-    "ایده‌های کلی، لحن و خط قرمزها…"
+SEASON_README = "راهنمای فصل (README)"
+SEASON_README_PLACEHOLDER = (
+    "برای خودتان و هوش مصنوعی؛ در پرامپت متن می‌آید.\n"
+    "اطلاعات، استراتژی، سیاست‌ها و هدف‌های فصل: برای چه ساخته می‌شود، مخاطب در پایان "
+    "به کجا می‌رسد، لحن، خط قرمزها و مسیر فصل از آغاز تا پایان…"
 )
-SEASON_OUTLINE = "ساختار"
-SEASON_OUTLINE_PLACEHOLDER = (
-    "مسیر فصل از آغاز تا پایان: بخش‌ها، نقطهٔ اوج و اپیزودهای برنامه‌ریزی‌شده، هر کدام در یک خط."
-)
+SEASON_ABOUT = "دربارهٔ فصل"
+SEASON_ABOUT_PLACEHOLDER = "معرفی فصل برای شنونده، همان که هنگام انتشار می‌نویسید."
 SEASON_PROGRESS = "{n} اپیزود  ·  {stages}"
 SEASON_PROGRESS_STAGE = "{stage} {n}"
 SEASON_PROGRESS_EMPTY = "هنوز اپیزودی در این فصل نیست."
@@ -579,6 +581,12 @@ SP_DRAFT_EMPTY = (
 SP_IDEAS = "ایده‌های پیوست‌شده"
 SP_IDEAS_COUNT = "{n} ایده در پرامپت می‌آید؛ ایده‌های صوتی با متن پیاده‌شده و یادداشت‌هایتان."
 SP_IDEAS_NONE = "ایده‌ای به این اپیزود پیوست نشده است."
+SP_SEASON = "فصل"
+SP_NO_SEASON = "این اپیزود فصلی ندارد."
+SP_SEASON_README = "راهنمای فصل «{title}»"
+SP_SEASON_README_EMPTY = "راهنمای فصل «{title}» (هنوز نوشته نشده)"
+SP_PREVIOUS = "خلاصهٔ اپیزودهای پیشین فصل ({n} از {total} خلاصه دارند)"
+SP_PREVIOUS_NONE = "این اپیزود نخستین اپیزود فصل است."
 SP_UNREAD = "بی‌متن و بیرون از پرامپت: {names}. از پیش‌نمایش ایده رونویسی‌اش کنید."
 SP_PROMPT = "پرامپت"
 SP_PROMPT_HINT = (
@@ -811,6 +819,7 @@ UNDO_ACTIONS = {
     "trash": "انتقال {target} {quoted} به سطل بازیافت",
     "checklist": "تغییر چک‌لیست انتشار {target} {quoted}",
     "brief": "تغییر بریف متن {target} {quoted}",
+    "summary": "ویرایش خلاصهٔ {target} {quoted}",
 }
 UNDO_SOMETHING = "آخرین تغییر"
 UNDO_ITEMS = "{n} مورد"  # a change made to a selection

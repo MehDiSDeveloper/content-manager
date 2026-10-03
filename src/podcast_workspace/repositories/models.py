@@ -85,8 +85,8 @@ class SeasonRow(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(Text)
-    summary: Mapped[str] = mapped_column(Text, default="")
-    outline: Mapped[str] = mapped_column(Text, default="")
+    readme: Mapped[str] = mapped_column(Text, default="")
+    about: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(UTCDateTime)
 
 
@@ -108,6 +108,7 @@ class EpisodeRow(Base):
     published_where: Mapped[str] = mapped_column(Text, default="")
     # The script brief (migration d4f2b8e6a1c3), as JSON: `ScriptBrief.to_dict`.
     script_brief: Mapped[str] = mapped_column(Text, default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
 
     tags: Mapped[list[TagRow]] = relationship(secondary=episode_tags)
     voices: Mapped[list["VoiceRow"]] = relationship(secondary=episode_voices)

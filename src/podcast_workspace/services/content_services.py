@@ -164,6 +164,7 @@ class EpisodeService:
                 idea_note_ids=current.idea_note_ids,
                 publish=current.publish,
                 brief=current.brief,
+                summary=current.summary,
             )
             if (edited.title, edited.status, edited.next_action) == (
                 current.title,
@@ -432,6 +433,29 @@ class EpisodeService:
         )
         return saved
 
+    def set_summary(self, episode_id: int, summary: str) -> Episode:
+        """Save what the episode said. Like a note: one undo step per writing run, and it
+        counts as touching the episode."""
+        with UnitOfWork(self._sf) as uow:
+            episode = uow.episodes.get(episode_id)
+            before, stamp = episode.summary, episode.updated_at
+            episode.write_summary(summary)
+            if episode.summary == before:
+                return episode
+            episode.touch()
+            saved = uow.episodes.update(episode)
+        after, touched, title = saved.summary, saved.updated_at, saved.title
+        self._history.record(
+            ChangeKind.SUMMARY,
+            Target(TargetKind.EPISODE, episode_id),
+            undo=lambda: self._set_summary(episode_id, before, stamp),
+            redo=lambda: self._set_summary(episode_id, after, touched),
+            details=(title,),
+            weight=len(title) + len(after),
+            merge_key=f"episode-summary:{episode_id}",
+        )
+        return saved
+
     @staticmethod
     def _item_title(uow: UnitOfWork, kind: LinkKind, item_id: int) -> str:
         """What an episode started from an item is called: the file's name without its
@@ -571,6 +595,13 @@ class EpisodeService:
             episode.updated_at = updated_at
             uow.episodes.update(episode)
 
+    def _set_summary(self, episode_id: int, summary: str, updated_at: datetime) -> None:
+        with UnitOfWork(self._sf) as uow:
+            episode = uow.episodes.get(episode_id)
+            episode.write_summary(summary)
+            episode.updated_at = updated_at
+            uow.episodes.update(episode)
+
     def _restore(self, episode: Episode, notes: tuple[EpisodeNote, ...]) -> None:
         with UnitOfWork(self._sf) as uow:
             restored = deepcopy(episode)
@@ -641,16 +672,16 @@ class SeasonService:
         )
         return saved
 
-    def write_brief(self, season_id: int, summary: str, outline: str) -> Season:
-        """Save what the season is about and how it is laid out."""
+    def write_brief(self, season_id: int, readme: str, about: str) -> Season:
+        """Save the producer's readme and the season's about."""
         with UnitOfWork(self._sf) as uow:
             season = uow.seasons.get(season_id)
-            before = (season.summary, season.outline)
-            season.write_brief(summary, outline)
-            if (season.summary, season.outline) == before:
+            before = (season.readme, season.about)
+            season.write_brief(readme, about)
+            if (season.readme, season.about) == before:
                 return season
             saved = uow.seasons.update(season)
-        after = (saved.summary, saved.outline)
+        after = (saved.readme, saved.about)
         # Like a note: the editor's own Ctrl+Z covers keystrokes, this a whole writing run.
         self._history.record(
             ChangeKind.EDIT,
@@ -658,7 +689,7 @@ class SeasonService:
             undo=lambda: self._set_brief(season_id, before),
             redo=lambda: self._set_brief(season_id, after),
             details=(saved.title,),
-            weight=len(saved.summary) + len(saved.outline),
+            weight=len(saved.readme) + len(saved.about),
             merge_key=f"season-brief:{season_id}",
         )
         return saved
