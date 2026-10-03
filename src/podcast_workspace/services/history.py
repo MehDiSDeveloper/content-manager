@@ -48,6 +48,7 @@ class ChangeKind(StrEnum):
     UNARCHIVE = "unarchive"
     TRASH = "trash"
     CHECKLIST = "checklist"
+    BRIEF = "brief"
 
 
 class TargetKind(StrEnum):

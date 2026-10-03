@@ -18,6 +18,7 @@ from podcast_workspace.domain.rules import (
     normalize_persian,
     normalize_tag_name,
 )
+from podcast_workspace.domain.script_brief import ScriptBrief
 
 
 def utcnow() -> datetime:
@@ -134,6 +135,7 @@ class Episode(Taggable):
     voice_ids: set[int] = field(default_factory=set)
     idea_note_ids: set[int] = field(default_factory=set)
     publish: PublishChecklist = field(default_factory=PublishChecklist)
+    brief: ScriptBrief = field(default_factory=ScriptBrief)
     id: int | None = None
 
     def __post_init__(self) -> None:

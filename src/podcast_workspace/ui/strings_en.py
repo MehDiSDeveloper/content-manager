@@ -709,6 +709,7 @@ UNDO_ACTIONS = {
     "unarchive": "Unarchive {target} {quoted}",
     "trash": "Move {target} {quoted} to the trash",
     "checklist": "Change the publish checklist of {target} {quoted}",
+    "brief": "Change the script brief of {target} {quoted}",
 }
 UNDO_SOMETHING = "The last change"
 UNDO_ITEMS = "{n} items"  # a change made to a selection

@@ -22,6 +22,7 @@ from podcast_workspace.domain.entities import (
 from podcast_workspace.domain.errors import NotFoundError
 from podcast_workspace.domain.publish import PublishChecklist, PublishStep
 from podcast_workspace.domain.rules import MAX_TAGS_PER_ITEM, ensure_tag_limit
+from podcast_workspace.domain.script_brief import ScriptBrief
 from podcast_workspace.domain.smart_links import LinkKind
 from podcast_workspace.repositories.base import SqlRepository
 from podcast_workspace.repositories.models import (
@@ -187,6 +188,7 @@ class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
                 frozenset(PublishStep(s) for s in row.publish_done.split(",") if s),
                 row.published_where,
             ),
+            brief=ScriptBrief.from_dict(json.loads(row.script_brief or "{}")),
         )
 
     def _apply(self, entity: Episode, row: EpisodeRow) -> None:
@@ -202,6 +204,7 @@ class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
         # Stored in the enum's order, so the same checklist is always the same text.
         row.publish_done = ",".join(s.value for s in PublishStep if s in entity.publish.done)
         row.published_where = entity.publish.where
+        row.script_brief = json.dumps(entity.brief.to_dict(), ensure_ascii=False)
         row.tags = self._tag_rows(entity.tag_ids)
         row.voices = self._rows(VoiceRow, "Voice", entity.voice_ids)
         row.idea_notes = self._rows(IdeaNoteRow, "IdeaNote", entity.idea_note_ids)

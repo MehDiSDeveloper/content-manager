@@ -106,6 +106,8 @@ class EpisodeRow(Base):
     # where it went, one place per line.
     publish_done: Mapped[str] = mapped_column(String(64), default="")
     published_where: Mapped[str] = mapped_column(Text, default="")
+    # The script brief (migration d4f2b8e6a1c3), as JSON: `ScriptBrief.to_dict`.
+    script_brief: Mapped[str] = mapped_column(Text, default="")
 
     tags: Mapped[list[TagRow]] = relationship(secondary=episode_tags)
     voices: Mapped[list["VoiceRow"]] = relationship(secondary=episode_voices)

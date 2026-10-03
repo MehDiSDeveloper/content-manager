@@ -36,6 +36,7 @@ from podcast_workspace.domain.entities import (
 from podcast_workspace.domain.errors import DomainError
 from podcast_workspace.domain.lifecycle import ArchiveScope
 from podcast_workspace.domain.publish import PublishChecklist, PublishStep
+from podcast_workspace.domain.script_brief import ScriptBrief
 from podcast_workspace.domain.smart_links import (
     LinkCandidate,
     LinkKind,
@@ -162,6 +163,7 @@ class EpisodeService:
                 voice_ids=current.voice_ids,
                 idea_note_ids=current.idea_note_ids,
                 publish=current.publish,
+                brief=current.brief,
             )
             if (edited.title, edited.status, edited.next_action) == (
                 current.title,
@@ -406,6 +408,30 @@ class EpisodeService:
         )
         return saved
 
+    def set_brief(self, episode_id: int, brief: ScriptBrief) -> Episode:
+        """Save the script brief. One undo step per run of edits, typed or ticked: it is
+        filled in one sitting, and every tick a step of its own would bury the rest.
+        Counts as touching the episode."""
+        with UnitOfWork(self._sf) as uow:
+            episode = uow.episodes.get(episode_id)
+            before, stamp = episode.brief, episode.updated_at
+            if brief == before:
+                return episode
+            episode.brief = brief
+            episode.touch()
+            saved = uow.episodes.update(episode)
+        touched, title = saved.updated_at, saved.title
+        self._history.record(
+            ChangeKind.BRIEF,
+            Target(TargetKind.EPISODE, episode_id),
+            undo=lambda: self._set_brief(episode_id, before, stamp),
+            redo=lambda: self._set_brief(episode_id, brief, touched),
+            details=(title,),
+            weight=len(title) + len(brief.about),
+            merge_key=f"episode-brief:{episode_id}",
+        )
+        return saved
+
     @staticmethod
     def _item_title(uow: UnitOfWork, kind: LinkKind, item_id: int) -> str:
         """What an episode started from an item is called: the file's name without its
@@ -535,6 +561,13 @@ class EpisodeService:
         with UnitOfWork(self._sf) as uow:
             episode = uow.episodes.get(episode_id)
             episode.publish = checklist
+            episode.updated_at = updated_at
+            uow.episodes.update(episode)
+
+    def _set_brief(self, episode_id: int, brief: ScriptBrief, updated_at: datetime) -> None:
+        with UnitOfWork(self._sf) as uow:
+            episode = uow.episodes.get(episode_id)
+            episode.brief = brief
             episode.updated_at = updated_at
             uow.episodes.update(episode)
 

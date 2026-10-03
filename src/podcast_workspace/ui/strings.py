@@ -712,6 +712,7 @@ UNDO_ACTIONS = {
     "unarchive": "خروج {target} {quoted} از بایگانی",
     "trash": "انتقال {target} {quoted} به سطل بازیافت",
     "checklist": "تغییر چک‌لیست انتشار {target} {quoted}",
+    "brief": "تغییر بریف متن {target} {quoted}",
 }
 UNDO_SOMETHING = "آخرین تغییر"
 UNDO_ITEMS = "{n} مورد"  # a change made to a selection

@@ -31,6 +31,7 @@ from podcast_workspace.domain.entities import (
 )
 from podcast_workspace.domain.errors import ValidationError
 from podcast_workspace.domain.publish import PublishChecklist, PublishStep
+from podcast_workspace.domain.script_brief import ScriptBrief
 from podcast_workspace.paths import backups_dir, library_dir
 from podcast_workspace.repositories.db import WriteCounter
 from podcast_workspace.repositories.unit_of_work import UnitOfWork
@@ -281,6 +282,7 @@ class BackupService:
                     "idea_note_ids": sorted(e.idea_note_ids),
                     "publish_done": sorted(s.value for s in e.publish.done),
                     "published_where": e.publish.where,
+                    "brief": e.brief.to_dict(),
                 }
                 for e in snap.episodes
             ],
@@ -448,6 +450,7 @@ class BackupService:
                         frozenset(PublishStep(s) for s in e.get("publish_done") or ()),
                         e.get("published_where") or "",
                     ),
+                    brief=ScriptBrief.from_dict(e.get("brief")),
                 )
                 for e in data["episodes"]
             ],
