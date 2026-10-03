@@ -80,6 +80,10 @@ LIST_SHOW = "نمایش فهرست اپیزودها  (Ctrl+L)"
 EPISODE_DELETE = "حذف اپیزود"
 EPISODE_MORE = "کارهای بیشتر"
 
+NUMBER_NONE = "#"  # a season or episode with no number yet
+NUMBERED = "{n}. {title}"
+EPISODE_NUMBER_TOOLTIP = "شمارهٔ اپیزود در فصل: ترتیبش را نگه می‌دارد، هر وقت هم ساخته شده باشد"
+SEASON_NUMBER_TOOLTIP = "شمارهٔ فصل: ترتیب فصل‌ها"
 SEASON_ALL = "همهٔ فصل‌ها"
 SEASON_NONE = "بدون فصل"
 SEASON_ITEM = "{title}  ({n})"
@@ -820,6 +824,7 @@ UNDO_ACTIONS = {
     "checklist": "تغییر چک‌لیست انتشار {target} {quoted}",
     "brief": "تغییر بریف متن {target} {quoted}",
     "summary": "ویرایش خلاصهٔ {target} {quoted}",
+    "number": "تغییر شمارهٔ {target} {quoted}",
 }
 UNDO_SOMETHING = "آخرین تغییر"
 UNDO_ITEMS = "{n} مورد"  # a change made to a selection

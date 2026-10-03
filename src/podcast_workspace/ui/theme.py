@@ -283,6 +283,14 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     }}
     QLineEdit#titleEdit {{ font-size: 16pt; font-weight: 700; padding: 9px 13px; }}
     QLineEdit#titleEdit:focus {{ padding: 8px 12px; }}
+    /* The number before a title: drawn as part of the title, no arrows (wheel and the
+       arrow keys still step it). */
+    QSpinBox#numberBox {{
+        background: {c.surface}; color: {c.text}; border: 1px solid {c.border};
+        border-radius: 10px; font-size: 16pt; font-weight: 700; padding: 9px 6px;
+    }}
+    QSpinBox#numberBox:hover {{ border-color: {c.accent}; }}
+    QSpinBox#numberBox:focus {{ border: 2px solid {c.accent_strong}; padding: 8px 5px; }}
     QLineEdit#searchBar {{ padding: 10px 14px; border-radius: 12px; font-size: 11pt; }}
     QLineEdit#searchBar:focus {{ padding: 9px 13px; }}
     /* A page's own filter box: a quieter field than an editable value, because it

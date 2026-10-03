@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from podcast_workspace.audio.engine import Player
-from podcast_workspace.domain.entities import Episode, Season
+from podcast_workspace.domain.entities import Episode, Season, in_order
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.icons import NAV_ICON_SIZE, list_pane_icon, more_icon
@@ -36,6 +36,7 @@ from podcast_workspace.ui.support import (
     AppEvents,
     confirm,
     local_digits,
+    numbered,
     show_error,
 )
 
@@ -152,6 +153,7 @@ class EpisodesPage(ListPage):
         self.brief.list_toggle_requested.connect(self.toggle_list)
         self.editor_stack.addWidget(self.brief)
         self.workspace.episode_saved.connect(self._on_episode_saved)
+        self.workspace.number_saved.connect(lambda: self.refresh(load=False))
         self.workspace.episode_gone.connect(lambda: QTimer.singleShot(0, self.refresh))
         self.workspace.delete_requested.connect(self.delete_item)
         self.workspace.list_toggle_requested.connect(self.toggle_list)
@@ -291,7 +293,8 @@ class EpisodesPage(ListPage):
         box.addItem(strings.SEASON_ALL, SEASON_ALL)
         for season in self._seasons:
             n = local_digits(counts.get(season.id, 0))
-            box.addItem(strings.SEASON_ITEM.format(title=season.title, n=n), str(season.id))
+            title = numbered(season.title, season.number)
+            box.addItem(strings.SEASON_ITEM.format(title=title, n=n), str(season.id))
         if self._seasons:
             n = local_digits(counts.get(None, 0))
             box.addItem(strings.SEASON_ITEM.format(title=strings.SEASON_NONE, n=n), SEASON_NONE)
@@ -374,10 +377,13 @@ class EpisodesPage(ListPage):
         self.brief.open(season.id)
 
     def _on_brief_saved(self, season: Season) -> None:
-        renamed = any(s.id == season.id and s.title != season.title for s in self._seasons)
+        renamed = any(
+            s.id == season.id and (s.title, s.number) != (season.title, season.number)
+            for s in self._seasons
+        )
         self._seasons = [season if s.id == season.id else s for s in self._seasons]
         if renamed:
-            self._fill_seasons()  # the box names it
+            self._fill_seasons()  # the box names and orders it
         else:
             self.season_card.set_summary(season.readme)
 
@@ -475,14 +481,14 @@ class EpisodesPage(ListPage):
             # Across all seasons, each row says which one it belongs to.
             season = next((s for s in self._seasons if s.id == episode.season_id), None)
             if season is not None:
-                subtitle = season.title + "  ·  " + subtitle
+                subtitle = numbered(season.title, season.number) + "  ·  " + subtitle
         badge = stale_text(episode)
         if badge:
             subtitle = badge + "  ·  " + subtitle
         if episode.next_action:
             subtitle += "  ·  " + episode.next_action
         names = tag_labels(self._ws, episode.tag_ids, tags)
-        return Row(episode.id, episode.title, subtitle, names)
+        return Row(episode.id, numbered(episode.title, episode.number), subtitle, names)
 
     def rows(self) -> list[Row]:
         tags = tag_map(self._ws)
@@ -492,7 +498,10 @@ class EpisodesPage(ListPage):
             SEASON_ALL: strings.EPISODE_EMPTY,
             SEASON_NONE: strings.SEASON_NONE_EMPTY,
         }.get(self._season, strings.SEASON_EMPTY)
-        return [self._row(e, tags) for e in episodes if self._in_season(e)]
+        shown = [e for e in episodes if self._in_season(e)]
+        if self._current_season() is not None:
+            shown = in_order(shown)  # one season reads as a run: in its order
+        return [self._row(e, tags) for e in shown]
 
     def show_item(self, item_id: int) -> None:
         self._leave_brief()  # an episode was chosen in the list

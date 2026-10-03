@@ -26,6 +26,7 @@ from podcast_workspace.domain.entities import EpisodeStatus, Season
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.support import AppEvents, local_digits, show_error
+from podcast_workspace.ui.widgets.number_box import NumberBox
 
 AUTOSAVE_DELAY_MS = 700
 CARD_LINES = 2
@@ -130,6 +131,9 @@ class SeasonBriefPage(QWidget):
         self.list_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
         self.list_toggle.clicked.connect(self.list_toggle_requested.emit)
         header.addWidget(self.list_toggle)
+        self.number_box = NumberBox(strings.SEASON_NUMBER_TOOLTIP)
+        self.number_box.number_changed.connect(self._save_number)
+        header.addWidget(self.number_box)
         self.title_edit = QLineEdit(objectName="titleEdit")
         self.title_edit.setPlaceholderText(strings.SEASON_TITLE_PLACEHOLDER)
         self.title_edit.editingFinished.connect(self._save_title)
@@ -181,6 +185,7 @@ class SeasonBriefPage(QWidget):
         if not (same and self.title_edit.text() == season.title):
             self.title_edit.setText(season.title)
             self.title_edit.setCursorPosition(0)
+        self.number_box.set_number(season.number)
         for edit, text in ((self.readme, season.readme), (self.about, season.about)):
             if not (same and edit.toPlainText() == text):
                 edit.setPlainText(text)
@@ -238,6 +243,18 @@ class SeasonBriefPage(QWidget):
         except Exception as exc:
             show_error(self, exc)
             self.title_edit.setText(season.title)
+            return
+        self._saved(saved)
+
+    def _save_number(self, number: int | None) -> None:
+        season = self._season
+        if season is None or season.id is None:
+            return
+        try:
+            saved = self._ws.seasons.set_number(season.id, number)
+        except Exception as exc:
+            show_error(self, exc)
+            self.number_box.set_number(season.number)
             return
         self._saved(saved)
 

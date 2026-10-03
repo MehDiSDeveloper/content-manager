@@ -61,9 +61,11 @@ from podcast_workspace.ui.support import (
     format_datetime,
     format_duration,
     local_digits,
+    numbered,
     show_error,
 )
 from podcast_workspace.ui.widgets.key_hint import add_key_hint
+from podcast_workspace.ui.widgets.number_box import NumberBox
 from podcast_workspace.ui.widgets.picker import PickerDialog
 from podcast_workspace.ui.widgets.publish_checklist import PublishChecklistButton
 from podcast_workspace.ui.widgets.script_prompt import ScriptPromptDialog
@@ -420,6 +422,7 @@ class WorkspaceState:
 class EpisodeWorkspacePage(QWidget):
     episode_gone = Signal()  # the episode was deleted underneath (an undo, typically)
     episode_saved = Signal(object)  # Episode: its title, status, next action or tags changed
+    number_saved = Signal()  # its place in the season's order changed
     delete_requested = Signal(int)
     list_toggle_requested = Signal()
     open_voice = Signal(int)
@@ -484,6 +487,9 @@ class EpisodeWorkspacePage(QWidget):
         self.list_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
         self.list_toggle.clicked.connect(self.list_toggle_requested.emit)
         header.addWidget(self.list_toggle)
+        self.number_box = NumberBox(strings.EPISODE_NUMBER_TOOLTIP)
+        self.number_box.number_changed.connect(self._save_number)
+        header.addWidget(self.number_box)
         self.title_edit = QLineEdit(objectName="titleEdit")
         self.title_edit.setPlaceholderText(strings.EPISODE_TITLE_PLACEHOLDER)
         self.title_edit.editingFinished.connect(self._save_fields)
@@ -770,6 +776,7 @@ class EpisodeWorkspacePage(QWidget):
             return
         self.title_edit.setText(episode.title)
         self.title_edit.setCursorPosition(0)  # show where the title starts, not where it ends
+        self.number_box.set_number(episode.number)
         self.status_box.setCurrentIndex(self.status_box.findData(episode.status))
         self.next_action.setText(episode.next_action)
         self._fill_seasons(episode.season_id)
@@ -819,6 +826,19 @@ class EpisodeWorkspacePage(QWidget):
             self.episode_saved.emit(saved)
             self._changed()
 
+    def _save_number(self, number: int | None) -> None:
+        episode = self._episode
+        if episode is None or episode.id is None:
+            return
+        try:
+            self._episode = self._ws.episodes.set_number(episode.id, number)
+        except Exception as exc:
+            show_error(self, exc)
+            self.number_box.set_number(episode.number)
+            return
+        self.number_saved.emit()
+        self._changed()
+
     def _schedule_summary(self) -> None:
         if not self._loading and self._episode is not None:
             self._summary_timer.start()
@@ -854,7 +874,7 @@ class EpisodeWorkspacePage(QWidget):
         except Exception:
             seasons = []
         for season in seasons:
-            box.addItem(season.title, season.id)
+            box.addItem(numbered(season.title, season.number), season.id)
         box.insertSeparator(box.count())
         box.addItem(strings.SEASON_NEW, NEW_SEASON)
         box.setCurrentIndex(max(0, box.findData(current)))

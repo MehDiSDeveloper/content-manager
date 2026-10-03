@@ -74,6 +74,10 @@ LIST_SHOW = "Show the episode list  (Ctrl+L)"
 EPISODE_DELETE = "Delete episode"
 EPISODE_MORE = "More actions"
 
+NUMBER_NONE = "#"  # a season or episode with no number yet
+NUMBERED = "{n}. {title}"
+EPISODE_NUMBER_TOOLTIP = "Episode number in its season: keeps its place, whenever it was made"
+SEASON_NUMBER_TOOLTIP = "Season number: the order of the seasons"
 SEASON_ALL = "All seasons"
 SEASON_NONE = "No season"
 SEASON_ITEM = "{title}  ({n})"
@@ -817,6 +821,7 @@ UNDO_ACTIONS = {
     "checklist": "Change the publish checklist of {target} {quoted}",
     "brief": "Change the script brief of {target} {quoted}",
     "summary": "Edit the summary of {target} {quoted}",
+    "number": "Renumber {target} {quoted}",
 }
 UNDO_SOMETHING = "The last change"
 UNDO_ITEMS = "{n} items"  # a change made to a selection

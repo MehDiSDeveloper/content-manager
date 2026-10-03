@@ -35,6 +35,13 @@ def local_digits(value: object) -> str:
     return text.translate(_FA_DIGITS) if strings.LANGUAGE == "fa" else text
 
 
+def numbered(title: str, number: int | None) -> str:
+    """A season's or an episode's title with its number in front, when it has one."""
+    if number is None:
+        return title
+    return strings.NUMBERED.format(n=local_digits(number), title=title)
+
+
 def direction_mark(text: str) -> str:
     """The mark that makes `text` keep its own direction: RLM when its first strong letter
     is Persian (or any RTL script), LRM when it is Latin, the UI's own when it has none.
