@@ -4,7 +4,14 @@ from dataclasses import replace
 
 import pytest
 
-from podcast_workspace.domain.script_brief import Approach, Mood, Register, ScriptBrief
+from podcast_workspace.domain.script_brief import (
+    Approach,
+    Mood,
+    NarrativeStyle,
+    Register,
+    ScriptBrief,
+    ScriptFormat,
+)
 from podcast_workspace.domain.script_prompt import ScriptMaterial, build_prompt
 from podcast_workspace.domain.smart_links import LinkKind
 from podcast_workspace.services.workspace import Workspace
@@ -25,6 +32,13 @@ def test_json_round_trip_drops_what_it_does_not_know() -> None:
     assert loaded.register is Register.SEMI_FORMAL
     assert loaded.depth == 5
     assert ScriptBrief.from_dict({}) == ScriptBrief()
+
+
+def test_a_brief_saved_with_one_formats_list_is_split_into_format_and_style() -> None:
+    loaded = ScriptBrief.from_dict({"formats": ["dialogue", "recital", "story"]})
+    assert loaded.format is ScriptFormat.DIALOGUE
+    assert loaded.styles == {NarrativeStyle.RECITAL, NarrativeStyle.STORY}
+    assert ScriptBrief.from_dict({"formats": ["story"]}).format is ScriptFormat.MONOLOGUE
 
 
 @pytest.fixture
@@ -94,3 +108,5 @@ def test_without_a_draft_there_is_nothing_of_mine_to_check() -> None:
     assert "درستی‌سنجی" not in prompt
     assert "## مدت" not in prompt
     assert "صدای انسانی" in prompt
+    assert "## قالب: تک‌گویی" in prompt
+    assert "شیوهٔ روایت" not in prompt  # plain talk: no style asked for

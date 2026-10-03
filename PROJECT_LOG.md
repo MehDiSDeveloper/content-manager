@@ -303,11 +303,16 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
     then the process: check my claims, research, outline, list the changes, *wait for my
     approval*, only then write the final script
   - The brief is the episode's own (JSON column, one undo step per editing run, exported),
-    so the prompt is the same next time. Options regrouped from the user's list: format,
-    audience, approach and mood are multi-select; depth (1–5 ladder: one topic in five
-    episodes, each deeper) and register (casual / semi-formal / formal — spoken vs written
-    Persian) are single. «کمی خلاصه/مشروح» and «عمیق» were dropped: length and depth cover
-    them. Defaults: monologue, general public, depth 1, conceptual only, semi-formal, 15 min
+    so the prompt is the same next time. Options regrouped from the user's list: single
+    where the choices exclude each other — format (who speaks: monologue / dialogue / panel),
+    depth (1–5 ladder: one topic in five episodes, each deeper), register (casual /
+    semi-formal / formal: spoken vs written Persian); multi where they combine — narrative
+    style (story / recital over music / documentary; none = plain talk), audience, approach,
+    mood. Style is not folded into mood: mood is how it feels, style how it is told, and any
+    mood goes with any style. «کمی خلاصه/مشروح» and «عمیق» were dropped: length and depth
+    cover them. Defaults: monologue, no style, general public, depth 1, conceptual only,
+    semi-formal, 15 min. Briefs saved with the first shape (one "formats" list) are split
+    on read by `ScriptBrief.from_dict`
   - The draft is the episode's notes, not a new text field: one place to write. The dialog
     ticks notes in or out (`left_out_notes`, kept with the brief) so a to-do note or a script
     pasted back from the AI stays out; new notes are in by default

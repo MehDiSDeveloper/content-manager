@@ -4,10 +4,15 @@ It is what the script prompt (`domain/script_prompt.py`) is made of, besides the
 material the episode already holds (notes, linked ideas, tags, season). Kept apart from
 those on purpose: the brief says *how* to write, the material *what* to write from.
 
-The options are combinable wherever combining makes sense — a monologue with a recital
-in it, an audience of students and specialists, a conceptual and critical approach that
-is calm and a little funny. Depth and register are single choices: an episode sits on one
-rung of the depth ladder, and speaks in one register.
+The options are combinable wherever combining makes sense — a story with a recited
+passage in it, an audience of students and specialists, a conceptual and critical approach
+that is calm and a little funny. Format, depth and register are single choices: an episode
+is a monologue or a conversation or a panel, sits on one rung of the depth ladder, and
+speaks in one register.
+
+Format (who speaks) and narrative style (how it is told) are separate on purpose: a story
+or a recital can be a monologue or a dialogue, and neither is a mood — any mood goes with
+either.
 
 A value object, replaced whole on every change, so an undo can simply put the old one back.
 """
@@ -20,11 +25,19 @@ from podcast_workspace.domain.rules import normalize_persian
 
 
 class ScriptFormat(StrEnum):
+    """Who speaks."""
+
     MONOLOGUE = "monologue"
     DIALOGUE = "dialogue"
     PANEL = "panel"
+
+
+class NarrativeStyle(StrEnum):
+    """How it is told, beyond plain explaining (none chosen = plain talk)."""
+
     STORY = "story"
     RECITAL = "recital"  # literary prose read over background music
+    DOCUMENTARY = "documentary"
 
 
 class Audience(StrEnum):
@@ -70,7 +83,8 @@ MAX_MINUTES = 180  # 0 = no target length
 @dataclass(frozen=True)
 class ScriptBrief:
     about: str = ""
-    formats: frozenset[ScriptFormat] = frozenset({ScriptFormat.MONOLOGUE})
+    format: ScriptFormat = ScriptFormat.MONOLOGUE
+    styles: frozenset[NarrativeStyle] = frozenset()
     audiences: frozenset[Audience] = frozenset({Audience.GENERAL})
     depth: int = 1
     approaches: frozenset[Approach] = frozenset({Approach.CONCEPTUAL})
@@ -84,7 +98,8 @@ class ScriptBrief:
     def __post_init__(self) -> None:
         put = object.__setattr__
         put(self, "about", normalize_persian(self.about))
-        put(self, "formats", frozenset(ScriptFormat(v) for v in self.formats))
+        put(self, "format", ScriptFormat(self.format))
+        put(self, "styles", frozenset(NarrativeStyle(v) for v in self.styles))
         put(self, "audiences", frozenset(Audience(v) for v in self.audiences))
         put(self, "approaches", frozenset(Approach(v) for v in self.approaches))
         put(self, "moods", frozenset(Mood(v) for v in self.moods))
@@ -97,7 +112,8 @@ class ScriptBrief:
         """Plain JSON, every set in its enum's order, so the same brief is the same text."""
         return {
             "about": self.about,
-            "formats": [v.value for v in ScriptFormat if v in self.formats],
+            "format": self.format.value,
+            "styles": [v.value for v in NarrativeStyle if v in self.styles],
             "audiences": [v.value for v in Audience if v in self.audiences],
             "depth": self.depth,
             "approaches": [v.value for v in Approach if v in self.approaches],
@@ -120,15 +136,27 @@ class ScriptBrief:
             values = {v.value for v in enum}
             return frozenset(enum(v) for v in data[key] if v in values)
 
-        register = data.get("register", default.register.value)
+        def one[E: StrEnum](enum: type[E], value: object, fallback: E) -> E:
+            return enum(value) if value in {v.value for v in enum} else fallback
+
+        # The first briefs kept format and style in one list, "formats": split it.
+        old = data.get("formats") or ()
+        if "format" not in data:
+            data = {
+                **data,
+                "format": next((v for v in old if v in {f.value for f in ScriptFormat}), None),
+            }
+        if "styles" not in data and old:
+            data = {**data, "styles": old}
         return cls(
             about=str(data.get("about", "")),
-            formats=known(ScriptFormat, "formats", default.formats),
+            format=one(ScriptFormat, data.get("format"), default.format),
+            styles=known(NarrativeStyle, "styles", default.styles),
             audiences=known(Audience, "audiences", default.audiences),
             depth=int(data.get("depth", default.depth)),
             approaches=known(Approach, "approaches", default.approaches),
             moods=known(Mood, "moods", default.moods),
-            register=register if register in {r.value for r in Register} else default.register,
+            register=one(Register, data.get("register"), default.register),
             minutes=int(data.get("minutes", default.minutes)),
             left_out_notes=frozenset(data.get("left_out_notes", ())),
         )

@@ -15,6 +15,7 @@ from podcast_workspace.domain.script_brief import (
     Approach,
     Audience,
     Mood,
+    NarrativeStyle,
     Register,
     ScriptBrief,
     ScriptFormat,
@@ -37,15 +38,23 @@ FORMATS = {
         "یک گرداننده و دست‌کم سه گوینده با دیدگاه‌های متفاوت، با نام هر کدام اول نوبتش. "
         "اختلاف نظر واقعی و محترمانه باشد و گرداننده بحث را جلو ببرد.",
     ),
-    ScriptFormat.STORY: (
+}
+
+STYLES = {
+    NarrativeStyle.STORY: (
         "روایت داستانی",
         "موضوع در دل یک روایت پیش برود: آدم، صحنه، کشمکش و گره‌گشایی. ایده‌ها از دل "
         "داستان بیرون بیایند؛ داستان بهانهٔ سخنرانی نباشد.",
     ),
-    ScriptFormat.RECITAL: (
-        "دکلمه",
+    NarrativeStyle.RECITAL: (
+        "دکلمه روی موسیقی",
         "نثری ادبی و آهنگین برای خواندن روی موسیقی بی‌کلام: جمله‌های کوتاه و تصویری، با "
         "مکث‌های عمدی. جای موسیقی و مکث را در کروشه نشان بده، مثل [موسیقی اوج می‌گیرد] یا [مکث].",
+    ),
+    NarrativeStyle.DOCUMENTARY: (
+        "مستند",
+        "روایت مستند و گزارشی: آدم‌ها، رویدادها و تاریخ‌های واقعی، با نقل‌قول یا صدای آرشیوی "
+        "هرجا به کار می‌آید (جایش را در کروشه نشان بده، مثل [صدای آرشیوی: …]).",
     ),
 }
 
@@ -173,7 +182,7 @@ HUMAN_VOICE = "\n".join(
     ]
 )
 
-MIXED_FORMATS = "این قالب‌ها را در یک اپیزود ترکیب کن و در ساختار پیشنهادی‌ات بگو هر کدام کجاست."
+MIXED_STYLES = "این شیوه‌ها را در یک اپیزود ترکیب کن و در ساختار پیشنهادی‌ات بگو هر کدام کجاست."
 
 STEP_ONE = "## گام ۱ — بررسی و پیشنهاد (هنوز متن نهایی را ننویس)"
 CHECK = (
@@ -300,13 +309,13 @@ def _episode(material: ScriptMaterial, brief: ScriptBrief) -> str:
 
 def _specs(brief: ScriptBrief) -> str:
     blocks: list[str] = []
-    if brief.formats:
-        lines = _options(brief.formats, FORMATS)
-        if len(brief.formats) > 1:
-            lines.append(
-                "این قالب‌ها را در یک اپیزود ترکیب کن و در ساختار پیشنهادی‌ات بگو هر کدام کجاست."
-            )
-        blocks.append(_section("## قالب", *lines))
+    label, guide = FORMATS[brief.format]
+    blocks.append(_section(f"## قالب: {label}", guide))
+    if brief.styles:
+        lines = _options(brief.styles, STYLES)
+        if len(brief.styles) > 1:
+            lines.append(MIXED_STYLES)
+        blocks.append(_section("## شیوهٔ روایت", *lines))
     if brief.minutes:
         blocks.append(
             _section(

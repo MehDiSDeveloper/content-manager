@@ -509,8 +509,12 @@ SP_FORMATS = {
     "monologue": "Monologue",
     "dialogue": "Two-person conversation",
     "panel": "Panel",
+}
+SP_STYLE = "Narrative style (optional; none means plain talk and explaining)"
+SP_STYLES = {
     "story": "Storytelling",
     "recital": "Recital over music",
+    "documentary": "Documentary",
 }
 SP_AUDIENCE = "Audience"
 SP_AUDIENCES = {

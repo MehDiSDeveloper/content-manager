@@ -127,8 +127,10 @@ class ScriptPromptDialog(QDialog):
         self.about.textChanged.connect(self._changed)
         self._field(col, strings.SP_ABOUT, self.about)
 
-        self.formats = _Chips(strings.SP_FORMATS, False, self._changed)
-        self._field(col, strings.SP_FORMAT, self.formats)
+        self.format = _Chips(strings.SP_FORMATS, True, self._changed)
+        self._field(col, strings.SP_FORMAT, self.format)
+        self.styles = _Chips(strings.SP_STYLES, False, self._changed)
+        self._field(col, strings.SP_STYLE, self.styles)
         self.audiences = _Chips(strings.SP_AUDIENCES, False, self._changed)
         self._field(col, strings.SP_AUDIENCE, self.audiences)
 
@@ -255,7 +257,8 @@ class ScriptPromptDialog(QDialog):
     def _fill(self) -> None:
         brief = self._brief
         self.about.setPlainText(brief.about)
-        self.formats.set_checked(brief.formats)
+        self.format.set_checked(brief.format)
+        self.styles.set_checked(brief.styles)
         self.audiences.set_checked(brief.audiences)
         self.depth.set_checked(brief.depth)
         self.approaches.set_checked(brief.approaches)
@@ -266,6 +269,7 @@ class ScriptPromptDialog(QDialog):
             check.setChecked(note_id not in brief.left_out_notes)
 
     def _read(self) -> ScriptBrief:
+        format_ = self.format.checked()
         depth = self.depth.checked()
         register = self.register.checked()
         # Notes no longer in the episode keep their mark: it costs nothing and is harmless.
@@ -274,7 +278,8 @@ class ScriptPromptDialog(QDialog):
         return replace(
             self._brief,
             about=self.about.toPlainText(),
-            formats=frozenset(self.formats.checked()),
+            format=format_[0] if format_ else self._brief.format,
+            styles=frozenset(self.styles.checked()),
             audiences=frozenset(self.audiences.checked()),
             depth=depth[0] if depth else self._brief.depth,
             approaches=frozenset(self.approaches.checked()),

@@ -512,8 +512,12 @@ SP_FORMATS = {
     "monologue": "تک‌گویی",
     "dialogue": "گفت‌وگوی دونفره",
     "panel": "میزگرد",
+}
+SP_STYLE = "شیوهٔ روایت (اختیاری؛ هیچ‌کدام یعنی گفتار و توضیح ساده)"
+SP_STYLES = {
     "story": "روایت داستانی",
     "recital": "دکلمه روی موسیقی",
+    "documentary": "مستند",
 }
 SP_AUDIENCE = "مخاطب"
 SP_AUDIENCES = {
