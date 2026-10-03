@@ -10,6 +10,7 @@ The prompt is rebuilt from the template on every change (`domain/script_prompt.p
 is copied is always what is on screen.
 """
 
+from collections.abc import Callable
 from dataclasses import replace
 
 from PySide6.QtCore import Qt, QTimer
@@ -53,7 +54,7 @@ def _chip(text: str) -> QToolButton:
 class _Chips(QWidget):
     """A row of chips, any number on (`exclusive=False`) or exactly one."""
 
-    def __init__(self, labels: dict, exclusive: bool, on_change: object) -> None:
+    def __init__(self, labels: dict, exclusive: bool, on_change: Callable[[], None]) -> None:
         super().__init__()
         flow = FlowLayout(self)
         self.group = QButtonGroup(self, exclusive=exclusive)
@@ -63,7 +64,7 @@ class _Chips(QWidget):
             self.group.addButton(chip)
             flow.addWidget(chip)
             self.chips[key] = chip
-        self.group.buttonToggled.connect(lambda _b, _on: on_change())  # type: ignore[operator]
+        self.group.buttonToggled.connect(lambda _b, _on: on_change())
 
     def set_checked(self, keys: object) -> None:
         wanted = keys if isinstance(keys, frozenset) else {keys}

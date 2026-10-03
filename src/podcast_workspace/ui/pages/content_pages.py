@@ -168,8 +168,19 @@ class EpisodesPage(ListPage):
             activated=self.toggle_list,
             context=Qt.ShortcutContext.WidgetWithChildrenShortcut,
         )
+        QShortcut(
+            QKeySequence("Ctrl+P"),
+            self,
+            activated=self._open_script_prompt,
+            context=Qt.ShortcutContext.WidgetWithChildrenShortcut,
+        )
         self._list_hidden = False
         self._set_list_hidden(workspace.settings.episode_list_hidden(), remember=False)
+
+    def _open_script_prompt(self) -> None:
+        # Only for the episode on show: with the season brief open, there is none.
+        if self.editor_stack.currentWidget() is self.workspace:
+            self.workspace.open_script_prompt()
 
     # the list pane ---------------------------------------------------------------------
     def toggle_list(self) -> None:

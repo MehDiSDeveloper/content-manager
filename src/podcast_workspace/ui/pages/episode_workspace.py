@@ -460,12 +460,12 @@ class EpisodeWorkspacePage(QWidget):
         self._timer = QTimer(self, singleShot=True, interval=AUTOSAVE_DELAY_MS)
         self._timer.timeout.connect(self._save_note)
         # Ctrl+N is the Episodes page's to route (a new episode from the list, a new note
-        # from in here), so it is not bound on this widget.
+        # from in here), so it is not bound on this widget; nor is Ctrl+P, which works from
+        # the list too.
         context = Qt.ShortcutContext.WidgetWithChildrenShortcut
         for keys, handler in (
             (QKeySequence("Ctrl+Tab"), lambda: self._cycle_note(1)),
             (QKeySequence("Ctrl+Shift+Tab"), lambda: self._cycle_note(-1)),
-            (QKeySequence("Ctrl+P"), self.open_script_prompt),
         ):
             QShortcut(keys, self, activated=handler, context=context)
         self._own_change = False
