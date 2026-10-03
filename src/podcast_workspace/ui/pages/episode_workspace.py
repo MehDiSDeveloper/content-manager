@@ -66,6 +66,7 @@ from podcast_workspace.ui.support import (
 from podcast_workspace.ui.widgets.key_hint import add_key_hint
 from podcast_workspace.ui.widgets.picker import PickerDialog
 from podcast_workspace.ui.widgets.publish_checklist import PublishChecklistButton
+from podcast_workspace.ui.widgets.script_prompt import ScriptPromptDialog
 from podcast_workspace.ui.widgets.tag_input import TagInput
 
 AUTOSAVE_DELAY_MS = 700
@@ -464,6 +465,7 @@ class EpisodeWorkspacePage(QWidget):
         for keys, handler in (
             (QKeySequence("Ctrl+Tab"), lambda: self._cycle_note(1)),
             (QKeySequence("Ctrl+Shift+Tab"), lambda: self._cycle_note(-1)),
+            (QKeySequence("Ctrl+P"), self.open_script_prompt),
         ):
             QShortcut(keys, self, activated=handler, context=context)
         self._own_change = False
@@ -492,6 +494,11 @@ class EpisodeWorkspacePage(QWidget):
         record.clicked.connect(self.record_requested.emit)
         header.addWidget(record)
         add_key_hint(header, record, "Ctrl+R")
+        prompt = QPushButton(strings.WS_SCRIPT_PROMPT)
+        prompt.setToolTip(strings.WS_SCRIPT_PROMPT_TOOLTIP)
+        prompt.clicked.connect(self.open_script_prompt)
+        header.addWidget(prompt)
+        add_key_hint(header, prompt, "Ctrl+P")
         self.new_note_button = QPushButton(strings.WS_NOTE_NEW, objectName="primary")
         self.new_note_button.setToolTip("Ctrl+N")
         self.new_note_button.clicked.connect(self.new_note)
@@ -725,6 +732,23 @@ class EpisodeWorkspacePage(QWidget):
         self._changed()
         self._load_notes(select_id=note.id)
         self.note_title.setFocus()
+
+    def open_script_prompt(self) -> None:
+        """The brief and the prompt it makes, from what the episode holds right now."""
+        episode = self._episode
+        if episode is None or episode.id is None:
+            return
+        self.flush()  # the note being typed is part of the draft
+        try:
+            material = self._ws.script_prompt.material(episode.id)
+        except Exception as exc:
+            show_error(self, exc)
+            return
+        dialog = ScriptPromptDialog(self, self._ws, episode, material)
+        dialog.exec()
+        if dialog.changed:
+            self._reload_episode()
+            self._changed()
 
     # episode fields ---------------------------------------------------------------------
     def _fill_fields(self) -> None:

@@ -489,6 +489,101 @@ PUBLISH_STEPS = {
 PUBLISH_WHERE = "Where it was published"
 PUBLISH_WHERE_PLACEHOLDER = "A platform or a link, one per line"
 
+# The script prompt (widgets/script_prompt.py): the episode's brief and the prompt it makes
+WS_SCRIPT_PROMPT = "Script prompt"
+WS_SCRIPT_PROMPT_TOOLTIP = (
+    "This episode's script brief, and a ready prompt for writing the script with an AI  (Ctrl+P)"
+)
+SP_WINDOW_TITLE = "Script prompt: “{title}”"
+SP_BRIEF = "Script brief"
+SP_BRIEF_HINT = (
+    "Whatever you write or pick here is saved with the episode and goes into the prompt at once."
+)
+SP_ABOUT = "About the episode"
+SP_ABOUT_PLACEHOLDER = (
+    "What is this episode about? Which question does it answer, and what should the listener "
+    "take away? Anything else you want from the script goes here too."
+)
+SP_FORMAT = "Format"
+SP_FORMATS = {
+    "monologue": "Monologue",
+    "dialogue": "Two-person conversation",
+    "panel": "Panel",
+    "story": "Storytelling",
+    "recital": "Recital over music",
+}
+SP_AUDIENCE = "Audience"
+SP_AUDIENCES = {
+    "general": "General public",
+    "young": "Teens and young adults",
+    "enthusiasts": "Enthusiasts who know the topic",
+    "students": "Students and researchers",
+    "experts": "Experts in the field",
+}
+SP_DEPTH = "Depth — one topic in five steps, each deeper"
+SP_DEPTH_CHIP = "{n}  {name}"
+SP_DEPTHS = {1: "Introduction", 2: "Understanding", 3: "Exploration", 4: "Analysis", 5: "Depths"}
+SP_DEPTH_HINTS = {
+    1: "For everyone, no background needed: everyday examples, one or two main ideas.",
+    2: "The why and the how, for someone who knows the topic a little.",
+    3: "Subtleties, exceptions, rival views and links to other fields.",
+    4: "Expert level: theories, evidence, critiques and careful argument.",
+    5: "Abstract and fundamental, for a very sharp listener who has climbed the earlier steps.",
+}
+SP_APPROACH = "Approach"
+SP_APPROACHES = {
+    "conceptual": "Conceptual",
+    "scientific": "Scientific",
+    "practical": "Practical",
+    "philosophical": "Philosophical",
+    "critical": "Critical",
+}
+SP_MOOD = "Mood"
+SP_MOODS = {
+    "calm": "Calm and reflective",
+    "warm": "Warm and friendly",
+    "humorous": "Humorous",
+    "cool": "Cool and easygoing",
+    "energetic": "Energetic",
+    "exciting": "Exciting",
+    "emotional": "Emotional",
+    "inspiring": "Inspiring",
+    "somber": "Somber",
+}
+SP_REGISTER = "Register"
+SP_REGISTERS = {
+    "casual": "Casual (spoken)",
+    "semi_formal": "Semi-formal",
+    "formal": "Formal (written)",
+}
+SP_LENGTH = "Length"
+SP_MINUTES_SUFFIX = " min"
+SP_MINUTES_FREE = "Free"
+SP_WORDS = "about {n} words"
+SP_MATERIAL = "What comes from the episode"
+SP_DRAFT = "Draft: the episode's notes"
+SP_DRAFT_HINT = (
+    "Write and edit your first draft in the episode's notes. Untick a note that should stay "
+    "out (a to-do list, a script pasted back from the AI); that choice is saved too."
+)
+SP_DRAFT_EMPTY = (
+    "This episode has no notes yet. Write your first draft in the episode's notes and it "
+    "will come in here."
+)
+SP_IDEAS = "Linked ideas"
+SP_IDEAS_COUNT = "{n} ideas go in; audio ideas with their transcript and your notes."
+SP_IDEAS_NONE = "No ideas are linked to this episode."
+SP_UNREAD = "No text, so left out of the prompt: {names}. Transcribe it from the idea's preview."
+SP_PROMPT = "Prompt"
+SP_PROMPT_HINT = (
+    "Copy it and give it to an AI. It first checks what you said, researches and lists its "
+    "changes; it writes the final script once you approve."
+)
+SP_PROMPT_SIZE = "{n} words"
+SP_COPY = "Copy prompt"
+SP_COPIED = "Copied ✓"
+SP_CLOSE = "Close"
+
 RESUME_OFFER = "Last open episode: «{title}»"
 RESUME_CONTINUE = "Continue"
 
