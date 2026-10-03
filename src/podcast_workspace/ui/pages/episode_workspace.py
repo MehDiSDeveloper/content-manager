@@ -70,6 +70,7 @@ from podcast_workspace.ui.widgets.script_prompt import ScriptPromptDialog
 from podcast_workspace.ui.widgets.tag_input import TagInput
 
 AUTOSAVE_DELAY_MS = 700
+SUMMARY_LINES = 3
 NEW_SEASON = "new"  # the season box's last entry: make one and file the episode there
 SIDE_PANEL_MIN_WIDTH = 280
 SIDE_PANEL_MAX_WIDTH = 380
@@ -459,6 +460,8 @@ class EpisodeWorkspacePage(QWidget):
 
         self._timer = QTimer(self, singleShot=True, interval=AUTOSAVE_DELAY_MS)
         self._timer.timeout.connect(self._save_note)
+        self._summary_timer = QTimer(self, singleShot=True, interval=AUTOSAVE_DELAY_MS)
+        self._summary_timer.timeout.connect(self._save_summary)
         # Ctrl+N is the Episodes page's to route (a new episode from the list, a new note
         # from in here), so it is not bound on this widget; nor is Ctrl+P, which works from
         # the list too.
@@ -557,6 +560,11 @@ class EpisodeWorkspacePage(QWidget):
         self.next_action.editingFinished.connect(self._save_fields)
         self.tag_input = TagInput(self._ws.tags, self._events)
         self.tag_input.tags_changed.connect(self._save_tags)
+        self.summary = QPlainTextEdit()
+        self.summary.setPlaceholderText(strings.EPISODE_SUMMARY_PLACEHOLDER)
+        self.summary.setTabChangesFocus(True)
+        self.summary.setFixedHeight(self.summary.fontMetrics().lineSpacing() * SUMMARY_LINES + 18)
+        self.summary.textChanged.connect(self._schedule_summary)
         line = self.next_action.sizeHint().height()
 
         def label(text: str) -> QLabel:
@@ -581,6 +589,8 @@ class EpisodeWorkspacePage(QWidget):
         grid.addLayout(stage, 0, 1)
         grid.addWidget(label(strings.TAG_LABEL), 1, 0, top)
         grid.addWidget(self.tag_input, 1, 1)
+        grid.addWidget(label(strings.EPISODE_SUMMARY), 2, 0, top)
+        grid.addWidget(self.summary, 2, 1)
         grid.setColumnStretch(1, 1)
         return grid
 
@@ -719,6 +729,9 @@ class EpisodeWorkspacePage(QWidget):
         if self._timer.isActive():
             self._timer.stop()
             self._save_note()
+        if self._summary_timer.isActive():
+            self._summary_timer.stop()
+            self._save_summary()
 
     def new_note(self) -> None:
         if self._episode is None or self._episode.id is None:
@@ -761,6 +774,10 @@ class EpisodeWorkspacePage(QWidget):
         self.next_action.setText(episode.next_action)
         self._fill_seasons(episode.season_id)
         self.tag_input.set_tag_ids(episode.tag_ids)
+        if self.summary.toPlainText() != episode.summary:  # keep the caret while typing
+            self._loading = True
+            self.summary.setPlainText(episode.summary)
+            self._loading = False
         self.publish_button.set_episode(episode)
         badge = stale_text(episode)
         self.stale.setText(badge)
@@ -800,6 +817,23 @@ class EpisodeWorkspacePage(QWidget):
             self._episode = saved
             self._fill_fields()
             self.episode_saved.emit(saved)
+            self._changed()
+
+    def _schedule_summary(self) -> None:
+        if not self._loading and self._episode is not None:
+            self._summary_timer.start()
+
+    def _save_summary(self) -> None:
+        episode = self._episode
+        if episode is None or episode.id is None:
+            return
+        try:
+            saved = self._ws.episodes.set_summary(episode.id, self.summary.toPlainText())
+        except Exception as exc:
+            show_error(self, exc)
+            return
+        if saved.updated_at != episode.updated_at:
+            self._reload_episode()
             self._changed()
 
     def _on_publish_saved(self, episode: Episode) -> None:

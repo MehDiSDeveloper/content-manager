@@ -208,6 +208,35 @@ class ScriptPromptDialog(QDialog):
                 wordWrap=True,
             )
             col.addWidget(unread)
+        col.addSpacing(4)
+        col.addWidget(QLabel(strings.SP_SEASON, objectName="fieldLabel"))
+        season = self._material.season
+        self.season_readme = QCheckBox()
+        self.previous = QCheckBox()
+        if season is None:
+            col.addWidget(QLabel(strings.SP_NO_SEASON, objectName="muted", wordWrap=True))
+        else:
+            readme = (
+                strings.SP_SEASON_README
+                if season.readme.strip()
+                else (strings.SP_SEASON_README_EMPTY)
+            )
+            self.season_readme.setText(readme.format(title=season.title))
+            self.season_readme.setEnabled(bool(season.readme.strip()))
+            self.season_readme.toggled.connect(self._changed)
+            col.addWidget(self.season_readme)
+            if season.before:
+                told = sum(1 for e in season.before if e.summary.strip())
+                self.previous.setText(
+                    strings.SP_PREVIOUS.format(
+                        n=local_digits(told), total=local_digits(len(season.before))
+                    )
+                )
+                self.previous.setEnabled(bool(told))
+                self.previous.toggled.connect(self._changed)
+                col.addWidget(self.previous)
+            else:
+                col.addWidget(QLabel(strings.SP_PREVIOUS_NONE, objectName="muted", wordWrap=True))
         col.addStretch(1)
 
         scroll = QScrollArea()
@@ -267,6 +296,8 @@ class ScriptPromptDialog(QDialog):
         self.minutes.setValue(brief.minutes)
         for note_id, check in self.notes.items():
             check.setChecked(note_id not in brief.left_out_notes)
+        self.season_readme.setChecked(brief.season_readme)
+        self.previous.setChecked(brief.previous_summaries)
 
     def _read(self) -> ScriptBrief:
         format_ = self.format.checked()
@@ -287,6 +318,8 @@ class ScriptPromptDialog(QDialog):
             register=register[0] if register else self._brief.register,
             minutes=self.minutes.value(),
             left_out_notes=frozenset(left_out),
+            season_readme=self.season_readme.isChecked(),
+            previous_summaries=self.previous.isChecked(),
         )
 
     def _changed(self) -> None:
