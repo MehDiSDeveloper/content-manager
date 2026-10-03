@@ -1,4 +1,4 @@
-# Podcast Workspace — architecture (v1.19)
+# Podcast Workspace — architecture (v1.20)
 
 Local-first Windows desktop workspace for a solo Persian podcaster: episodes, voices, ideas,
 tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3.12, PySide6.
@@ -19,8 +19,8 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
 - Off the UI thread: voice import, search warm-up, waveform, playback engine (own QThread), transcription (thread pool), export/import (thread pool), model download (daemon thread), Bale polling (daemon thread)
 
 ## Data model
-- Episode: title, status, next_action, season_id (nullable), created_at, updated_at, last_opened_at; tags; linked voices + ideas; publish checklist (`publish_done` = ticked `PublishStep`s comma-separated, `published_where` = one place/link per line); script brief (`script_brief` = `ScriptBrief.to_dict()` JSON, "" = defaults)
-- Season: title, summary, outline (the brief: what it is about / how it is laid out, free text), created_at. Ordered by id (season one first). Deleting one keeps its episodes, seasonless
+- Episode: title, status, next_action, season_id (nullable), created_at, updated_at, last_opened_at; tags; linked voices + ideas; publish checklist (`publish_done` = ticked `PublishStep`s comma-separated, `published_where` = one place/link per line); script brief (`script_brief` = `ScriptBrief.to_dict()` JSON, "" = defaults); summary (what the episode said, free text)
+- Season: title, readme (the producer's: facts, strategy, rules, goals; goes into the script prompt), about (for listeners; not in the prompt), created_at. Ordered by id (season one first). Deleting one keeps its episodes, seasonless
 - Voice: file_path (the workspace's own copy in `voices/`, or in place when already inside the data folder, e.g. Bale voices), source_path (the original it was copied from, never touched; "" if not a copy), duration_ms, format, imported_at, archived_at, deleted_at; ≤15 tags
 - IdeaNote: free text, created/updated, archived_at, deleted_at; ≤15 tags. Raw material, no timestamp
 - TimestampNote: voice_id, position_ms, text. Separate entity from IdeaNote, never merge
@@ -29,7 +29,7 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
 - Tag: name (unique, NOCASE), color. Flat: no parents, no nesting
 - Link tables: episode_tags, voice_tags, idea_note_tags, episode_voices, episode_idea_notes. `settings` = key → JSON
 - Status pipeline: idea → outline → recorded → script_ready → edited → published
-- Migrations: 5c0bcd4c8144 schema · a7f3c2d91e10 FTS · c41e8b7d2f05 status remap · e5a91d3c7b28 transcripts · b8d4e6f1a320 seasons · d2c7f9a4b615 archive/trash · f3a8c1e5d907 idea title · a9e2d5c8f314 flat tags (drops tags.parent_id) · c6e1a8f4b2d7 publish checklist (two ALTER TABLE ADD COLUMNs on episodes) · e8b3f1c6a492 voices.source_path (ALTER TABLE ADD COLUMN) · b3d7a1f9c524 seasons.summary + outline (ALTER TABLE ADD COLUMN) · d4f2b8e6a1c3 episodes.script_brief (ALTER TABLE ADD COLUMN)
+- Migrations: 5c0bcd4c8144 schema · a7f3c2d91e10 FTS · c41e8b7d2f05 status remap · e5a91d3c7b28 transcripts · b8d4e6f1a320 seasons · d2c7f9a4b615 archive/trash · f3a8c1e5d907 idea title · a9e2d5c8f314 flat tags (drops tags.parent_id) · c6e1a8f4b2d7 publish checklist (two ALTER TABLE ADD COLUMNs on episodes) · e8b3f1c6a492 voices.source_path (ALTER TABLE ADD COLUMN) · b3d7a1f9c524 seasons.summary + outline (ALTER TABLE ADD COLUMN) · d4f2b8e6a1c3 episodes.script_brief (ALTER TABLE ADD COLUMN) · e1b7c4a9f2d6 seasons.summary → readme (old outline appended), outline dropped, seasons.about + episodes.summary added
 
 ## Where things live
 - Rules: `domain/rules.py` (15-tag limit, names, colors), `entities.py` (Taggable mixin enforces limit)
@@ -376,6 +376,14 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
   HighlightedText (unreadable in dark). Lines/focus/markers use the Link role (accent_strong)
 
 ## Status
+- v1.20: season readme + episode summary — a season's brief is now «راهنمای فصل» (README:
+  strategy, rules, goals; in the script prompt) beside «دربارهٔ فصل» (for listeners, not in
+  the prompt); the old summary + structure were merged into the readme. Each episode has a
+  «خلاصه» field under its tags (undoable, exported). The script prompt gets its own
+  «# فصل» section: the readme, the season's earlier episodes with their summaries, the later
+  ones by title, plus a continuity check step. Season order = creation order (no number is
+  stored). Both are checkboxes in the prompt dialog, saved in the brief (`season_readme`,
+  `previous_summaries`)
 - v1.19: script prompt — «پرامپت متن» (Ctrl+P) in the episode header opens the episode's
   script brief (about, format, audience, depth ladder, approach, mood, register, length,
   which notes are the draft) beside a live prompt built from a fixed template, with «کپی
