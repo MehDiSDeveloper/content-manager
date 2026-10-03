@@ -3,6 +3,7 @@
 `id` is None until the entity has been persisted.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -107,11 +108,14 @@ class Season:
     title: str
     readme: str = ""
     about: str = ""
+    # Where it stands among the seasons (None: not numbered yet), see `in_order`.
+    number: int | None = None
     created_at: datetime = field(default_factory=utcnow)
     id: int | None = None
 
     def __post_init__(self) -> None:
         self.title = normalize_persian(ensure_non_empty(self.title, "Season title"))
+        self.number = self.number or None
         self.readme = normalize_persian(self.readme)
         self.about = normalize_persian(self.about)
 
@@ -121,6 +125,12 @@ class Season:
     def write_brief(self, readme: str, about: str) -> None:
         self.readme = normalize_persian(readme)
         self.about = normalize_persian(about)
+
+
+def in_order[T: (Season, Episode)](items: Iterable[T]) -> list[T]:
+    """Seasons, or a season's episodes, in their order: by number, then the unnumbered
+    in the order they were made (an episode is usually made when its turn comes)."""
+    return sorted(items, key=lambda x: (x.number is None, x.number or 0, x.created_at, x.id or 0))
 
 
 @dataclass(eq=False)
@@ -140,10 +150,13 @@ class Episode(Taggable):
     # What the episode ended up saying, in a few lines: the script prompts of the
     # season's later episodes carry it, so each one knows the story so far.
     summary: str = ""
+    # Its place in its season, given by hand: one made early can say it comes third.
+    number: int | None = None
     id: int | None = None
 
     def __post_init__(self) -> None:
         self.title = normalize_persian(ensure_non_empty(self.title, "Episode title"))
+        self.number = self.number or None
         self.next_action = normalize_persian(" ".join(self.next_action.split()))
         self.summary = normalize_persian(self.summary)
 

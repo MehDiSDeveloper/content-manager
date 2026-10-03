@@ -272,6 +272,7 @@ class BackupService:
                     "title": s.title,
                     "readme": s.readme,
                     "about": s.about,
+                    "number": s.number,
                     "created_at": _dt(s.created_at),
                 }
                 for s in snap.seasons
@@ -293,6 +294,7 @@ class BackupService:
                     "published_where": e.publish.where,
                     "brief": e.brief.to_dict(),
                     "summary": e.summary,
+                    "number": e.number,
                 }
                 for e in snap.episodes
             ],
@@ -462,6 +464,7 @@ class BackupService:
                     ),
                     brief=ScriptBrief.from_dict(e.get("brief")),
                     summary=e.get("summary") or "",
+                    number=e.get("number"),
                 )
                 for e in data["episodes"]
             ],
@@ -507,6 +510,7 @@ class BackupService:
                     title=s["title"],
                     readme=_season_readme(s),
                     about=s.get("about") or "",
+                    number=s.get("number"),
                     created_at=_req_dt(s["created_at"]),
                 )
                 for s in data.get("seasons") or ()

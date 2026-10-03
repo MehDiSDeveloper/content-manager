@@ -31,6 +31,7 @@ from podcast_workspace.domain.entities import (
     Season,
     TimestampNote,
     Voice,
+    in_order,
     utcnow,
 )
 from podcast_workspace.domain.errors import DomainError
@@ -165,6 +166,7 @@ class EpisodeService:
                 publish=current.publish,
                 brief=current.brief,
                 summary=current.summary,
+                number=current.number,
             )
             if (edited.title, edited.status, edited.next_action) == (
                 current.title,
@@ -456,6 +458,32 @@ class EpisodeService:
         )
         return saved
 
+    def set_number(self, episode_id: int, number: int | None) -> Episode:
+        """Its place in its season. Ordering is not editing: it does not touch it."""
+        with UnitOfWork(self._sf) as uow:
+            episode = uow.episodes.get(episode_id)
+            before = episode.number
+            episode.number = number or None
+            if episode.number == before:
+                return episode
+            saved = uow.episodes.update(episode)
+        self._history.record(
+            ChangeKind.NUMBER,
+            Target(TargetKind.EPISODE, episode_id),
+            undo=lambda: self._set_number(episode_id, before),
+            redo=lambda: self._set_number(episode_id, number),
+            details=(saved.title,),
+            weight=len(saved.title),
+            merge_key=f"episode-number:{episode_id}",
+        )
+        return saved
+
+    def _set_number(self, episode_id: int, number: int | None) -> None:
+        with UnitOfWork(self._sf) as uow:
+            episode = uow.episodes.get(episode_id)
+            episode.number = number or None
+            uow.episodes.update(episode)
+
     @staticmethod
     def _item_title(uow: UnitOfWork, kind: LinkKind, item_id: int) -> str:
         """What an episode started from an item is called: the file's name without its
@@ -630,9 +658,9 @@ class SeasonService:
         self._history = history
 
     def list_all(self) -> list[Season]:
-        """In the order they were made: season one first."""
+        """In their order: by number, the unnumbered after them as they were made."""
         with UnitOfWork(self._sf) as uow:
-            return uow.seasons.list_all()
+            return in_order(uow.seasons.list_all())
 
     def get(self, season_id: int) -> Season:
         with UnitOfWork(self._sf) as uow:
@@ -693,6 +721,31 @@ class SeasonService:
             merge_key=f"season-brief:{season_id}",
         )
         return saved
+
+    def set_number(self, season_id: int, number: int | None) -> Season:
+        with UnitOfWork(self._sf) as uow:
+            season = uow.seasons.get(season_id)
+            before = season.number
+            season.number = number or None
+            if season.number == before:
+                return season
+            saved = uow.seasons.update(season)
+        self._history.record(
+            ChangeKind.NUMBER,
+            Target(TargetKind.SEASON, season_id),
+            undo=lambda: self._set_number(season_id, before),
+            redo=lambda: self._set_number(season_id, number),
+            details=(saved.title,),
+            weight=len(saved.title),
+            merge_key=f"season-number:{season_id}",
+        )
+        return saved
+
+    def _set_number(self, season_id: int, number: int | None) -> None:
+        with UnitOfWork(self._sf) as uow:
+            season = uow.seasons.get(season_id)
+            season.number = number or None
+            uow.seasons.update(season)
 
     def delete(self, season_id: int) -> None:
         """Its episodes stay, in no season; undo files them back under it."""

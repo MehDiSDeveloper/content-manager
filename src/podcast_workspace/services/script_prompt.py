@@ -8,6 +8,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from podcast_workspace.domain.entities import in_order
 from podcast_workspace.domain.script_brief import ScriptBrief
 from podcast_workspace.domain.script_prompt import (
     DraftNote,
@@ -31,12 +32,7 @@ class ScriptPromptService:
             season = None
             if episode.season_id is not None:
                 found = uow.seasons.get(episode.season_id)
-                # The season's order is the order its episodes were made in: no number
-                # is stored, and an episode is usually made when its turn comes.
-                run = sorted(
-                    (e for e in uow.episodes.list_all() if e.season_id == found.id),
-                    key=lambda e: (e.created_at, e.id or 0),
-                )
+                run = in_order(e for e in uow.episodes.list_all() if e.season_id == found.id)
                 at = next(i for i, e in enumerate(run) if e.id == episode_id)
                 listed = [
                     SeasonEpisode(

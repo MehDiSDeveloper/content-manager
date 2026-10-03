@@ -50,6 +50,7 @@ class ChangeKind(StrEnum):
     CHECKLIST = "checklist"
     BRIEF = "brief"
     SUMMARY = "summary"
+    NUMBER = "number"
 
 
 class TargetKind(StrEnum):

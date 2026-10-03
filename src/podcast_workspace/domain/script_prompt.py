@@ -260,7 +260,7 @@ class SeasonEpisode:
 class SeasonMaterial:
     title: str
     readme: str = ""
-    # The season's other episodes in the order they were made, around this one.
+    # The season's other episodes in its order (`in_order`), around this one.
     before: tuple[SeasonEpisode, ...] = ()
     after: tuple[SeasonEpisode, ...] = ()
 
