@@ -4,8 +4,12 @@ A fixed template filled in with the episode's material and its brief; nothing he
 a model. The prompt is Persian whatever the UI language, since the podcast is.
 
 Its order follows how a long prompt is best read: who the AI is and what it is for, then
-the material (the episode, its specs, my draft, the ideas), then the rules of writing,
-and last what to do — check and propose first, write only once I have agreed.
+the material (the episode, its season, its specs, my draft, the ideas), then the rules of
+writing, and last what to do — check and propose first, write only once I have agreed.
+
+The season tells the AI where this episode stands: the producer's readme (what the season
+is for, its strategy and rules) and the season's episodes before and after this one, the
+earlier ones with a summary of what they said, so the story is carried on, not retold.
 """
 
 from dataclasses import dataclass
@@ -150,7 +154,7 @@ REGISTERS = {
 
 INTRO = (
     "تو نویسنده و پژوهشگر پادکست فارسی من هستی. می‌خواهم متن (اسکریپت) یک اپیزود را با "
-    "هم آماده کنیم. هرچه از این اپیزود دارم پایین آمده: اطلاعات اپیزود، مشخصات متن، "
+    "هم آماده کنیم. هرچه از این اپیزود دارم پایین آمده: اطلاعات اپیزود و فصلش، مشخصات متن، "
     "پیش‌نویس خودم و ایده‌هایی که برایش جمع کرده‌ام. قاعده‌های نوشتن و روند کار در انتهاست."
 )
 
@@ -182,6 +186,20 @@ HUMAN_VOICE = "\n".join(
     ]
 )
 
+SEASON_README = (
+    "راهنمای من برای این فصل: اطلاعات، استراتژی، سیاست‌ها و هدف‌های آن. این اپیزود باید "
+    "در همین مسیر باشد و به همین هدف‌ها کمک کند؛ هرجا خواسته‌ای از اپیزود با آن ناهمخوان "
+    "است، بگو."
+)
+BEFORE_TOLD = (
+    "این اپیزود پس از این‌ها می‌آید و شنونده آن‌ها را شنیده است. خلاصهٔ هر کدام زیرش آمده: "
+    "آنچه گفته شده را دوباره نگو، به آن تکیه کن، هرجا به کار می‌آید به آن ارجاع بده و "
+    "ماجرا را از همان‌جا پیش ببر."
+)
+BEFORE_TITLES = "این اپیزود پس از این‌ها می‌آید و شنونده آن‌ها را شنیده است:"
+NO_SUMMARY = "(خلاصه‌ای از این اپیزود ننوشته‌ام.)"
+AFTER = "این‌ها پس از این اپیزود می‌آیند؛ آنچه جایش در آن‌هاست را پیش نکش، فقط اگر لازم شد اشاره کن:"
+
 MIXED_STYLES = "این شیوه‌ها را در یک اپیزود ترکیب کن و در ساختار پیشنهادی‌ات بگو هر کدام کجاست."
 
 STEP_ONE = "## گام ۱ — بررسی و پیشنهاد (هنوز متن نهایی را ننویس)"
@@ -199,6 +217,10 @@ OUTLINE = "ساختار: نقشهٔ اپیزود را بده: قلاب آغاز�
 CHANGES = (
     "فهرست تغییرها، جدا و روشن: «اصلاح‌ها» (کدام گفته‌ام درست شد و چرا)، «افزوده‌ها»، "
     "«حذف‌ها و جابه‌جایی‌ها»."
+)
+CONTINUITY = (
+    "پیوستگی با فصل: اگر جایی از پیش‌نویس یا ایده‌ها با راهنمای فصل ناهمخوان است، یا "
+    "همان را می‌گوید که در اپیزودهای پیشین گفته شده، بگو و پیشنهادت را بده."
 )
 WAIT = "بعد بایست و منتظر تأیید یا نظر من بمان."
 STEP_TWO = "\n".join(
@@ -228,12 +250,27 @@ class IdeaMaterial:
 
 
 @dataclass(frozen=True)
+class SeasonEpisode:
+    title: str
+    depth: int = 0  # 0 where its brief was never filled in
+    summary: str = ""
+
+
+@dataclass(frozen=True)
 class SeasonMaterial:
     title: str
-    summary: str = ""
-    outline: str = ""
-    # The season's other episodes: (title, depth), depth 0 where it was never set.
-    others: tuple[tuple[str, int], ...] = ()
+    readme: str = ""
+    # The season's other episodes in the order they were made, around this one.
+    before: tuple[SeasonEpisode, ...] = ()
+    after: tuple[SeasonEpisode, ...] = ()
+
+    def guided(self, brief: ScriptBrief) -> bool:
+        """Whether the readme goes in."""
+        return brief.season_readme and bool(self.readme.strip())
+
+    def told(self, brief: ScriptBrief) -> bool:
+        """Whether the earlier episodes go in with what they said."""
+        return brief.previous_summaries and any(e.summary.strip() for e in self.before)
 
 
 @dataclass(frozen=True)
@@ -274,14 +311,19 @@ def drafted(material: ScriptMaterial, brief: ScriptBrief) -> list[DraftNote]:
 
 
 def build_prompt(material: ScriptMaterial, brief: ScriptBrief) -> str:
-    parts = [INTRO, _episode(material, brief), _specs(brief)]
+    parts = [INTRO, _episode(material, brief)]
+    season = material.season
+    if season is not None and (season.guided(brief) or season.before or season.after):
+        parts.append(_season(season, brief))
+    parts.append(_specs(brief))
     notes = drafted(material, brief)
     if notes:
         parts.append(_draft(notes))
     if material.ideas:
         parts.append(_ideas(material.ideas))
     parts.append(HUMAN_VOICE)
-    parts.append(_process(has_mine=bool(notes or material.ideas)))
+    continuity = season is not None and (season.guided(brief) or season.told(brief))
+    parts.append(_process(has_mine=bool(notes or material.ideas), continuity=continuity))
     return "\n\n".join(parts) + "\n"
 
 
@@ -289,22 +331,39 @@ def _episode(material: ScriptMaterial, brief: ScriptBrief) -> str:
     lines = [f"عنوان: {material.title}"]
     if material.tags:
         lines.append("برچسب‌ها: " + "، ".join(material.tags))
+    if material.season is not None:
+        lines.append(f"فصل: {material.season.title}")
     if brief.about.strip():
         lines += ["", "## دربارهٔ اپیزود", brief.about.strip()]
-    season = material.season
-    if season is not None:
-        lines += ["", f"## فصل «{season.title}»"]
-        if season.summary.strip():
-            lines += ["دربارهٔ فصل:", season.summary.strip()]
-        if season.outline.strip():
-            lines += ["ساختار فصل:", season.outline.strip()]
-        if season.others:
-            lines.append("اپیزودهای دیگر این فصل:")
-            lines += [
-                f"- {title} (پلهٔ عمق {_fa(depth)})" if depth else f"- {title}"
-                for title, depth in season.others
-            ]
     return _section("# اطلاعات اپیزود", *lines)
+
+
+def _named(episode: SeasonEpisode) -> str:
+    if episode.depth:
+        return f"{episode.title} (پلهٔ عمق {_fa(episode.depth)})"
+    return episode.title
+
+
+def _season(season: SeasonMaterial, brief: ScriptBrief) -> str:
+    blocks: list[str] = []
+    if season.guided(brief):
+        blocks.append(_section("## راهنمای فصل", SEASON_README, "", season.readme.strip()))
+    if season.before:
+        if season.told(brief):
+            lines = [BEFORE_TOLD]
+            for number, episode in enumerate(season.before, 1):
+                lines += [
+                    "",
+                    f"### {_fa(number)}. {_named(episode)}",
+                    episode.summary.strip() or NO_SUMMARY,
+                ]
+        else:
+            lines = [BEFORE_TITLES, *(f"- {_named(e)}" for e in season.before)]
+        blocks.append(_section("## اپیزودهای پیشین این فصل", *lines))
+    if season.after:
+        after = [f"- {_named(e)}" for e in season.after]
+        blocks.append(_section("## اپیزودهای بعدی این فصل", AFTER, *after))
+    return f"# فصل «{season.title}»\n" + "\n\n".join(blocks)
 
 
 def _specs(brief: ScriptBrief) -> str:
@@ -384,7 +443,9 @@ def _ideas(ideas: tuple[IdeaMaterial, ...]) -> str:
     return _section("# ایده‌ها", *lines)
 
 
-def _process(has_mine: bool) -> str:
-    steps = [CHECK, RESEARCH, OUTLINE, CHANGES] if has_mine else [RESEARCH, OUTLINE, CHANGES]
+def _process(has_mine: bool, continuity: bool = False) -> str:
+    """Check my material first, and against the season where there is one to check it by."""
+    steps = [CHECK, CONTINUITY] if has_mine and continuity else [CHECK] if has_mine else []
+    steps += [RESEARCH, OUTLINE, CHANGES]
     numbered = [f"{_fa(i)}. {step}" for i, step in enumerate(steps, 1)]
     return "\n".join(["# روند کار", STEP_ONE, *numbered, WAIT, "", STEP_TWO])

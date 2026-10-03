@@ -92,7 +92,7 @@ def test_the_prompt_carries_the_episode_and_asks_before_writing(ws) -> None:
     ws.episodes.link(episode.id, LinkKind.IDEA, idea.id, True)
 
     material = ws.script_prompt.material(episode.id)
-    assert material.season.others == ((first.title, 0),)  # its depth was never set
+    assert [(e.title, e.depth) for e in material.season.before] == [(first.title, 0)]
     brief = replace(ws.episodes.get(episode.id).brief, left_out_notes=frozenset({todo.id}))
     prompt = build_prompt(material, brief)
 
@@ -110,3 +110,25 @@ def test_without_a_draft_there_is_nothing_of_mine_to_check() -> None:
     assert "صدای انسانی" in prompt
     assert "## قالب: تک‌گویی" in prompt
     assert "شیوهٔ روایت" not in prompt  # plain talk: no style asked for
+
+
+def test_previous_summaries_and_the_readme_go_in_unless_turned_off(ws) -> None:
+    season = ws.seasons.create("فصل زمان")
+    ws.seasons.write_brief(season.id, "هدف: زمان را از نو ببینیم", "برای شنونده")
+    first = ws.episodes.create("زمان چیست", season_id=season.id)
+    ws.episodes.set_summary(first.id, "گفتیم زمان نسبی است.")
+    episode = ws.episodes.create("پیکان زمان", season_id=season.id)
+    ws.episodes.create("پایان زمان", season_id=season.id)
+
+    material = ws.script_prompt.material(episode.id)
+    assert [e.title for e in material.season.after] == ["پایان زمان"]
+    prompt = build_prompt(material, ScriptBrief())
+    for expected in ("هدف: زمان", "گفتیم زمان نسبی است", "پایان زمان"):
+        assert expected in prompt
+    assert "برای شنونده" not in prompt  # the about is for listeners
+
+    off = ScriptBrief(season_readme=False, previous_summaries=False)
+    prompt = build_prompt(material, off)
+    assert "هدف: زمان" not in prompt and "گفتیم" not in prompt
+    assert "زمان چیست" in prompt  # its title still goes in
+    assert ScriptBrief.from_dict(off.to_dict()) == off

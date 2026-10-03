@@ -94,6 +94,10 @@ class ScriptBrief:
     # Notes of the episode the prompt leaves out (a to-do list, a script pasted back in);
     # every other note, including ones written later, goes in as the draft.
     left_out_notes: frozenset[int] = field(default_factory=frozenset)
+    # What of the season goes in: the producer's readme, and what the season's earlier
+    # episodes said (their summaries). Their titles go in either way.
+    season_readme: bool = True
+    previous_summaries: bool = True
 
     def __post_init__(self) -> None:
         put = object.__setattr__
@@ -107,6 +111,8 @@ class ScriptBrief:
         put(self, "depth", min(max(int(self.depth), DEPTHS[0]), DEPTHS[-1]))
         put(self, "minutes", min(max(int(self.minutes), 0), MAX_MINUTES))
         put(self, "left_out_notes", frozenset(int(n) for n in self.left_out_notes))
+        put(self, "season_readme", bool(self.season_readme))
+        put(self, "previous_summaries", bool(self.previous_summaries))
 
     def to_dict(self) -> dict[str, Any]:
         """Plain JSON, every set in its enum's order, so the same brief is the same text."""
@@ -121,6 +127,8 @@ class ScriptBrief:
             "register": self.register.value,
             "minutes": self.minutes,
             "left_out_notes": sorted(self.left_out_notes),
+            "season_readme": self.season_readme,
+            "previous_summaries": self.previous_summaries,
         }
 
     @classmethod
@@ -159,4 +167,6 @@ class ScriptBrief:
             register=one(Register, data.get("register"), default.register),
             minutes=int(data.get("minutes", default.minutes)),
             left_out_notes=frozenset(data.get("left_out_notes", ())),
+            season_readme=bool(data.get("season_readme", default.season_readme)),
+            previous_summaries=bool(data.get("previous_summaries", default.previous_summaries)),
         )

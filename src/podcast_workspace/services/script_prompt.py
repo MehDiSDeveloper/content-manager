@@ -13,6 +13,7 @@ from podcast_workspace.domain.script_prompt import (
     DraftNote,
     IdeaMaterial,
     ScriptMaterial,
+    SeasonEpisode,
     SeasonMaterial,
 )
 from podcast_workspace.domain.transcript_export import paragraphs, render
@@ -30,20 +31,24 @@ class ScriptPromptService:
             season = None
             if episode.season_id is not None:
                 found = uow.seasons.get(episode.season_id)
-                others = sorted(
+                # The season's order is the order its episodes were made in: no number
+                # is stored, and an episode is usually made when its turn comes.
+                run = sorted(
                     (e for e in uow.episodes.list_all() if e.season_id == found.id),
-                    key=lambda e: e.created_at,
+                    key=lambda e: (e.created_at, e.id or 0),
                 )
+                at = next(i for i, e in enumerate(run) if e.id == episode_id)
+                listed = [
+                    SeasonEpisode(
+                        e.title,
+                        # A depth only where the brief was filled in: a default 1 would mislead.
+                        e.brief.depth if e.brief != ScriptBrief() else 0,
+                        e.summary,
+                    )
+                    for e in run
+                ]
                 season = SeasonMaterial(
-                    found.title,
-                    found.summary,
-                    found.outline,
-                    # A depth only where the brief was filled in: a default 1 would mislead.
-                    tuple(
-                        (e.title, e.brief.depth if e.brief != ScriptBrief() else 0)
-                        for e in others
-                        if e.id != episode_id
-                    ),
+                    found.title, found.readme, tuple(listed[:at]), tuple(listed[at + 1 :])
                 )
             notes = tuple(
                 DraftNote(n.id, n.title, n.body)
