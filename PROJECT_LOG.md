@@ -1,4 +1,4 @@
-# Podcast Workspace — architecture (v1.6)
+# Podcast Workspace — architecture (v1.19)
 
 Local-first Windows desktop workspace for a solo Persian podcaster: episodes, voices, ideas,
 tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3.12, PySide6.
@@ -19,7 +19,7 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
 - Off the UI thread: voice import, search warm-up, waveform, playback engine (own QThread), transcription (thread pool), export/import (thread pool), model download (daemon thread), Bale polling (daemon thread)
 
 ## Data model
-- Episode: title, status, next_action, season_id (nullable), created_at, updated_at, last_opened_at; tags; linked voices + ideas; publish checklist (`publish_done` = ticked `PublishStep`s comma-separated, `published_where` = one place/link per line)
+- Episode: title, status, next_action, season_id (nullable), created_at, updated_at, last_opened_at; tags; linked voices + ideas; publish checklist (`publish_done` = ticked `PublishStep`s comma-separated, `published_where` = one place/link per line); script brief (`script_brief` = `ScriptBrief.to_dict()` JSON, "" = defaults)
 - Season: title, summary, outline (the brief: what it is about / how it is laid out, free text), created_at. Ordered by id (season one first). Deleting one keeps its episodes, seasonless
 - Voice: file_path (the workspace's own copy in `voices/`, or in place when already inside the data folder, e.g. Bale voices), source_path (the original it was copied from, never touched; "" if not a copy), duration_ms, format, imported_at, archived_at, deleted_at; ≤15 tags
 - IdeaNote: free text, created/updated, archived_at, deleted_at; ≤15 tags. Raw material, no timestamp
@@ -29,7 +29,7 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
 - Tag: name (unique, NOCASE), color. Flat: no parents, no nesting
 - Link tables: episode_tags, voice_tags, idea_note_tags, episode_voices, episode_idea_notes. `settings` = key → JSON
 - Status pipeline: idea → outline → recorded → script_ready → edited → published
-- Migrations: 5c0bcd4c8144 schema · a7f3c2d91e10 FTS · c41e8b7d2f05 status remap · e5a91d3c7b28 transcripts · b8d4e6f1a320 seasons · d2c7f9a4b615 archive/trash · f3a8c1e5d907 idea title · a9e2d5c8f314 flat tags (drops tags.parent_id) · c6e1a8f4b2d7 publish checklist (two ALTER TABLE ADD COLUMNs on episodes) · e8b3f1c6a492 voices.source_path (ALTER TABLE ADD COLUMN) · b3d7a1f9c524 seasons.summary + outline (ALTER TABLE ADD COLUMN)
+- Migrations: 5c0bcd4c8144 schema · a7f3c2d91e10 FTS · c41e8b7d2f05 status remap · e5a91d3c7b28 transcripts · b8d4e6f1a320 seasons · d2c7f9a4b615 archive/trash · f3a8c1e5d907 idea title · a9e2d5c8f314 flat tags (drops tags.parent_id) · c6e1a8f4b2d7 publish checklist (two ALTER TABLE ADD COLUMNs on episodes) · e8b3f1c6a492 voices.source_path (ALTER TABLE ADD COLUMN) · b3d7a1f9c524 seasons.summary + outline (ALTER TABLE ADD COLUMN) · d4f2b8e6a1c3 episodes.script_brief (ALTER TABLE ADD COLUMN)
 
 ## Where things live
 - Rules: `domain/rules.py` (15-tag limit, names, colors), `entities.py` (Taggable mixin enforces limit)
@@ -48,6 +48,7 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
 - Publish checklist: `domain/publish.py` (`PublishStep`, `PublishChecklist`, tested in `test_publish_checklist.py`), `EpisodeService.check_publish_step` / `set_published_where`, chip + popup `ui/widgets/publish_checklist.py` in the workspace's stage row
 - Untagged filter: `FacetFilter.untagged` (`domain/list_filter.py`), the «بی‌برچسب N» toggle chip in `FacetSearchBar`; `IdeasPage.rows` feeds it the count
 - Export as heard: `audio/render.py` (decode → `Splicer` + gain → encode; `trimmed_ms` maps times), `services/voice_render.py` (`VoiceRenderService.save` new/replace, `numbered_name`, `trimmed_for_sending` for the bot), `Player.active_cuts` / `level_gain`, dialog + job `ui/widgets/save_as_heard.py`, button in `VoicePane`. Tested in `test_voice_render.py`
+- Script prompt: brief `domain/script_brief.py` (options + `ScriptBrief`), template `domain/script_prompt.py` (`build_prompt`, all prompt wording), material `services/script_prompt.py` (`ScriptPromptService.material`), save + undo `EpisodeService.set_brief`, dialog `ui/widgets/script_prompt.py`, opened by «پرامپت متن» / Ctrl+P in the workspace header. Tested in `test_script_brief.py`
 - Idea inbox hotkey: `ui/hotkey.py` (RegisterHotKey, Ctrl+Alt+I), `ui/idea_inbox.py`
 - Recorder handoff: `services/recording.py` (os.startfile of the configured program); Ctrl+R is a MainWindow shortcut, so it works on every page
 - Shortcuts: app-wide ones in `MainWindow._install_shortcuts`, shown as keycaps (`ui/widgets/key_hint.py`: `KeyHint` beside a button, `attach_key_hint` inside an empty line edit, `NavButton(keys=…)` in the sidebar)
@@ -294,6 +295,28 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
   into a temp dir; note times and length in the caption follow the trimmed audio. The file
   id is cached per (voice, keep setting, file time). Unreadable pauses → the original goes
 
+- Script prompt (v1.19):
+  - A fixed template, no AI call: the app only assembles; the user copies the prompt into
+    any AI. The prompt is Persian in both UI languages (the podcast is Persian). Order: role,
+    episode (title, tags, about, season brief and its other episodes), specs, draft (notes),
+    ideas (text; audio = transcript paragraphs + timestamp notes), the human-voice rules,
+    then the process: check my claims, research, outline, list the changes, *wait for my
+    approval*, only then write the final script
+  - The brief is the episode's own (JSON column, one undo step per editing run, exported),
+    so the prompt is the same next time. Options regrouped from the user's list: format,
+    audience, approach and mood are multi-select; depth (1–5 ladder: one topic in five
+    episodes, each deeper) and register (casual / semi-formal / formal — spoken vs written
+    Persian) are single. «کمی خلاصه/مشروح» and «عمیق» were dropped: length and depth cover
+    them. Defaults: monologue, general public, depth 1, conceptual only, semi-formal, 15 min
+  - The draft is the episode's notes, not a new text field: one place to write. The dialog
+    ticks notes in or out (`left_out_notes`, kept with the brief) so a to-do note or a script
+    pasted back from the AI stays out; new notes are in by default
+  - Audio ideas with neither transcript nor notes are named in the dialog as left out
+  - A sibling episode's depth is shown only if its brief was ever changed: a default 1
+    would mislead the AI about the ladder
+  - The preview forces RTL + right alignment on its document: QPlainTextEdit otherwise lays
+    out lines that open with a markdown "#"/"-" with the mark at the far end
+
 ## Gotchas
 - New migration: set `PODCAST_WORKSPACE_HOME=<tmp>` before `alembic revision --autogenerate`, else it diffs your real DB. Replace autogenerated `UTCDateTime()` with `sa.DateTime()`; keep `render_as_batch=True`; `alembic check` must stay clean (env.py ignores `search_*`)
 - Migrations run with foreign keys off (`db.migration_connection`, used by `migrate()` and the CLI env), then `PRAGMA foreign_key_check` must come back empty. A table rebuild would otherwise drop the old table under foreign_keys=ON and every CASCADE child would go with it (tag links, notes, transcripts). Adding a column is still best done with a plain `ALTER TABLE … ADD COLUMN` (see b8d4e6f1a320)
@@ -348,6 +371,10 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
   HighlightedText (unreadable in dark). Lines/focus/markers use the Link role (accent_strong)
 
 ## Status
+- v1.19: script prompt — «پرامپت متن» (Ctrl+P) in the episode header opens the episode's
+  script brief (about, format, audience, depth ladder, approach, mood, register, length,
+  which notes are the draft) beside a live prompt built from a fixed template, with «کپی
+  پرامپت». Brief saved on the episode (migration d4f2b8e6a1c3), undoable, exported
 - v1.18: audio folder — «حذف از فهرست» (Delete) hides a file, which stays on the disk
   (setting `voices.source_hidden`: path key → mtime, so a new take under the same name is
   listed again; marks of files gone, replaced or added are dropped), «پنهان‌شده‌ها» under the
