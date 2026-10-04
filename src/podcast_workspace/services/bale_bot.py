@@ -45,6 +45,7 @@ from podcast_workspace.integrations.bale_api import (
     BaleApiError,
     BaleClient,
     BaleError,
+    BaleNetworkError,
     BaleUnauthorizedError,
 )
 from podcast_workspace.paths import bale_voices_dir
@@ -153,6 +154,14 @@ class BotStatus(StrEnum):
     ONLINE = "online"
     OFFLINE = "offline"  # no network / server trouble; retrying
     UNAUTHORIZED = "unauthorized"  # token rejected; waits for a new token
+
+
+@dataclass(frozen=True)
+class TokenCheck:
+    """`check_token`'s answer: ONLINE with the bot's name, UNAUTHORIZED or OFFLINE."""
+
+    status: BotStatus
+    bot_name: str = ""
 
 
 StatusCallback = Callable[[BotStatus, str], None]
@@ -264,15 +273,24 @@ class BaleBotService:
         self.status = BotStatus.STOPPED
 
     @staticmethod
-    def check_token(token: str) -> str:
-        """Blocking getMe; returns the bot's @username (or name). Raises BaleError."""
+    def check_token(token: str) -> TokenCheck:
+        """Blocking getMe: is the token accepted, and by which bot?
+
+        Answers in the service's own terms (`BotStatus`), so the settings screen never has
+        to know the HTTP client's errors. Anything other than a rejected token or no
+        network still raises."""
         client = BaleClient(token)
         try:
             me = client.get_me()
+        except BaleUnauthorizedError:
+            return TokenCheck(BotStatus.UNAUTHORIZED)
+        except BaleNetworkError:
+            return TokenCheck(BotStatus.OFFLINE)
         finally:
             client.close()
         username = me.get("username")
-        return f"@{username}" if username else str(me.get("first_name") or "")
+        name = f"@{username}" if username else str(me.get("first_name") or "")
+        return TokenCheck(BotStatus.ONLINE, name)
 
 
 class _Worker(threading.Thread):

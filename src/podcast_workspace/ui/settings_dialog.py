@@ -27,10 +27,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from podcast_workspace.integrations.bale_api import BaleNetworkError, BaleUnauthorizedError
 from podcast_workspace.paths import data_dir
 from podcast_workspace.services.backup import ExportFormatError, ExportReport, RestoreReport
-from podcast_workspace.services.bale_bot import BaleBotService, BotStatus
+from podcast_workspace.services.bale_bot import BaleBotService, BotStatus, TokenCheck
 from podcast_workspace.services.settings_service import Language
 from podcast_workspace.services.transcription import WHISPER_MODELS, whisper_installed
 from podcast_workspace.services.workspace import Workspace
@@ -379,18 +378,20 @@ class SettingsDialog(QDialog):
             self._on_token_failed,
         )
 
-    def _on_token_ok(self, name: str) -> None:
+    def _on_token_ok(self, check: TokenCheck) -> None:
         self.check_button.setEnabled(True)
-        self.token_result.setText(strings.BOT_TOKEN_OK.format(name=name))
+        match check.status:
+            case BotStatus.UNAUTHORIZED:
+                text = strings.BOT_TOKEN_BAD
+            case BotStatus.OFFLINE:
+                text = strings.BOT_TOKEN_OFFLINE
+            case _:
+                text = strings.BOT_TOKEN_OK.format(name=check.bot_name)
+        self.token_result.setText(text)
 
     def _on_token_failed(self, exc: BaseException) -> None:
         self.check_button.setEnabled(True)
-        if isinstance(exc, BaleUnauthorizedError):
-            self.token_result.setText(strings.BOT_TOKEN_BAD)
-        elif isinstance(exc, BaleNetworkError):
-            self.token_result.setText(strings.BOT_TOKEN_OFFLINE)
-        else:
-            self.token_result.setText(describe_error(exc))
+        self.token_result.setText(describe_error(exc))
 
     # transcription ---------------------------------------------------------------------
     def _show_model_state(self) -> None:
