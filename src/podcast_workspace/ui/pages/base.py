@@ -28,6 +28,7 @@ from PySide6.QtCore import (
     QRect,
     QSize,
     Qt,
+    QTimer,
 )
 from PySide6.QtGui import QIcon, QKeyEvent, QKeySequence, QPainter, QPalette, QShortcut
 from PySide6.QtWidgets import (
@@ -168,18 +169,31 @@ class TwoLineDelegate(QStyledItemDelegate):
         painter.restore()
 
 
+FLASH_MS = 6000
+
+
 class _StatusLabel(QLabel):
     """A passing message under the page title ("3 files imported"): takes no room while
-    there is nothing to say."""
+    there is nothing to say.
+
+    `flash` clears itself after a while; anything said since cancels that, so an older
+    message's timer never wipes a newer one."""
 
     def __init__(self) -> None:
         super().__init__(objectName="muted")
         self.setWordWrap(True)
         self.hide()
+        self._timer = QTimer(self, singleShot=True)
+        self._timer.timeout.connect(lambda: self.setText(""))
 
     def setText(self, text: str) -> None:  # type: ignore[override]
+        self._timer.stop()
         super().setText(text)
         self.setVisible(bool(text))
+
+    def flash(self, text: str, show_ms: int = FLASH_MS) -> None:
+        self.setText(text)
+        self._timer.start(show_ms)
 
 
 class ListPage(QWidget):

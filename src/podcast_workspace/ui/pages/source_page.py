@@ -295,13 +295,7 @@ class SourcePage(ListPage):
 
     def _flash(self, message: str) -> None:
         # The mark keeps the UI's direction when the message opens with a Latin file name.
-        message = strings.DIRECTION_MARK + message
-        self.status.setText(message)
-        QTimer.singleShot(6000, lambda: self._clear_status(message))
-
-    def _clear_status(self, message: str) -> None:
-        if self.status.text() == message:  # not something said since
-            self.status.setText("")
+        self.status.flash(strings.DIRECTION_MARK + message)
 
     # hidden files ------------------------------------------------------------------------
     def _set_hidden_view(self, on: bool) -> None:

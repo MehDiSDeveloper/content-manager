@@ -1077,8 +1077,7 @@ class IdeasPage(ShelfListPage):
             )
         if report.failed:
             parts.append(strings.VOICE_IMPORT_FAILED.format(n=local_digits(len(report.failed))))
-        self.status.setText(strings.LIST_SEPARATOR.join(parts))
-        QTimer.singleShot(8000, lambda: self.status.setText(""))
+        self.status.flash(strings.LIST_SEPARATOR.join(parts), 8000)
         self._events.data_changed.emit()
         first = report.imported[0].id if report.imported else None
         self.refresh(select_id=None if first is None else audio_key(first))
@@ -1090,8 +1089,7 @@ class IdeasPage(ShelfListPage):
             self._events.data_changed.emit()
             name = strings.QUOTE.format(text=Path(voice.file_path).name)
             template = strings.VOICE_SAVED_REPLACED if replaced else strings.VOICE_SAVED_NEW
-            self.status.setText(template.format(name=name))
-            QTimer.singleShot(8000, lambda: self.status.setText(""))
+            self.status.flash(template.format(name=name), 8000)
             if self.scope is ArchiveScope.ARCHIVED:  # a new copy is an active voice
                 self.set_scope(ArchiveScope.ACTIVE)
             self._show_kind(IdeaKind.AUDIO)
@@ -1286,8 +1284,7 @@ class IdeasPage(ShelfListPage):
         self._events.data_changed.emit()
         self._land(row)
         if report is not None:
-            self.status.setText(strings.DELETE_FOREVER_DONE.format(n=local_digits(len(report))))
-            QTimer.singleShot(6000, lambda: self.status.setText(""))
+            self.status.flash(strings.DELETE_FOREVER_DONE.format(n=local_digits(len(report))))
 
     def _to_transcribe(self, voice_ids: set[int]) -> tuple[list[int], int]:
         """Of these voices, the ones a transcription can start on, and how many are
@@ -1382,8 +1379,7 @@ class IdeasPage(ShelfListPage):
         except Exception:
             title = ""
         template = strings.IDEA_ADDED_TO if linked else strings.IDEA_REMOVED_FROM
-        self.status.setText(template.format(title=title))
-        QTimer.singleShot(6000, lambda: self.status.setText(""))
+        self.status.flash(template.format(title=title))
         self._episode_counts = self._ws.episodes.link_counts()
         for key in self.selected_keys():
             item = self.find_item(key)

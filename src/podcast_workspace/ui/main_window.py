@@ -1177,8 +1177,7 @@ class MainWindow(QMainWindow):
             return
         self.events.data_changed.emit()
         self.ideas_page.external_change()
-        self.ideas_page.status.setText(strings.VOICES_SECURED.format(n=local_digits(copied)))
-        QTimer.singleShot(10000, lambda: self.ideas_page.status.setText(""))
+        self.ideas_page.status.flash(strings.VOICES_SECURED.format(n=local_digits(copied)), 10000)
 
     def _on_bot_item(self, ref: ItemRef) -> None:
         self.events.tags_changed.emit()  # the bot may have created tags
@@ -1187,8 +1186,7 @@ class MainWindow(QMainWindow):
         received = (
             strings.BOT_RECEIVED_IDEA if ref.kind is ItemKind.IDEA else strings.BOT_RECEIVED_VOICE
         )
-        self.ideas_page.status.setText(received)
-        QTimer.singleShot(6000, lambda: self.ideas_page.status.setText(""))
+        self.ideas_page.status.flash(received)
 
     def _record(self) -> None:
         path = self._ws.settings.recorder_path()
