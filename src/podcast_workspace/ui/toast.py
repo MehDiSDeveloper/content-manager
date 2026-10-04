@@ -5,7 +5,8 @@ taken off a voice, a note deleted: the toast says what just happened and puts «
 one click away, for the moments the keyboard is not where the user's hands are.
 
 It floats over the page (a child of the content widget, not a window), never takes
-focus, and is dismissed by its own × or by time.
+focus, and is dismissed by its own × or by time. It is only as wide as its message, so a
+short one covers as little of the page's own buttons as it can.
 """
 
 from collections.abc import Callable
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QToolBut
 SHOW_MS = 7000
 MARGIN = 26
 MAX_WIDTH = 620
+MIN_WIDTH = 280
 
 
 class Toast(QFrame):
@@ -42,6 +44,7 @@ class Toast(QFrame):
         row.addWidget(self.close_button)
 
         self._on_action: Callable[[], None] | None = None
+        self._key = ""
         self._timer = QTimer(self, singleShot=True, interval=SHOW_MS)
         self._timer.timeout.connect(self.dismiss)
         parent.installEventFilter(self)
@@ -53,7 +56,10 @@ class Toast(QFrame):
         action_text: str = "",
         on_action: Callable[[], None] | None = None,
         show_ms: int = SHOW_MS,
+        key: str = "",
     ) -> None:
+        """`key` names a message that may be withdrawn later with `dismiss_if`."""
+        self._key = key
         self.label.setText(text)
         self._on_action = on_action if action_text else None
         self.action.setText(action_text)
@@ -67,7 +73,13 @@ class Toast(QFrame):
     def dismiss(self) -> None:
         self._timer.stop()
         self._on_action = None
+        self._key = ""
         self.hide()
+
+    def dismiss_if(self, key: str) -> None:
+        """Withdraw the message shown under `key`, and only that one."""
+        if self.isVisible() and self._key == key:
+            self.dismiss()
 
     def _run(self) -> None:
         action, self._on_action = self._on_action, None
@@ -79,10 +91,22 @@ class Toast(QFrame):
         parent = self.parentWidget()
         if parent is None:
             return
-        self.setFixedWidth(min(MAX_WIDTH, max(280, parent.width() - 2 * MARGIN)))
+        room = max(MIN_WIDTH, min(MAX_WIDTH, parent.width() - 2 * MARGIN))
+        self.setFixedWidth(max(MIN_WIDTH, min(room, self._content_width())))
         self.adjustSize()
         x = (parent.width() - self.width()) // 2
         self.move(max(MARGIN, x), parent.height() - self.height() - MARGIN)
+
+    def _content_width(self) -> int:
+        """The width that fits the message on one line, with the buttons beside it."""
+        row = self.layout()
+        margins = row.contentsMargins()
+        width = margins.left() + margins.right()
+        width += self.label.fontMetrics().horizontalAdvance(self.label.text()) + 4
+        for button in (self.action, self.close_button):
+            if not button.isHidden():
+                width += row.spacing() + button.sizeHint().width()
+        return width
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         resized = watched is self.parentWidget() and event.type() == QEvent.Type.Resize

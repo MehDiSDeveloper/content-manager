@@ -125,6 +125,7 @@ IDEA_HOTKEY_ID = 0xB0B1
 START_PAGE = 2  # Ideas: the app opens where new ideas land
 RESUME_SHOW_MS = 20_000  # the startup «continue» toast: longer than news, not for ever
 RESUME_TITLE_CHARS = 60
+RESUME_TOAST = "resume"
 # Changes worth a toast: the ones that take something away, where noticing late is the
 # whole problem. Everything else is visible on the page as it happens.
 UNDO_OFFERED = frozenset(
@@ -712,6 +713,7 @@ class MainWindow(QMainWindow):
             strings.RESUME_CONTINUE,
             lambda: self.open_episode(episode_id, note_id),
             show_ms=RESUME_SHOW_MS,
+            key=RESUME_TOAST,
         )
 
     # navigation ------------------------------------------------------------------------
@@ -723,6 +725,9 @@ class MainWindow(QMainWindow):
         (`_before_search`).
         """
         current = self.stack.currentWidget()
+        if current is not page:
+            # Somewhere else chosen: the startup offer to resume has been answered.
+            self.toast.dismiss_if(RESUME_TOAST)
         if remember and current is not page and current is not self.search_page:
             self._history.push(current)
         self.stack.setCurrentWidget(page)
