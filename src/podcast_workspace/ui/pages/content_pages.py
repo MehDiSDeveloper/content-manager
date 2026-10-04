@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QHBoxLayout,
-    QLabel,
     QMenu,
     QPushButton,
     QSizePolicy,
@@ -42,6 +41,7 @@ from podcast_workspace.ui.support import (
     numbered,
     show_error,
 )
+from podcast_workspace.ui.widgets.elided_label import ElidedLabel
 
 AUTOSAVE_DELAY_MS = 700
 SEASON_ALL, SEASON_NONE = "all", "none"  # the season box's two fixed entries
@@ -76,12 +76,11 @@ def tag_labels(
     return tuple(name for name in (known.get(i) for i in tag_ids) if name)
 
 
-class PathLabel(QLabel):
+class PathLabel(ElidedLabel):
     """One muted line showing a file path, elided in the middle, copied on click."""
 
     def __init__(self) -> None:
-        super().__init__(objectName="muted")
-        self._path = ""
+        super().__init__(mode=Qt.TextElideMode.ElideMiddle, objectName="muted")
         self.setToolTip(strings.VOICE_PATH_TOOLTIP)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
@@ -89,21 +88,11 @@ class PathLabel(QLabel):
         self.setMinimumWidth(120)
 
     def set_path(self, path: str) -> None:
-        self._path = path
-        self._elide()
-
-    def _elide(self) -> None:
-        self.setText(
-            self.fontMetrics().elidedText(self._path, Qt.TextElideMode.ElideMiddle, self.width())
-        )
-
-    def resizeEvent(self, event: object) -> None:  # type: ignore[override]
-        super().resizeEvent(event)  # type: ignore[arg-type]
-        self._elide()
+        self.setText(path)
 
     def mouseReleaseEvent(self, event: object) -> None:  # type: ignore[override]
-        if self._path:
-            QApplication.clipboard().setText(self._path)
+        if self.text():
+            QApplication.clipboard().setText(self.text())
         super().mouseReleaseEvent(event)  # type: ignore[arg-type]
 
 

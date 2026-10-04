@@ -94,6 +94,7 @@ from podcast_workspace.ui.support import (
     show_error,
 )
 from podcast_workspace.ui.theme import section_ink
+from podcast_workspace.ui.widgets.elided_label import ElidedLabel
 from podcast_workspace.ui.widgets.episode_links import EpisodeLinksRow, EpisodeMenu
 from podcast_workspace.ui.widgets.facet_search import FacetSearchBar, FacetState
 from podcast_workspace.ui.widgets.key_hint import attach_key_hint
@@ -318,7 +319,7 @@ class VoicePane(QWidget):
         col.addWidget(self.name)
         meta_row = QHBoxLayout()
         meta_row.setSpacing(12)
-        self.meta = QLabel(objectName="muted")
+        self.meta = ElidedLabel(objectName="muted")
         meta_row.addWidget(self.meta)
         self.missing = QLabel(strings.VOICE_MISSING, objectName="warning")
         meta_row.addWidget(self.missing)
@@ -492,7 +493,7 @@ class TextPane(QWidget):
         col.addWidget(self.episodes)
         bottom = QHBoxLayout()
         bottom.setSpacing(10)
-        self.meta = QLabel(objectName="muted")
+        self.meta = ElidedLabel(objectName="muted")  # shortens rather than push the buttons out
         bottom.addWidget(self.meta)
         bottom.addWidget(shelf.badge)
         bottom.addStretch(1)
