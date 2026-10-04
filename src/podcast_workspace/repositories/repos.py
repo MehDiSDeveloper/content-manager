@@ -78,10 +78,6 @@ class TagRepository(SqlRepository[Tag, TagRow]):
         rows = self.session.scalars(select(TagRow).order_by(TagRow.name))
         return [self._to_domain(row) for row in rows]
 
-    def find_by_name(self, name: str) -> Tag | None:
-        row = self.session.scalar(select(TagRow).where(TagRow.name == name))
-        return None if row is None else self._to_domain(row)
-
     def usage_counts(self) -> dict[int, int]:
         """Tag id -> number of episodes, voices and ideas carrying it. Items in the trash
         do not count: they are nowhere else in the app either."""
@@ -318,10 +314,6 @@ class VoiceRepository(SqlRepository[Voice, VoiceRow]):
         row.deleted_at = entity.deleted_at
         row.source_path = entity.source_path
         row.tags = self._tag_rows(entity.tag_ids)
-
-    def find_by_path(self, file_path: str) -> Voice | None:
-        row = self.session.scalar(select(VoiceRow).where(VoiceRow.file_path == file_path))
-        return None if row is None else self._to_domain(row)
 
     def list_all(self, include_trashed: bool = False) -> list[Voice]:
         """Newest first. The trash is left out unless asked for (export, the audio

@@ -254,9 +254,6 @@ class TrashPage(QWidget):
     def selected_keys(self) -> set[TrashKey]:
         return {self._key(row) for row in self.list.selectedItems()}
 
-    def _shown_keys(self) -> list[TrashKey]:
-        return [self._key(self.list.item(i)) for i in range(self.list.count())]
-
     # selection and preview -------------------------------------------------------------
     def _on_selection_changed(self) -> None:
         keys = self.selected_keys()

@@ -6,6 +6,7 @@ from dataclasses import replace
 from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QKeySequence,
+    QMouseEvent,
     QPalette,
     QResizeEvent,
     QShortcut,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QStackedWidget,
     QToolButton,
+    QToolTip,
     QVBoxLayout,
 )
 
@@ -45,7 +47,6 @@ from podcast_workspace.ui.widgets.elided_label import ElidedLabel
 
 AUTOSAVE_DELAY_MS = 700
 SEASON_ALL, SEASON_NONE = "all", "none"  # the season box's two fixed entries
-MINI_LIST_HEIGHT = 208
 # Narrower than this beside the list, the workspace's header and its two columns run into
 # each other: the list folds away on its own until the window is wide enough again.
 WORKSPACE_MIN_WIDTH = 640
@@ -90,10 +91,12 @@ class PathLabel(ElidedLabel):
     def set_path(self, path: str) -> None:
         self.setText(path)
 
-    def mouseReleaseEvent(self, event: object) -> None:  # type: ignore[override]
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self.text():
             QApplication.clipboard().setText(self.text())
-        super().mouseReleaseEvent(event)  # type: ignore[arg-type]
+            # A copy shows nothing by itself: say it happened, where the pointer is.
+            QToolTip.showText(event.globalPosition().toPoint(), strings.VOICE_PATH_COPIED, self)
+        super().mouseReleaseEvent(event)
 
 
 class EpisodesPage(ListPage):

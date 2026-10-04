@@ -286,10 +286,3 @@ class Transcript:
     @property
     def text(self) -> str:
         return "\n".join(seg.text for seg in self.segments)
-
-    def segment_at(self, position_ms: int) -> int | None:
-        """Index of the segment playing at `position_ms`, if any."""
-        for index, seg in enumerate(self.segments):
-            if seg.start_ms <= position_ms < max(seg.end_ms, seg.start_ms + 1):
-                return index
-        return None

@@ -18,8 +18,3 @@ def is_stale(episode: Episode, now: datetime) -> bool:
     if episode.status is EpisodeStatus.PUBLISHED:
         return False
     return now - episode.updated_at > STALE_AFTER
-
-
-def neighbour_status(status: EpisodeStatus, step: int) -> EpisodeStatus | None:
-    index = PIPELINE.index(status) + step
-    return PIPELINE[index] if 0 <= index < len(PIPELINE) else None

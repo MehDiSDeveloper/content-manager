@@ -211,7 +211,6 @@ class ListPage(QWidget):
         super().__init__()
         self.nav_title = title
         self._filter = ListFilter()
-        self._total_rows = 0
         # Three panes, each with its own head: the list column carries the page's name,
         # its "new" button and its filter, and the detail pane gets the full height.
         body = QHBoxLayout(self)
@@ -245,7 +244,7 @@ class ListPage(QWidget):
         self.primary = QPushButton(primary_label, objectName="primary")
         self.primary.clicked.connect(self.primary_action)
         header.addWidget(self.primary)
-        self.primary_keys = add_key_hint(header, self.primary, "Ctrl+N")
+        add_key_hint(header, self.primary, "Ctrl+N")
         side.addLayout(header)
         self.status = _StatusLabel()
         side.addWidget(self.status)
@@ -388,7 +387,6 @@ class ListPage(QWidget):
         """
         keep = select_id if select_id is not None else self.current_id()
         rows = self.rows()
-        self._total_rows = len(rows)
         shown = [r for r in rows if r.item_id == select_id or self.row_matches(r)]
         self._update_filter_count(shown, rows)
         self.list.blockSignals(True)
