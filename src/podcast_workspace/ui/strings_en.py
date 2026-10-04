@@ -16,7 +16,6 @@ STARTUP_ERROR_BODY = "The database could not be opened:\n{error}"
 
 THEME_TO_DARK = "Dark theme"
 THEME_TO_LIGHT = "Light theme"
-THEME_TOOLTIP = "Switch theme (Ctrl+Shift+T)"
 NAV_TOOLTIP = "{label} — {keys}"
 
 NAV_EPISODES = "Episodes"

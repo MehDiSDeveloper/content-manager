@@ -1215,7 +1215,7 @@ class MainWindow(QMainWindow):
     def _on_theme_changed(self, theme: Theme) -> None:
         dark = theme is Theme.DARK
         self.theme_button.setToolTip(
-            (strings.THEME_TO_LIGHT if dark else strings.THEME_TO_DARK) + "  (Ctrl+T)"
+            (strings.THEME_TO_LIGHT if dark else strings.THEME_TO_DARK) + "  (Ctrl+Shift+T)"
         )
         self._paint_chrome_icons()
         set_native_dark_title_bar(self, dark)

@@ -22,7 +22,6 @@ STARTUP_ERROR_BODY = "پایگاه داده باز نشد:\n{error}"
 
 THEME_TO_DARK = "پوستهٔ تیره"
 THEME_TO_LIGHT = "پوستهٔ روشن"
-THEME_TOOLTIP = "تغییر پوسته (Ctrl+Shift+T)"
 NAV_TOOLTIP = "{label} — {keys}"
 
 NAV_EPISODES = "اپیزودها"
