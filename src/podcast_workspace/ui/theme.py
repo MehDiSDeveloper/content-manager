@@ -207,7 +207,7 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     return f"""
     QMainWindow, #content {{ background: {c.window}; }}
     #sidebar {{ background: {c.sidebar}; border-{inner_edge}: 1px solid {c.border}; }}
-    #appTitle {{ font-size: 13.5pt; font-weight: 700; color: {c.text}; }}
+    #appTitle {{ font-size: 13pt; font-weight: 700; color: {c.text}; }}
     #appMark {{ background: {c.accent}; border-radius: 11px; }}
     #pageTitle {{ font-size: 20pt; font-weight: 700; color: {c.text}; }}
     #editorTitle {{ font-size: 15pt; font-weight: 700; color: {c.text}; }}
@@ -262,6 +262,11 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     }}
     QPushButton#danger {{ color: {c.danger}; }}
     QPushButton#danger:hover {{ background: {c.danger_soft}; border-color: {c.danger}; }}
+    /* An id outranks :disabled, so each coloured button says it is off on its own, or a
+       disabled «delete forever» still looks ready to press. */
+    QPushButton#danger:disabled, QPushButton#recordButton:disabled {{
+        color: {c.muted}; background: {c.panel}; border-color: {c.border};
+    }}
 
     QLineEdit, QPlainTextEdit, QTextEdit {{
         background: {c.surface}; color: {c.text}; border: 1px solid {c.border};
@@ -377,6 +382,7 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
         padding: 2px 4px; font-weight: 600;
     }}
     QPushButton#linkButton:hover {{ text-decoration: underline; }}
+    QPushButton#linkButton:disabled {{ color: {c.muted}; text-decoration: none; }}
 
     #sectionTitle {{ font-size: 12.5pt; font-weight: 700; color: {c.text}; }}
     #clock {{ font-size: 12pt; font-weight: 600; color: {c.text}; min-width: 64px; }}
@@ -482,6 +488,7 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     }}
     QPushButton#flatButton:hover {{ background: {c.accent_soft}; }}
     QPushButton#flatButton:focus {{ border: 2px solid {c.accent_strong}; padding: 4px 10px; }}
+    QPushButton#flatButton:disabled {{ color: {c.muted}; background: transparent; }}
     QPushButton#recordButton {{ color: {c.danger}; font-weight: 700; }}
     QPushButton#recordButton:hover {{ background: {c.danger_soft}; border-color: {c.danger}; }}
     QToolButton#backButton {{
