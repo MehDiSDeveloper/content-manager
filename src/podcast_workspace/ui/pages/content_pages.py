@@ -7,6 +7,7 @@ from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QKeySequence,
     QPalette,
+    QResizeEvent,
     QShortcut,
 )
 from PySide6.QtWidgets import (
@@ -28,7 +29,7 @@ from podcast_workspace.domain.errors import NotFoundError
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.icons import NAV_ICON_SIZE, list_pane_icon, more_icon
-from podcast_workspace.ui.pages.base import ListPage, ListPageState, Row
+from podcast_workspace.ui.pages.base import LIST_MIN_WIDTH, ListPage, ListPageState, Row
 from podcast_workspace.ui.pages.episode_workspace import EpisodeWorkspacePage, stale_text
 from podcast_workspace.ui.pages.season_brief import SeasonBriefPage, SeasonCard
 from podcast_workspace.ui.player.transcript_panel import TranscriptionJobs
@@ -45,6 +46,9 @@ from podcast_workspace.ui.support import (
 AUTOSAVE_DELAY_MS = 700
 SEASON_ALL, SEASON_NONE = "all", "none"  # the season box's two fixed entries
 MINI_LIST_HEIGHT = 208
+# Narrower than this beside the list, the workspace's header and its two columns run into
+# each other: the list folds away on its own until the window is wide enough again.
+WORKSPACE_MIN_WIDTH = 640
 
 
 def danger_button(text: str) -> QPushButton:
@@ -111,7 +115,9 @@ class EpisodesPage(ListPage):
     navigation, list, item — and it keeps one rule: the frame does not change when you
     pick something. A click selects and shows; Enter or a double-click only moves the
     caret into the episode. The list can be hidden for room to write (Ctrl+L), and that
-    choice is remembered, because it is the user's and not a mode.
+    choice is remembered, because it is the user's and not a mode. A window too narrow
+    for both folds the list too, without touching that choice: it comes back with the
+    room, and Ctrl+L still shows it meanwhile.
 
     A season on show has a brief (`season_brief.py`): its card over the list opens it in
     the detail pane, with no episode selected, until an episode is chosen again.
@@ -178,8 +184,11 @@ class EpisodesPage(ListPage):
             activated=self._open_script_prompt,
             context=Qt.ShortcutContext.WidgetWithChildrenShortcut,
         )
-        self._list_hidden = False
+        self._list_hidden = False  # the user's choice (Ctrl+L), remembered
+        self._narrow = False  # no room for list and workspace side by side
+        self._narrow_shown = False  # ...but the user asked for the list anyway
         self._set_list_hidden(workspace.settings.episode_list_hidden(), remember=False)
+        self.detail.currentChanged.connect(lambda _i: self._apply_list())
 
     def _open_script_prompt(self) -> None:
         # Only for the episode on show: with the season brief open, there is none.
@@ -188,26 +197,66 @@ class EpisodesPage(ListPage):
 
     # the list pane ---------------------------------------------------------------------
     def toggle_list(self) -> None:
-        self._set_list_hidden(not self._list_hidden)
+        if self._narrow_shown and self._list_shown():
+            # Folding back a list only peeked at in a narrow window: the choice stands.
+            self._narrow_shown = False
+            self._apply_list()
+        elif self._list_shown():
+            self._set_list_hidden(True)
+        else:
+            self._show_list()
+
+    def _show_list(self) -> None:
+        self._narrow_shown = self._narrow
+        self._set_list_hidden(False)
+
+    def _list_shown(self) -> bool:
+        # Folding for room only makes sense with something to make room for: with no
+        # episode chosen, the list is the page.
+        showing = self.detail.currentWidget() is self.editor
+        folded = self._narrow and showing and not self._narrow_shown
+        return not self._list_hidden and not folded
 
     def _set_list_hidden(self, hidden: bool, remember: bool = True) -> None:
-        had_focus = self.list_side.isAncestorOf(QApplication.focusWidget())
+        if hidden:
+            self._narrow_shown = False
         self._list_hidden = hidden
-        self.list_side.setVisible(not hidden)
-        self._paint_list_toggle()
         if remember:
             self._ws.settings.set_episode_list_hidden(hidden)
-        if hidden and had_focus:
+        self._apply_list(focus_list=remember)
+
+    def _apply_list(self, focus_list: bool = False) -> None:
+        had_focus = self.list_side.isAncestorOf(QApplication.focusWidget())
+        shown = self._list_shown()
+        self.list_side.setVisible(shown)
+        self._paint_list_toggle()
+        if not shown and had_focus:
             self._detail_focus()
-        elif not hidden and remember:
+        elif shown and focus_list:
             self.list.setFocus()
+
+    def _too_narrow(self) -> bool:
+        layout = self.layout()
+        margins = layout.contentsMargins()
+        list_width = max(self.list_side.minimumSizeHint().width(), LIST_MIN_WIDTH)
+        room = self.width() - margins.left() - margins.right() - layout.spacing() - list_width
+        return room < WORKSPACE_MIN_WIDTH
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        narrow = self._too_narrow()
+        if narrow != self._narrow:
+            self._narrow = narrow
+            self._narrow_shown = False
+            self._apply_list()
 
     def _paint_list_toggle(self) -> None:
         color = self.palette().color(QPalette.ColorRole.Text)
         for button in (self.workspace.list_toggle, self.brief.list_toggle):
-            button.setIcon(list_pane_icon(color, self.isRightToLeft(), self._list_hidden))
+            hidden = not self._list_shown()
+            button.setIcon(list_pane_icon(color, self.isRightToLeft(), hidden))
             button.setIconSize(QSize(NAV_ICON_SIZE, NAV_ICON_SIZE))
-            button.setToolTip(strings.LIST_SHOW if self._list_hidden else strings.LIST_HIDE)
+            button.setToolTip(strings.LIST_SHOW if hidden else strings.LIST_HIDE)
         self.workspace.more_button.setIcon(more_icon(color))
 
     def changeEvent(self, event: QEvent) -> None:
@@ -223,14 +272,14 @@ class EpisodesPage(ListPage):
             self.workspace.focus_main()
 
     def focus_main(self) -> None:
-        if self._list_hidden:
+        if not self._list_shown():
             self._detail_focus()
         else:
             self.list.setFocus()
 
     def focus_filter(self) -> None:
-        if self._list_hidden:  # asking for the filter is asking for the list
-            self._set_list_hidden(False)
+        if not self._list_shown():  # asking for the filter is asking for the list
+            self._show_list()
         super().focus_filter()
 
     def focus_editor(self) -> None:
