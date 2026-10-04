@@ -509,5 +509,9 @@ class ListPage(QWidget):
         return super().eventFilter(watched, event)
 
     def showEvent(self, event: QEvent) -> None:  # type: ignore[override]
+        # The cap keeps the list a readable width, but a header that needs more (a long
+        # title beside two buttons and their keycaps, or English) widens the column: a
+        # clipped page title is worse than a slightly wider list.
+        self.list_side.setMaximumWidth(max(LIST_MAX_WIDTH, self.header.sizeHint().width()))
         super().showEvent(event)  # type: ignore[arg-type]
         self.refresh()
