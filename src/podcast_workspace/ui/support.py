@@ -1,6 +1,7 @@
 """Small UI helpers: localized formatting, error dialogs, background tasks, app-wide events."""
 
 import contextlib
+import logging
 import threading
 import unicodedata
 from collections.abc import Callable
@@ -150,8 +151,22 @@ def describe_change(change: Change) -> str:
     return " ".join(phrase.split()) or strings.UNDO_SOMETHING
 
 
+log = logging.getLogger(__name__)
+
+
 def show_error(parent: QWidget | None, exc: BaseException) -> None:
+    if not isinstance(exc, DomainError):
+        # Not a rule the user ran into but something that broke: the box shows one line,
+        # app.log keeps the traceback (there is no console under pythonw).
+        log.error("unexpected error", exc_info=exc)
     QMessageBox.warning(parent, strings.ERROR_TITLE, describe_error(exc))
+
+
+def log_swallowed(what: str) -> None:
+    """For the few places that must not interrupt the user when they fail (counts,
+    reminders, conveniences): say so in app.log rather than nowhere. Call it from inside
+    the `except`."""
+    log.warning("%s failed", what, exc_info=True)
 
 
 def confirm(parent: QWidget, text: str, action: str | None = None) -> bool:

@@ -100,6 +100,7 @@ from podcast_workspace.ui.support import (
     AppEvents,
     describe_change,
     local_digits,
+    log_swallowed,
     run_async,
     show_error,
 )
@@ -658,6 +659,7 @@ class MainWindow(QMainWindow):
                 self._ws.trash.count() or None,  # an empty trash shows no number
             ]
         except Exception:
+            log_swallowed("nav counts")
             return  # decoration only; never break the window over it
         for button, count in zip(self.nav_buttons, counts, strict=True):
             button.set_count(count)
@@ -705,6 +707,7 @@ class MainWindow(QMainWindow):
         try:
             info = self._ws.episodes.resume()
         except Exception:
+            log_swallowed("resume offer")
             return  # a convenience; never in the way of startup
         if info is None or info.episode.id is None:
             return
@@ -891,6 +894,7 @@ class MainWindow(QMainWindow):
             change = history.redo() if forward else history.undo()
         except Exception:
             # The item is gone or changed under it; the entry is already dropped.
+            log_swallowed("undo" if not forward else "redo")
             self._sync_history()
             self.toast.show_message(strings.REDO_FAILED if forward else strings.UNDO_FAILED)
             return
@@ -1104,6 +1108,7 @@ class MainWindow(QMainWindow):
         try:
             reminder = self._ws.backup.reminder()
         except Exception:
+            log_swallowed("backup reminder")
             return  # a reminder must never get in the way of starting the app
         if reminder is None:
             return
@@ -1134,6 +1139,7 @@ class MainWindow(QMainWindow):
         try:
             return len(self._ws.trash.purge_expired())
         except Exception:
+            log_swallowed("trash purge")
             return 0  # tried again within the hour; never break the window over it
 
     def _on_purge_timer(self) -> None:

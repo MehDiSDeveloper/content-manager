@@ -59,6 +59,7 @@ from PySide6.QtWidgets import (
 
 from podcast_workspace.audio.engine import Player
 from podcast_workspace.domain.entities import IdeaNote, Shelved, Voice
+from podcast_workspace.domain.errors import NotFoundError
 from podcast_workspace.domain.lifecycle import TRASH_DAYS, ArchiveScope, TrashKind
 from podcast_workspace.domain.list_filter import FacetFilter
 from podcast_workspace.domain.rules import MAX_TAGS_PER_ITEM
@@ -423,7 +424,7 @@ class VoicePane(QWidget):
     def _store_exact_duration(self, voice_id: int, duration_ms: int) -> None:
         try:
             voice = self._ws.voices.set_duration(voice_id, duration_ms)
-        except Exception:
+        except NotFoundError:
             return  # informational only; the voice may have been removed meanwhile
         if self.voice is not None and self.voice.id == voice_id:
             self.voice = voice

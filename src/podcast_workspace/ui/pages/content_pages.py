@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from podcast_workspace.audio.engine import Player
 from podcast_workspace.domain.entities import Episode, Season, in_order
+from podcast_workspace.domain.errors import NotFoundError
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.icons import NAV_ICON_SIZE, list_pane_icon, more_icon
@@ -36,6 +37,7 @@ from podcast_workspace.ui.support import (
     AppEvents,
     confirm,
     local_digits,
+    log_swallowed,
     numbered,
     show_error,
 )
@@ -280,6 +282,7 @@ class EpisodesPage(ListPage):
             if episodes is None:
                 episodes = self._ws.episodes.list_all()
         except Exception:
+            log_swallowed("season box")
             return
         counts: dict[int | None, int] = {}
         for episode in episodes:
@@ -423,7 +426,7 @@ class EpisodesPage(ListPage):
             return
         try:
             episode = self._ws.episodes.get(episode_id)
-        except Exception:
+        except NotFoundError:
             return
         if not self._in_season(episode):
             wanted = SEASON_NONE if episode.season_id is None else str(episode.season_id)
@@ -564,7 +567,7 @@ class EpisodesPage(ListPage):
         self.workspace.flush()
         try:
             title = self._ws.episodes.get(item_id).title
-        except Exception:
+        except NotFoundError:
             title = ""
         if not confirm(self, strings.EPISODE_DELETE_CONFIRM.format(title=title)):
             return

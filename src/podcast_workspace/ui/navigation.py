@@ -12,10 +12,13 @@ the page's own business — this module never looks inside it.
 """
 
 import contextlib
+import logging
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from PySide6.QtWidgets import QWidget
+
+log = logging.getLogger(__name__)
 
 HISTORY_LIMIT = 30
 
@@ -35,6 +38,7 @@ def capture_state(page: QWidget) -> Any:
     try:
         return page.nav_state()
     except Exception:
+        log.warning("nav_state of %s failed", type(page).__name__, exc_info=True)
         return None
 
 

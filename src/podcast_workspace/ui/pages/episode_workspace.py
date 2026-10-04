@@ -45,6 +45,7 @@ from PySide6.QtWidgets import (
 
 from podcast_workspace.audio.engine import Player
 from podcast_workspace.domain.entities import Episode, EpisodeNote, EpisodeStatus
+from podcast_workspace.domain.errors import NotFoundError
 from podcast_workspace.domain.lifecycle import ArchiveScope
 from podcast_workspace.domain.pipeline import days_untouched, is_stale
 from podcast_workspace.domain.smart_links import LinkKind, SmartLink
@@ -61,6 +62,7 @@ from podcast_workspace.ui.support import (
     format_datetime,
     format_duration,
     local_digits,
+    log_swallowed,
     numbered,
     show_error,
 )
@@ -726,7 +728,7 @@ class EpisodeWorkspacePage(QWidget):
         self.flush()
         try:
             self._episode = self._ws.episodes.get(episode_id)
-        except Exception:
+        except NotFoundError:
             self._episode = None
             self.episode_gone.emit()
             return
@@ -798,7 +800,7 @@ class EpisodeWorkspacePage(QWidget):
             return
         try:
             self._episode = self._ws.episodes.get(self._episode.id)
-        except Exception:
+        except NotFoundError:
             self._episode = None
             self.episode_gone.emit()
             return
@@ -875,6 +877,7 @@ class EpisodeWorkspacePage(QWidget):
         try:
             seasons = self._ws.seasons.list_all()
         except Exception:
+            log_swallowed("season choices")
             seasons = []
         for season in seasons:
             box.addItem(numbered(season.title, season.number), season.id)
