@@ -30,7 +30,9 @@ def _ask(
 ) -> bool | None:
     """True to replace, False for a new audio, None to leave it."""
     quote = strings.QUOTE.format
-    lines = [strings.VOICE_SAVE_BODY.format(name=quote(text=Path(voice.file_path).name))]
+    # A file name is often Latin: the mark keeps the line in the UI's direction.
+    name = quote(text=Path(voice.file_path).name)
+    lines = [strings.DIRECTION_MARK + strings.VOICE_SAVE_BODY.format(name=name)]
     if edit.cuts:
         percent = round(100 * edit.saved_ms / voice.duration_ms) if voice.duration_ms else 0
         lines.append(

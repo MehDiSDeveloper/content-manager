@@ -132,6 +132,11 @@ class SettingsDialog(QDialog):
         col.addWidget(self.language_box, 0, Qt.AlignmentFlag.AlignLeading)
         col.addSpacing(12)
         col.addWidget(QLabel(strings.SETTINGS_RECORDER, objectName="fieldLabel"))
+        # Shown only when «Record» brought the user here: says why settings opened.
+        self.recorder_needed = QLabel(strings.SETTINGS_RECORDER_NEEDED, objectName="warning")
+        self.recorder_needed.setWordWrap(True)
+        self.recorder_needed.hide()
+        col.addWidget(self.recorder_needed)
         row = QHBoxLayout()
         self.recorder = QLineEdit()
         self.recorder.setPlaceholderText(r"C:\Program Files\Audacity\Audacity.exe")
@@ -260,11 +265,15 @@ class SettingsDialog(QDialog):
         return page
 
     # open ------------------------------------------------------------------------------
-    def open_at(self, tab: int, hotkey_ok: bool, export: bool = False) -> bool:
+    def open_at(
+        self, tab: int, hotkey_ok: bool, export: bool = False, ask_recorder: bool = False
+    ) -> bool:
         """Reload every field from settings, show the tab, run modally.
 
         `export` starts an export as soon as the dialog is up (the backup reminder's
         "Back up now"), so its progress and its result show where they always do.
+        `ask_recorder`: «Record» was pressed with no program set — say so, and put the
+        caret in that field.
         """
         settings = self._ws.settings
         current = settings.language() or Language.FA
@@ -278,7 +287,10 @@ class SettingsDialog(QDialog):
         self._show_last_backup()
         self.recorder.setText(settings.recorder_path())
         template = strings.SETTINGS_HOTKEY_OK if hotkey_ok else strings.SETTINGS_HOTKEY_FAIL
-        self.hotkey_status.setText(template.format(keys=self._hotkey_label))
+        # The line opens with Latin keys: the mark keeps it in the UI's direction.
+        self.hotkey_status.setText(
+            strings.DIRECTION_MARK + template.format(keys=self._hotkey_label)
+        )
         self.hotkey_status.setObjectName("muted" if hotkey_ok else "warning")
         self.hotkey_status.style().polish(self.hotkey_status)
         self.bot_enabled.setChecked(settings.bale_enabled())
@@ -292,7 +304,10 @@ class SettingsDialog(QDialog):
         self.model_dir.setText(settings.whisper_model_dir())
         self._show_model_state()
         self.data_status.setText("")
-        self.tabs.setCurrentIndex(tab)
+        self.tabs.setCurrentIndex(TAB_GENERAL if ask_recorder else tab)
+        self.recorder_needed.setVisible(ask_recorder)
+        if ask_recorder:
+            self.recorder.setFocus()
         if export:
             QTimer.singleShot(0, self._export)
         return self.exec() == QDialog.DialogCode.Accepted

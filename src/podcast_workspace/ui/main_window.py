@@ -1078,12 +1078,16 @@ class MainWindow(QMainWindow):
         return super().eventFilter(watched, event)
 
     # settings, recorder, inbox, bot ------------------------------------------------------
-    def open_settings(self, tab: int = TAB_GENERAL, export: bool = False) -> bool:
+    def open_settings(
+        self, tab: int = TAB_GENERAL, export: bool = False, ask_recorder: bool = False
+    ) -> bool:
         if self._settings_dialog is None:
             self._settings_dialog = SettingsDialog(self, self._ws, self.bot, IDEA_HOTKEY_LABEL)
             self._settings_dialog.data_replaced.connect(self._on_data_replaced)
             self._settings_dialog.restart_requested.connect(self._restart)
-        return self._settings_dialog.open_at(tab, self.hotkey.registered, export=export)
+        return self._settings_dialog.open_at(
+            tab, self.hotkey.registered, export=export, ask_recorder=ask_recorder
+        )
 
     def _restart(self) -> None:
         """Close normally (so every autosave and the geometry are written) and let
@@ -1197,14 +1201,17 @@ class MainWindow(QMainWindow):
         self.ideas_page.status.flash(received)
 
     def _record(self) -> None:
-        path = self._ws.settings.recorder_path()
-        if not path and (not self.open_settings() or not self._ws.settings.recorder_path()):
-            return
-        path = self._ws.settings.recorder_path()
+        """Launch the user's recorder; the first time, ask which program that is."""
+        settings = self._ws.settings
+        if not settings.recorder_path():
+            self.open_settings(ask_recorder=True)
+            if not settings.recorder_path():
+                return  # cancelled, or saved without one
+        path = settings.recorder_path()
         try:
             launch_recorder(path)
         except RecorderNotConfiguredError:
-            self.open_settings()
+            self.open_settings(ask_recorder=True)
         except FileNotFoundError:
             QMessageBox.warning(
                 self, strings.ERROR_TITLE, strings.RECORDER_MISSING.format(path=path)

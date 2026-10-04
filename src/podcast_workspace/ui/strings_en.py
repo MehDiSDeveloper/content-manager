@@ -612,6 +612,9 @@ SETTINGS_RECORDER_HINT = (
     "The program you record with. The “Record” button launches it; "
     "this app does not record audio itself."
 )
+SETTINGS_RECORDER_NEEDED = (
+    "First choose the program you record with; from then on “Record” (Ctrl+R) opens it."
+)
 SETTINGS_BROWSE = "Browse…"
 SETTINGS_PROGRAM_DIALOG = "Choose the recording program"
 SETTINGS_PROGRAM_FILTER = "Programs (*.exe *.lnk *.bat *.cmd);;All files (*)"
