@@ -116,6 +116,7 @@ from podcast_workspace.ui.widgets.key_hint import KeyHint, attach_key_hint
 SIDEBAR_WIDTH = 240
 SIDEBAR_COMPACT_WIDTH = 68
 NAV_TILE_SIZE = 30
+BRAND_MARGINS = (6, 0, 6, 14)
 SEARCH_DEBOUNCE_MS = 90
 WARM_UP_DELAY_MS = 1500
 COUNTS_DELAY_MS = 250
@@ -418,7 +419,9 @@ class MainWindow(QMainWindow):
         col.setContentsMargins(12, 20, 12, 14)
         col.setSpacing(4)
         brand = self._brand_row = QHBoxLayout()
-        brand.setContentsMargins(8, 0, 8, 14)
+        # Inset like the nav rows, so the mark lines up with their glyph tiles and the
+        # name has room for "Podcast Workspace" whole.
+        brand.setContentsMargins(*BRAND_MARGINS)
         brand.setSpacing(10)
         self.app_mark = QLabel(objectName="appMark")
         self.app_mark.setFixedSize(34, 34)
@@ -551,7 +554,7 @@ class MainWindow(QMainWindow):
         self.sidebar.layout().setContentsMargins(*margins)
         self.app_mark.setVisible(not compact)
         self.app_title.setVisible(not compact)
-        self._brand_row.setContentsMargins(*((0, 0, 0, 0) if compact else (8, 0, 8, 14)))
+        self._brand_row.setContentsMargins(*((0, 0, 0, 0) if compact else BRAND_MARGINS))
         self.search.setVisible(not compact)
         self.search_button.setVisible(compact)
         # Rows of two side by side do not fit a rail: stack them instead.
