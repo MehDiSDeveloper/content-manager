@@ -480,7 +480,10 @@ class EpisodeWorkspacePage(QWidget):
 
     # layout -------------------------------------------------------------------------------
     def _build_header(self) -> QHBoxLayout:
-        """The list toggle and the identity at the start, what you act on at the end."""
+        """The list toggle and the identity at the start, what you act on at the end.
+
+        «New note» is not here but over the notes it adds to, so the title keeps the width
+        to be read whole."""
         header = QHBoxLayout()
         header.setSpacing(8)
         self.list_toggle = QToolButton(objectName="chromeButton")
@@ -508,10 +511,6 @@ class EpisodeWorkspacePage(QWidget):
         prompt.clicked.connect(self.open_script_prompt)
         header.addWidget(prompt)
         add_key_hint(header, prompt, "Ctrl+P")
-        self.new_note_button = QPushButton(strings.WS_NOTE_NEW, objectName="primary")
-        self.new_note_button.setToolTip("Ctrl+N")
-        self.new_note_button.clicked.connect(self.new_note)
-        header.addWidget(self.new_note_button)
         # Rare, destructive or merely informative things stay one click away, out of the
         # row of things used every day.
         self.more_button = QToolButton(objectName="chromeButton")
@@ -541,11 +540,11 @@ class EpisodeWorkspacePage(QWidget):
         menu.addAction(strings.EPISODE_DELETE, lambda: self.delete_requested.emit(episode_id))
 
     def _build_fields(self) -> QGridLayout:
-        """Where the episode stands: its stage and the next action on one line — the next
-        action gets the room, being the one sentence that drives the episode — and its
-        tags on the line below, where chips can run the full width instead of piling up
-        in a corner. (The stage sits here and not in the header so the title keeps
-        enough width to be read whole.)"""
+        """Where the episode stands: its stage on one line, the next action on its own
+        line below — the one sentence that drives the episode, never squeezed down to a
+        word beside the stage — then its tags, where chips can run the full width instead
+        of piling up in a corner. (The stage sits here and not in the header so the title
+        keeps enough width to be read whole.)"""
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
@@ -589,14 +588,14 @@ class EpisodeWorkspacePage(QWidget):
         stage.addWidget(self.season_box)
         stage.addSpacing(10)
         stage.addWidget(self.publish_button)
-        stage.addSpacing(10)
-        stage.addWidget(label(strings.EPISODE_NEXT_ACTION))
-        stage.addWidget(self.next_action, 1)
+        stage.addStretch(1)
         grid.addLayout(stage, 0, 1)
-        grid.addWidget(label(strings.TAG_LABEL), 1, 0, top)
-        grid.addWidget(self.tag_input, 1, 1)
-        grid.addWidget(label(strings.EPISODE_SUMMARY), 2, 0, top)
-        grid.addWidget(self.summary, 2, 1)
+        grid.addWidget(label(strings.EPISODE_NEXT_ACTION), 1, 0, top)
+        grid.addWidget(self.next_action, 1, 1)
+        grid.addWidget(label(strings.TAG_LABEL), 2, 0, top)
+        grid.addWidget(self.tag_input, 2, 1)
+        grid.addWidget(label(strings.EPISODE_SUMMARY), 3, 0, top)
+        grid.addWidget(self.summary, 3, 1)
         grid.setColumnStretch(1, 1)
         return grid
 
@@ -612,6 +611,10 @@ class EpisodeWorkspacePage(QWidget):
         self.tabs.setDocumentMode(True)
         self.tabs.currentChanged.connect(self._on_tab_changed)
         tabs_row.addWidget(self.tabs, 1)
+        self.new_note_button = QPushButton(strings.WS_NOTE_NEW, objectName="primary")
+        self.new_note_button.setToolTip("Ctrl+N")
+        self.new_note_button.clicked.connect(self.new_note)
+        tabs_row.addWidget(self.new_note_button)
         col.addLayout(tabs_row)
 
         self.note_stack = QStackedWidget()
