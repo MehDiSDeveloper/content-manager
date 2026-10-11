@@ -396,7 +396,7 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
   right-aligned again (QPlainTextEdit left-aligned them all), a line is RTL as soon as it
   holds a Persian letter (English words inside it no longer flip it), letterless lines
   follow the line above, undo never stops on a direction-only step, Shift+Space after a
-  Persian letter types a نیم‌فاصله, pasting rich text arrives as plain text
+  Persian letter types a نیم‌فاصله
 - v1.22: review pass. Episode header: «یادداشت تازه» moved over the notes it adds to and
   «قدم بعدی» onto its own line, so the title and the next step are read whole. A window
   too narrow for list + workspace (< 640 px left for the workspace) folds the episode
