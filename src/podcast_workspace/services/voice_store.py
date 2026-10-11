@@ -11,6 +11,7 @@ new file with a new time.
 """
 
 import os
+import re
 import shutil
 from enum import Enum, auto
 from pathlib import Path
@@ -20,13 +21,15 @@ from podcast_workspace.paths import data_dir, voices_dir
 STORE_DIR = "voices"  # voices_dir()'s name, for checks that must not create it
 
 MTIME_SLACK_S = 2.0  # FAT and some network drives keep times to 2 s
+_NUMBER = re.compile(r"^(.*) (\d{2,})$")
 
 
 class NameChoice(Enum):
     """What to do with a file whose name a voice in the workspace already has."""
 
-    REPLACE = auto()  # the existing voice gets the new audio; its tags and links stay
-    KEEP_BOTH = auto()  # the new one comes in as «name (2)»
+    REPLACE = auto()  # the existing voice gets the new audio; everything on it stays
+    KEEP_BOTH = auto()  # the new one comes in as «name 02», bare
+    KEEP_BOTH_WITH_DETAILS = auto()  # …with the existing one's tags, notes and transcript
     SKIP = auto()
 
 
@@ -65,14 +68,25 @@ def same_file(a: Path, b: Path) -> bool:
     return sa.st_size == sb.st_size and abs(sa.st_mtime - sb.st_mtime) <= MTIME_SLACK_S
 
 
-def free_name(name: str, taken: set[str]) -> str:
-    """`name`, or «stem (2).ext», «stem (3).ext», … — the first one not in `taken`
-    (casefolded names) and not already a file in the store."""
+def free_name(name: str, taken: set[str], numbered: bool = False) -> str:
+    """`name`, or «stem 02.ext», «stem 03.ext», … — the first one not in `taken`
+    (casefolded names) and not already a file in the store. `numbered` always adds the
+    number (a copy beside its original). A name that is already one of these numbered
+    copies («stem 02», beside a «stem») counts on from its original's name instead of
+    growing another number."""
     folder = voices_dir()
+
+    def free(candidate: str) -> bool:
+        return candidate.casefold() not in taken and not (folder / candidate).exists()
+
+    if not numbered and free(name):
+        return name
     stem, suffix = Path(name).stem, Path(name).suffix
-    candidate, n = name, 2
-    while candidate.casefold() in taken or (folder / candidate).exists():
-        candidate = f"{stem} ({n}){suffix}"
+    match = _NUMBER.match(stem)
+    if match and match.group(1).casefold() in {Path(t).stem for t in taken}:
+        stem = match.group(1)
+    n = 2
+    while not free(candidate := f"{stem} {n:02d}{suffix}"):
         n += 1
     return candidate
 

@@ -79,7 +79,7 @@ def test_a_namesake_comes_in_numbered_unless_told_otherwise(ws, tmp_path) -> Non
     conflicts = ws.voices.name_conflicts([second])
     assert list(conflicts) == [second.resolve()] and conflicts[second.resolve()].id == first.id
     report = ws.voices.import_files([second])  # nobody asked: never overwritten
-    assert Path(report.imported[0].file_path).name == "A (2).WAV"
+    assert Path(report.imported[0].file_path).name == "A 02.WAV"
     assert Path(ws.voices.get(first.id).file_path).name == "a.wav"
 
 
@@ -93,7 +93,27 @@ def test_skipping_a_namesake_brings_nothing_in(ws, tmp_path) -> None:
     assert len(ws.voices.list_all()) == 1
 
 
-def test_replacing_keeps_the_voice_and_drops_its_transcript(ws, tmp_path) -> None:
+def test_keeping_both_can_bring_the_details_along(ws, tmp_path) -> None:
+    first = ws.voices.import_files([_wav(tmp_path / "a.wav")]).imported[0]
+    tag = ws.tags.create("سفر", allow_similar=True)
+    ws.voices.set_tags(first.id, [tag.id])
+    ws.timestamp_notes.add(first.id, 500, "وسطش")
+    with UnitOfWork(ws.voices._sf) as uow:
+        uow.transcripts.add(Transcript(voice_id=first.id, segments=[]))
+    other = tmp_path / "other"
+    other.mkdir()
+    second = _wav(other / "a.wav", 2.0)
+
+    choice = {second.resolve(): NameChoice.KEEP_BOTH_WITH_DETAILS}
+    copy = ws.voices.import_files([second], choice).imported[0]
+    assert copy.id != first.id and Path(copy.file_path).name == "a 02.wav"
+    assert copy.tag_ids == {tag.id}
+    assert [n.text for n in ws.timestamp_notes.list_for_voice(copy.id)] == ["وسطش"]
+    assert ws.transcripts.get(copy.id) is not None
+    assert ws.voices.get(first.id).tag_ids == {tag.id}
+
+
+def test_replacing_keeps_the_voice_and_everything_on_it(ws, tmp_path) -> None:
     first = ws.voices.import_files([_wav(tmp_path / "a.wav", 1.0)]).imported[0]
     tag = ws.tags.create("سفر", allow_similar=True)
     ws.voices.set_tags(first.id, [tag.id])
@@ -108,7 +128,7 @@ def test_replacing_keeps_the_voice_and_drops_its_transcript(ws, tmp_path) -> Non
     assert replaced.id == first.id and replaced.file_path == first.file_path
     assert replaced.duration_ms == 3000 and replaced.tag_ids == {tag.id}
     assert replaced.source_path == str(second.resolve())
-    assert ws.transcripts.get(first.id) is None
+    assert ws.transcripts.get(first.id) is not None
     assert len(ws.voices.list_all()) == 1
 
 

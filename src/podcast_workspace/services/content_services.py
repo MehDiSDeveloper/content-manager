@@ -48,6 +48,7 @@ from podcast_workspace.paths import voices_dir
 from podcast_workspace.repositories.unit_of_work import UnitOfWork
 from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS, probe
 from podcast_workspace.services.history import ChangeKind, HistoryService, Target, TargetKind
+from podcast_workspace.services.voice_render import copy_details
 from podcast_workspace.services.voice_store import (
     NameChoice,
     free_name,
@@ -1117,7 +1118,7 @@ class VoiceService:
 
         A file from outside the workspace is copied into its store (`voice_store.py`) and
         the voice plays from the copy. A file whose name a voice already has is handled as
-        `choices` says, and when nobody was asked, comes in beside it as «name (2)»:
+        `choices` says, and when nobody was asked, comes in beside it as «name 02»:
         an import never overwrites anything on its own.
         """
         choices = choices or {}
@@ -1158,6 +1159,10 @@ class VoiceService:
                         voices.remove(clash)
                     else:
                         voice = self._copy_in(path, voices)
+                        if clash is not None and choice is NameChoice.KEEP_BOTH_WITH_DETAILS:
+                            assert clash.id is not None
+                            with UnitOfWork(self._sf) as uow:
+                                voice = copy_details(uow, clash.id, voice)
                 voices.append(voice)
                 report.imported.append(voice)
             except (OSError, DomainError) as exc:
@@ -1182,9 +1187,10 @@ class VoiceService:
             raise
 
     def _replace(self, voice: Voice, path: Path, voices: list[Voice]) -> Voice:
-        """Give an existing voice the audio of `path`. Its tags, notes and episodes stay;
-        its transcript goes, since it was of the old audio. Not undoable: the old audio is
-        written over (the UI says so when it asks)."""
+        """Give an existing voice the audio of `path`. Everything on it stays — tags,
+        notes, transcript, episodes: replacing is for the same recording again (a re-run
+        transcription fixes a transcript that no longer fits). Not undoable: the old audio
+        is written over (the UI says so when it asks)."""
         assert voice.id is not None
         old = Path(voice.file_path)
         if is_stored(old) and name_key(old) == name_key(path):
@@ -1201,11 +1207,7 @@ class VoiceService:
             current.duration_ms = info.duration_ms
             current.format = info.format
             current.imported_at = utcnow()  # new audio: it goes to the top like a new one
-            saved = uow.voices.update(current)
-            transcript = uow.transcripts.for_voice(voice.id)
-            if transcript is not None and transcript.id is not None:
-                uow.transcripts.delete(transcript.id)
-        return saved
+            return uow.voices.update(current)
 
     def secure_external(self) -> int:
         """Copy into the store every voice still playing from a file outside the workspace

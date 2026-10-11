@@ -1,9 +1,10 @@
 """Saving a voice as it sounds in the player: pauses trimmed, volume applied.
 
-The result is either a new voice beside the original («name 01») carrying its tags,
-timestamp notes and transcript, or the same voice with its audio replaced. Either way
-every note and transcript line keeps pointing at the same words: their times are moved
-back by the pauses cut before them (`audio/render.trimmed_ms`).
+The result is either a new voice beside the original («name 02»), carrying its tags,
+timestamp notes and transcript when asked to (`copy_details`), or the same voice with its
+audio replaced, everything on it kept. Either way every note and transcript line keeps
+pointing at the same words: their times are moved back by the pauses cut before them
+(`audio/render.trimmed_ms`).
 
 Neither is recorded for undo. A new copy is additive (like an import; it can go to the
 trash), and a replacement writes over the old audio, which the UI says before asking.
@@ -13,7 +14,6 @@ setting, into a throwaway file.
 """
 
 import logging
-import re
 import threading
 import time
 from collections.abc import Callable
@@ -41,7 +41,6 @@ log = logging.getLogger(__name__)
 
 SWAP_ATTEMPTS = 20  # the player or the waveform pass may still hold the old file briefly
 SWAP_WAIT_S = 0.15
-_NUMBER = re.compile(r"^(.*) (\d{2,})$")
 
 
 @dataclass(frozen=True)
@@ -60,24 +59,6 @@ class PlaybackEdit:
         return total_ms(self.cuts)
 
 
-def numbered_name(name: str, taken: set[str]) -> str:
-    """«stem 01.ext», or the next free number. A name that is already one of these numbered
-    copies («stem 01», beside a «stem») counts on from its original's name instead of
-    growing another number. `taken` holds the casefolded names already in use."""
-    stem, suffix = Path(name).stem, Path(name).suffix
-    stems = {Path(t).stem for t in taken}
-    match = _NUMBER.match(stem)
-    if match and match.group(1).casefold() in stems:
-        stem = match.group(1)
-    folder = voices_dir()
-    n = 1
-    while True:
-        candidate = f"{stem} {n:02d}{suffix}"
-        if candidate.casefold() not in taken and not (folder / candidate).exists():
-            return candidate
-        n += 1
-
-
 def _shift_notes(notes: list[TimestampNote], cuts: tuple[Span, ...]) -> None:
     for note in notes:
         note.move_to(trimmed_ms(note.position_ms, cuts))
@@ -90,6 +71,35 @@ def _shift_segments(
         TranscriptSegment(trimmed_ms(s.start_ms, cuts), trimmed_ms(s.end_ms, cuts), s.text)
         for s in segments
     ]
+
+
+def copy_details(
+    uow: UnitOfWork, source_id: int, copy: Voice, cuts: tuple[Span, ...] = ()
+) -> Voice:
+    """Give `copy` the tags, timestamp notes and transcript of voice `source_id`, their
+    times moved back by `cuts`. Not its episode links: a copy would appear twice in the
+    episode's materials."""
+    assert copy.id is not None
+    copy.set_tags(uow.voices.get(source_id).tag_ids)
+    copy = uow.voices.update(copy)
+    notes = uow.timestamp_notes.list_for_voice(source_id)
+    _shift_notes(notes, cuts)
+    for note in notes:
+        uow.timestamp_notes.add(
+            TimestampNote(copy.id, note.position_ms, note.text, note.created_at)
+        )
+    transcript = uow.transcripts.for_voice(source_id)
+    if transcript is not None:
+        uow.transcripts.add(
+            Transcript(
+                voice_id=copy.id,
+                segments=_shift_segments(transcript.segments, cuts),
+                language=transcript.language,
+                model=transcript.model,
+                created_at=transcript.created_at,
+            )
+        )
+    return copy
 
 
 def _swap(new: Path, target: Path) -> None:
@@ -119,19 +129,21 @@ class VoiceRenderService:
         """The name a new copy of this voice would get."""
         with UnitOfWork(self._sf) as uow:
             source = Path(uow.voices.get(voice_id).file_path)
-        return numbered_name(source.stem + output_suffix(source), self._taken())
+        return free_name(source.stem + output_suffix(source), self._taken(), numbered=True)
 
     def save(
         self,
         voice_id: int,
         edit: PlaybackEdit,
         replace: bool,
+        details: bool = True,
         cancel: threading.Event | None = None,
         on_progress: Callable[[float], None] | None = None,
     ) -> Voice:
         """Blocking: decodes and encodes the whole file. Run it off the UI thread.
 
-        Returns the new voice, or the replaced one."""
+        Returns the new voice (with the original's tags, notes and transcript when
+        `details`), or the replaced one."""
         with UnitOfWork(self._sf) as uow:
             voice = uow.voices.get(voice_id)
         source = Path(voice.file_path)
@@ -142,7 +154,7 @@ class VoiceRenderService:
             target = voices_dir() / self.copy_name(voice_id)
             render(source, target, edit.cuts, edit.gain, cancel, on_progress)
             try:
-                return self._add_copy(voice, target, edit.cuts)
+                return self._add_copy(voice, target, edit.cuts, details)
             except BaseException:
                 target.unlink(missing_ok=True)
                 raise
@@ -158,7 +170,9 @@ class VoiceRenderService:
             discard(source)  # only ever deletes the store's own copy
         return replaced
 
-    def _add_copy(self, original: Voice, path: Path, cuts: tuple[Span, ...]) -> Voice:
+    def _add_copy(
+        self, original: Voice, path: Path, cuts: tuple[Span, ...], details: bool
+    ) -> Voice:
         assert original.id is not None
         info = probe(path)
         with UnitOfWork(self._sf) as uow:
@@ -167,28 +181,11 @@ class VoiceRenderService:
                     file_path=str(path),
                     duration_ms=info.duration_ms,
                     format=info.format,
-                    tag_ids=set(original.tag_ids),
                     imported_at=utcnow(),
                 )
             )
-            assert copy.id is not None
-            notes = uow.timestamp_notes.list_for_voice(original.id)
-            _shift_notes(notes, cuts)
-            for note in notes:
-                uow.timestamp_notes.add(
-                    TimestampNote(copy.id, note.position_ms, note.text, note.created_at)
-                )
-            transcript = uow.transcripts.for_voice(original.id)
-            if transcript is not None:
-                uow.transcripts.add(
-                    Transcript(
-                        voice_id=copy.id,
-                        segments=_shift_segments(transcript.segments, cuts),
-                        language=transcript.language,
-                        model=transcript.model,
-                        created_at=transcript.created_at,
-                    )
-                )
+            if details:
+                copy = copy_details(uow, original.id, copy, cuts)
         return copy
 
     def _replace_audio(self, voice_id: int, path: Path, cuts: tuple[Span, ...]) -> Voice:

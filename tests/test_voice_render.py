@@ -18,7 +18,8 @@ from podcast_workspace.repositories.unit_of_work import UnitOfWork
 from podcast_workspace.services.bale_bot import _Worker
 from podcast_workspace.services.bale_search import _clock
 from podcast_workspace.services.settings_service import BotOwner
-from podcast_workspace.services.voice_render import PlaybackEdit, numbered_name, pause_cuts
+from podcast_workspace.services.voice_render import PlaybackEdit, pause_cuts
+from podcast_workspace.services.voice_store import free_name
 from podcast_workspace.services.workspace import Workspace
 
 RATE = 16000
@@ -80,13 +81,15 @@ def test_a_time_moves_back_by_the_cuts_before_it():
     assert trimmed_ms(7000, cuts) == 4000
 
 
-def test_copies_are_numbered_and_a_copy_of_a_copy_counts_on():
+def test_copies_are_numbered_and_a_copy_of_a_copy_counts_on(home):
     taken = {"take.wav", "track 12.mp3"}
-    assert numbered_name("take.wav", taken) == "take 01.wav"
-    assert numbered_name("take.wav", taken | {"take 01.wav"}) == "take 02.wav"
-    assert numbered_name("take 01.wav", taken | {"take 01.wav"}) == "take 02.wav"
+    assert free_name("new.wav", taken) == "new.wav"
+    assert free_name("take.wav", taken) == "take 02.wav"
+    assert free_name("new.wav", taken, numbered=True) == "new 02.wav"
+    assert free_name("take.wav", taken | {"take 02.wav"}) == "take 03.wav"
+    assert free_name("take 02.wav", taken | {"take 02.wav"}) == "take 03.wav"
     # «12» is part of this name, not a copy's number: there is no «track» it was copied from
-    assert numbered_name("track 12.mp3", taken) == "track 12 01.mp3"
+    assert free_name("track 12.mp3", taken) == "track 12 02.mp3"
 
 
 def test_formats_without_an_encoder_come_out_as_m4a():
@@ -128,7 +131,7 @@ def test_a_new_copy_carries_tags_notes_and_transcript_at_the_new_times(ws, recor
     voice, edit, tag = _voice_with_notes(ws, recorder)
     copy = ws.voice_render.save(voice.id, edit, replace=False)
 
-    assert copy.id != voice.id and Path(copy.file_path).name == "take 01.wav"
+    assert copy.id != voice.id and Path(copy.file_path).name == "take 02.wav"
     assert Path(copy.file_path).parent == voices_dir()
     assert copy.tag_ids == {tag.id}
     assert abs(copy.duration_ms - (5000 - edit.saved_ms)) <= 30
@@ -139,7 +142,25 @@ def test_a_new_copy_carries_tags_notes_and_transcript_at_the_new_times(ws, recor
     # the original is as it was
     assert ws.voices.get(voice.id).file_path == voice.file_path
     assert ws.timestamp_notes.list_for_voice(voice.id)[0].position_ms == 4500
-    assert ws.voice_render.copy_name(voice.id) == "take 02.wav"
+    assert ws.voice_render.copy_name(voice.id) == "take 03.wav"
+
+
+def test_a_new_copy_can_come_bare(ws, recorder):
+    voice, edit, _ = _voice_with_notes(ws, recorder)
+    copy = ws.voice_render.save(voice.id, edit, replace=False, details=False)
+
+    assert Path(copy.file_path).name == "take 02.wav" and copy.tag_ids == set()
+    assert ws.timestamp_notes.list_for_voice(copy.id) == []
+    assert ws.transcripts.get(copy.id) is None
+    # the original keeps its own
+    assert len(ws.timestamp_notes.list_for_voice(voice.id)) == 1
+
+
+def test_a_copy_can_be_made_with_nothing_to_change(ws, recorder):
+    voice, _, tag = _voice_with_notes(ws, recorder)
+    copy = ws.voice_render.save(voice.id, PlaybackEdit(), replace=False)
+    assert abs(copy.duration_ms - voice.duration_ms) <= 30 and copy.tag_ids == {tag.id}
+    assert ws.timestamp_notes.list_for_voice(copy.id)[0].position_ms == 4500
 
 
 def test_replacing_keeps_the_voice_and_moves_its_times(ws, recorder):
