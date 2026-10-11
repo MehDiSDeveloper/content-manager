@@ -1,4 +1,4 @@
-# Podcast Workspace — architecture (v1.23)
+# Podcast Workspace — architecture (v1.24)
 
 Local-first Windows desktop workspace for a solo Persian podcaster: episodes, voices, ideas,
 tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3.12, PySide6.
@@ -44,10 +44,10 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
 - Workspace/board/resume: `ui/pages/{episode_workspace,board_page,resume_page}.py`; smart links `domain/smart_links.py`; stale `domain/pipeline.py`
 - Idea → episode: `EpisodeService.set_linked` (several items, one undo step), `create_from` (new episode named after the first item, with all their tags), `episodes_with`, `link_counts` (`EpisodeRepository.link_counts`, one GROUP BY per link table); UI `ui/widgets/episode_links.py` (`EpisodeMenu`, `EpisodeLinksRow`), wired in `IdeasPage` (editor rows, selection pane, row context menu, «in N ep.» in row subtitles) and `MainWindow.open_new_episode`. The list picker is `ui/widgets/picker.py`
 - Material preview: `ui/pages/material_preview.py` (`MaterialPreview`), shown by `MaterialsPanel.set_previewing` / `EpisodeWorkspacePage._preview` / `close_preview`; its player is `PlayerWidget(compact=True)` (transport on its own line)
-- Voice store: `services/voice_store.py` (`voices_dir()`, `NameChoice`, same-file = size + mtime, `free_name` → «name (2)»). `VoiceService.import_files(paths, choices)` copies files from outside the data folder in; `name_conflicts` finds names a voice already has, asked about by `ui/widgets/name_conflict.py` (Ideas import, audio folder «add»); unasked clashes come in numbered, never overwritten. REPLACE keeps the voice (tags, notes, episodes) and drops its transcript; not undoable. `secure_external` copies older voices in, run at startup by `MainWindow`. Purge deletes the stored copy only. Tested in `test_voice_store.py`
+- Voice store: `services/voice_store.py` (`voices_dir()`, `NameChoice`, same-file = size + mtime, `free_name` → «name 02», `numbered=True` always numbers, a copy of «name 02» counts on to «name 03»). `VoiceService.import_files(paths, choices)` copies files from outside the data folder in; `name_conflicts` finds names a voice already has, asked about by `ui/widgets/name_conflict.py` (Ideas import, audio folder «add»); unasked clashes come in numbered, never overwritten. REPLACE keeps the voice and everything on it (tags, notes, transcript, episodes); not undoable. KEEP_BOTH_WITH_DETAILS also copies the namesake's tags, notes and transcript (`voice_render.copy_details`), asked by `ask_copy_details` after «هر دو بماند». `secure_external` copies older voices in, run at startup by `MainWindow`. Purge deletes the stored copy only. Tested in `test_voice_store.py`
 - Publish checklist: `domain/publish.py` (`PublishStep`, `PublishChecklist`, tested in `test_publish_checklist.py`), `EpisodeService.check_publish_step` / `set_published_where`, chip + popup `ui/widgets/publish_checklist.py` in the workspace's stage row
 - Untagged filter: `FacetFilter.untagged` (`domain/list_filter.py`), the «بی‌برچسب N» toggle chip in `FacetSearchBar`; `IdeasPage.rows` feeds it the count
-- Export as heard: `audio/render.py` (decode → `Splicer` + gain → encode; `trimmed_ms` maps times), `services/voice_render.py` (`VoiceRenderService.save` new/replace, `numbered_name`, `trimmed_for_sending` for the bot), `Player.active_cuts` / `level_gain`, dialog + job `ui/widgets/save_as_heard.py`, button in `VoicePane`. Tested in `test_voice_render.py`
+- Export as heard: `audio/render.py` (decode → `Splicer` + gain → encode; `trimmed_ms` maps times), `services/voice_render.py` (`VoiceRenderService.save` new/replace, `details` = copy tags/notes/transcript, `copy_details`, `trimmed_for_sending` for the bot), `Player.active_cuts` / `level_gain`, dialog + job `ui/widgets/save_as_heard.py`, button in `VoicePane`. Tested in `test_voice_render.py`
 - Script prompt: brief `domain/script_brief.py` (options + `ScriptBrief`), template `domain/script_prompt.py` (`build_prompt`, all prompt wording), material `services/script_prompt.py` (`ScriptPromptService.material`), save + undo `EpisodeService.set_brief`, dialog `ui/widgets/script_prompt.py`, opened by «پرامپت متن» / Ctrl+P in the workspace header. Tested in `test_script_brief.py`
 - Idea inbox hotkey: `ui/hotkey.py` (RegisterHotKey, Ctrl+Alt+I), `ui/idea_inbox.py`
 - Recorder handoff: `services/recording.py` (os.startfile of the configured program); Ctrl+R is a MainWindow shortcut, so it works on every page
@@ -67,6 +67,7 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
 - Passing messages under a page title: `ListPage.status` (`_StatusLabel` in `ui/pages/base.py`); `status.flash(text)` clears itself after 6 s and a newer message cancels that. Never pair `setText` with a `QTimer.singleShot` that clears it (an old timer wiped newer messages)
 - Multi-line text boxes: `ui/widgets/text_editor.py` (`TextEditor`, a plain-text QTextEdit), used for every one (notes, ideas, summary, season brief, inbox, publish «where», script prompt and its preview). Never a QPlainTextEdit; tested in `test_text_editor.py`
 - One-line labels that must give way in a narrow pane: `ui/widgets/elided_label.py` (`ElidedLabel`, «…» + full text in the tooltip); `PathLabel` is one
+- «باز کردن محل فایل» (Explorer with the file selected): `reveal_in_explorer` in `ui/support.py`; in the right-click menu of every file row (Ideas audio rows, audio folder, the episode's linked voices) and as a button under the player
 - Errors: `show_error` (`ui/support.py`) logs a traceback to app.log for anything that is not a `DomainError`; a handler that must stay quiet calls `log_swallowed(what)`; "the item is gone" is caught as `NotFoundError`, never `Exception`
 - Shell chrome: `ui/main_window.py` (sidebar = title + search + nav + undo/redo + settings/theme), nav/chrome icons painted in `ui/icons.py`
 - Tests (essential only): tag_matching, tag_limit, activation_window, smart_link_ranking, undo_history, list_filter, navigation_history, publish_checklist, idea_to_episode (plus the feature tests beside them)
@@ -282,13 +283,16 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
 - Export as heard (v1.17): «خروجی گرفتن…» under an audio idea writes it out with the
   player's pause trimming and volume. Speed is left out on purpose: it is a listening
   choice, and it would move every note. Asks «صوت تازه» (default, loses nothing) or
-  «جایگزین کن» (not undoable, the box says so), then renders behind a cancelable progress box
+  «جایگزین کن» (not undoable, the box says so), then renders behind a cancelable progress box.
+  With nothing to change (no trimming, full volume) the box warns and defaults to Cancel, but
+  still lets it go ahead (v1.24: it used to refuse)
   - The same `Splicer` as playback does the cutting (identical joins and fades); ffmpeg
     decodes and re-encodes in the source's format at generous quality (AMR → M4A: no
     encoder). The volume is the slider's level mute aside — it can only lower (100 = as is)
-  - New copy: «name 01», «02»… (a copy of «name 01» counts on from «name» instead of
-    growing «01 01»), with the tags, notes and transcript; not the episode links (a copy
-    would appear twice in the materials). Imported-like: not undoable, can go to the trash
+  - New copy: «name 02», «03»… (a copy of «name 02» counts on from «name» instead of
+    growing «02 02»); a second box asks whether it takes the tags, notes and transcript
+    (default yes); never the episode links (a copy would appear twice in the materials).
+    Imported-like: not undoable, can go to the trash
   - Both ways move note and transcript times back by the cuts before them, so they still
     point at the same words. Replace lets go of the file in the player first (Windows won't
     write over an open file) and retries the swap briefly
@@ -392,6 +396,12 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
   HighlightedText (unreadable in dark). Lines/focus/markers use the Link role (accent_strong)
 
 ## Status
+- v1.24: «باز کردن محل فایل» in every file's right-click menu (it was «نمایش در پوشه», a
+  button only). Export with nothing to change warns instead of refusing. Copies are numbered
+  «name 02» everywhere (import «keep both» was «name (2)», export «name 01»); choosing a new
+  copy (export or import) asks whether the original's tags, notes and transcript come too.
+  Replacing on import keeps everything, the transcript included (it used to drop it: the
+  user wants replace = same recording, all info kept; re-run transcription if it no longer fits)
 - v1.23: text editor — every multi-line box is the new `TextEditor`: Persian lines are
   right-aligned again (QPlainTextEdit left-aligned them all), a line is RTL as soon as it
   holds a Persian letter (English words inside it no longer flip it), letterless lines
