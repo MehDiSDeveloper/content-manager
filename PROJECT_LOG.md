@@ -1,4 +1,4 @@
-# Podcast Workspace — architecture (v1.22)
+# Podcast Workspace — architecture (v1.23)
 
 Local-first Windows desktop workspace for a solo Persian podcaster: episodes, voices, ideas,
 tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3.12, PySide6.
@@ -65,6 +65,7 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
 - Settings: `services/settings_service.py`, `ui/settings_dialog.py` (tabs: general, bot, transcription, data)
 - All Persian UI text: `ui/strings.py`; bot-facing text: top of `services/bale_bot.py`
 - Passing messages under a page title: `ListPage.status` (`_StatusLabel` in `ui/pages/base.py`); `status.flash(text)` clears itself after 6 s and a newer message cancels that. Never pair `setText` with a `QTimer.singleShot` that clears it (an old timer wiped newer messages)
+- Multi-line text boxes: `ui/widgets/text_editor.py` (`TextEditor`, a plain-text QTextEdit), used for every one (notes, ideas, summary, season brief, inbox, publish «where», script prompt and its preview). Never a QPlainTextEdit; tested in `test_text_editor.py`
 - One-line labels that must give way in a narrow pane: `ui/widgets/elided_label.py` (`ElidedLabel`, «…» + full text in the tooltip); `PathLabel` is one
 - Errors: `show_error` (`ui/support.py`) logs a traceback to app.log for anything that is not a `DomainError`; a handler that must stay quiet calls `log_swallowed(what)`; "the item is gone" is caught as `NotFoundError`, never `Exception`
 - Shell chrome: `ui/main_window.py` (sidebar = title + search + nav + undo/redo + settings/theme), nav/chrome icons painted in `ui/icons.py`
@@ -322,8 +323,17 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
   - Audio ideas with neither transcript nor notes are named in the dialog as left out
   - A sibling episode's depth is shown only if its brief was ever changed: a default 1
     would mislead the AI about the ladder
-  - The preview forces RTL + right alignment on its document: QPlainTextEdit otherwise lays
-    out lines that open with a markdown "#"/"-" with the mark at the far end
+  - The preview is a `TextEditor`, so each line takes its own direction and a markdown
+    "#"/"-" stays at the start of a Persian line
+
+- Text direction (v1.23): QPlainTextEdit put every line at the left edge in the RTL UI and
+  gave a line the direction of its first letter, so a Persian sentence opening with an
+  English word was laid out left to right. `TextEditor` decides per paragraph: any Persian
+  letter → RTL, only Latin → LTR, no letters (empty, digits, «-») → the line above, the first
+  line → the window. Stored as block formats (QPlainTextEdit ignores them, hence QTextEdit);
+  Qt records those as undo steps of their own after the typing, so the editor's undo/redo
+  (keys and context menu) step over them: Ctrl+Z always changes text. Shift+Space after a
+  Persian letter types a ZWNJ (the legacy Persian layout has no easy key for it)
 
 ## Gotchas
 - QSS: an id selector (`QPushButton#danger`) outranks `QPushButton:disabled`, so every coloured button needs its own `:disabled` rule or a disabled one still looks pressable
@@ -339,6 +349,8 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
 - Printing Persian to the console needs `PYTHONIOENCODING=utf-8`
 - QTest.keyClicks with Persian text crashes the process; send QKeyEvent(KeyPress, 0, NoModifier, ch)
 - Letter shortcuts don't fire on the Persian keyboard layout; use layout-free keys (Space, arrows, Insert, -, =) and virtual-key codes for the global hotkey
+- QLineEdit always takes its direction from the first letter (setLayoutDirection only moves its
+  clear button): a one-line title opening with an English word is laid out LTR. Not fixed
 - Mixed Persian/Latin/digit text: use RLM around separators (`ui/pages/base.py _rtl`) and U+2066/U+2069 isolates for Latin commands; "·" next to Persian digits reads as ۰, use "،"
 - Heredoc-generated Python with `"\n"` literals got real newlines on this machine; check syntax after scripted edits
 - PySide 6.11: compare sink states with QtAudio.State, not QAudio.State
@@ -356,7 +368,7 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
 - EpisodeWorkspacePage ignores its own data_changed emits (_own_change); IdeasPage.external_change never refreshes over a draft or pending autosave
 - Inbox is a parentless Qt.Tool window: no taskbar entry, does not keep the app alive; hotkey only while the app runs (no tray)
 - ffmpeg first use costs ~1 s (WASAPI init + -buildconf); Player warms up on construction
-- A focused QLineEdit / QPlainTextEdit claims Ctrl+Z through ShortcutOverride *even with an empty
+- A focused QLineEdit / QTextEdit claims Ctrl+Z through ShortcutOverride *even with an empty
   undo stack*, so a window-level shortcut never fires while text has focus. `TextEditorKeys`
   swallows that claim only when the editor has nothing of its own to take back; it rides on the
   focused widget (via `focusChanged`), never on the whole application — an app-wide Python event
@@ -380,6 +392,11 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
   HighlightedText (unreadable in dark). Lines/focus/markers use the Link role (accent_strong)
 
 ## Status
+- v1.23: text editor — every multi-line box is the new `TextEditor`: Persian lines are
+  right-aligned again (QPlainTextEdit left-aligned them all), a line is RTL as soon as it
+  holds a Persian letter (English words inside it no longer flip it), letterless lines
+  follow the line above, undo never stops on a direction-only step, Shift+Space after a
+  Persian letter types a نیم‌فاصله, pasting rich text arrives as plain text
 - v1.22: review pass. Episode header: «یادداشت تازه» moved over the notes it adds to and
   «قدم بعدی» onto its own line, so the title and the next step are read whole. A window
   too narrow for list + workspace (< 640 px left for the workspace) folds the episode
