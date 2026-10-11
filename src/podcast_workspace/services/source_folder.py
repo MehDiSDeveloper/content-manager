@@ -20,7 +20,7 @@ from podcast_workspace.services.content_services import ImportReport, VoiceServi
 from podcast_workspace.services.settings_service import SettingsService
 from podcast_workspace.services.voice_store import (
     MTIME_SLACK_S,
-    NameChoice,
+    NameAnswer,
     path_key,
     same_file,
 )
@@ -175,13 +175,13 @@ class SourceFolderService:
                 break
         return found
 
-    def add(self, path: Path, choice: NameChoice | None = None) -> Voice | None:
-        """Bring one file into the workspace; `choice` is the answer when a voice already
+    def add(self, path: Path, answer: NameAnswer | None = None) -> Voice | None:
+        """Bring one file into the workspace; `answer` is the user's when a voice already
         has its name (`VoiceService.name_conflicts`). None when that answer was to skip it.
         Blocking (copies and probes the file): call it off the UI thread."""
         path = path.resolve()
         report: ImportReport = self._voices.import_files(
-            [path], {path: choice} if choice is not None else None
+            [path], {path: answer} if answer is not None else None
         )
         if report.imported:
             return report.imported[0]

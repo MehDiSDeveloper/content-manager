@@ -8,9 +8,10 @@ import pytest
 
 from podcast_workspace.domain.entities import Transcript, Voice
 from podcast_workspace.domain.lifecycle import TrashKind
+from podcast_workspace.domain.smart_links import LinkKind
 from podcast_workspace.paths import voices_dir
 from podcast_workspace.repositories.unit_of_work import UnitOfWork
-from podcast_workspace.services.voice_store import NameChoice
+from podcast_workspace.services.voice_store import Detail, NameAnswer, NameChoice
 from podcast_workspace.services.workspace import Workspace
 
 
@@ -88,7 +89,7 @@ def test_skipping_a_namesake_brings_nothing_in(ws, tmp_path) -> None:
     other = tmp_path / "other"
     other.mkdir()
     second = _wav(other / "a.wav", 2.0)
-    report = ws.voices.import_files([second], {second.resolve(): NameChoice.SKIP})
+    report = ws.voices.import_files([second], {second.resolve(): NameAnswer(NameChoice.SKIP)})
     assert report.skipped == [second.resolve()] and report.imported == []
     assert len(ws.voices.list_all()) == 1
 
@@ -97,6 +98,8 @@ def test_keeping_both_can_bring_the_details_along(ws, tmp_path) -> None:
     first = ws.voices.import_files([_wav(tmp_path / "a.wav")]).imported[0]
     tag = ws.tags.create("سفر", allow_similar=True)
     ws.voices.set_tags(first.id, [tag.id])
+    episode = ws.episodes.create("اپیزود")
+    ws.episodes.set_linked(episode.id, [(LinkKind.VOICE, first.id)], True)
     ws.timestamp_notes.add(first.id, 500, "وسطش")
     with UnitOfWork(ws.voices._sf) as uow:
         uow.transcripts.add(Transcript(voice_id=first.id, segments=[]))
@@ -104,13 +107,14 @@ def test_keeping_both_can_bring_the_details_along(ws, tmp_path) -> None:
     other.mkdir()
     second = _wav(other / "a.wav", 2.0)
 
-    choice = {second.resolve(): NameChoice.KEEP_BOTH_WITH_DETAILS}
+    choice = {second.resolve(): NameAnswer(NameChoice.KEEP_BOTH, Detail.ALL)}
     copy = ws.voices.import_files([second], choice).imported[0]
     assert copy.id != first.id and Path(copy.file_path).name == "a 02.wav"
     assert copy.tag_ids == {tag.id}
     assert [n.text for n in ws.timestamp_notes.list_for_voice(copy.id)] == ["وسطش"]
     assert ws.transcripts.get(copy.id) is not None
     assert ws.voices.get(first.id).tag_ids == {tag.id}
+    assert ws.episodes.get(episode.id).voice_ids == {first.id, copy.id}
 
 
 def test_replacing_keeps_the_voice_and_everything_on_it(ws, tmp_path) -> None:
@@ -123,7 +127,9 @@ def test_replacing_keeps_the_voice_and_everything_on_it(ws, tmp_path) -> None:
     other.mkdir()
     second = _wav(other / "a.wav", 3.0)
 
-    report = ws.voices.import_files([second], {second.resolve(): NameChoice.REPLACE})
+    report = ws.voices.import_files(
+        [second], {second.resolve(): NameAnswer(NameChoice.REPLACE, Detail.ALL)}
+    )
     replaced = report.imported[0]
     assert replaced.id == first.id and replaced.file_path == first.file_path
     assert replaced.duration_ms == 3000 and replaced.tag_ids == {tag.id}

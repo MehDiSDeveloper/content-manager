@@ -13,13 +13,14 @@ import pytest
 from podcast_workspace.audio.ffmpeg import probe_stream
 from podcast_workspace.audio.render import output_suffix, render, trimmed_ms
 from podcast_workspace.domain.entities import Transcript, TranscriptSegment
+from podcast_workspace.domain.smart_links import LinkKind
 from podcast_workspace.paths import voices_dir
 from podcast_workspace.repositories.unit_of_work import UnitOfWork
 from podcast_workspace.services.bale_bot import _Worker
 from podcast_workspace.services.bale_search import _clock
 from podcast_workspace.services.settings_service import BotOwner
 from podcast_workspace.services.voice_render import PlaybackEdit, pause_cuts
-from podcast_workspace.services.voice_store import free_name
+from podcast_workspace.services.voice_store import Detail, free_name
 from podcast_workspace.services.workspace import Workspace
 
 RATE = 16000
@@ -129,7 +130,7 @@ def _voice_with_notes(ws, recorder):
 
 def test_a_new_copy_carries_tags_notes_and_transcript_at_the_new_times(ws, recorder):
     voice, edit, tag = _voice_with_notes(ws, recorder)
-    copy = ws.voice_render.save(voice.id, edit, replace=False)
+    copy = ws.voice_render.save(voice.id, edit, replace=False, details=Detail.ALL)
 
     assert copy.id != voice.id and Path(copy.file_path).name == "take 02.wav"
     assert Path(copy.file_path).parent == voices_dir()
@@ -147,7 +148,7 @@ def test_a_new_copy_carries_tags_notes_and_transcript_at_the_new_times(ws, recor
 
 def test_a_new_copy_can_come_bare(ws, recorder):
     voice, edit, _ = _voice_with_notes(ws, recorder)
-    copy = ws.voice_render.save(voice.id, edit, replace=False, details=False)
+    copy = ws.voice_render.save(voice.id, edit, replace=False, details=Detail.NONE)
 
     assert Path(copy.file_path).name == "take 02.wav" and copy.tag_ids == set()
     assert ws.timestamp_notes.list_for_voice(copy.id) == []
@@ -158,14 +159,14 @@ def test_a_new_copy_can_come_bare(ws, recorder):
 
 def test_a_copy_can_be_made_with_nothing_to_change(ws, recorder):
     voice, _, tag = _voice_with_notes(ws, recorder)
-    copy = ws.voice_render.save(voice.id, PlaybackEdit(), replace=False)
+    copy = ws.voice_render.save(voice.id, PlaybackEdit(), False, Detail.ALL)
     assert abs(copy.duration_ms - voice.duration_ms) <= 30 and copy.tag_ids == {tag.id}
     assert ws.timestamp_notes.list_for_voice(copy.id)[0].position_ms == 4500
 
 
 def test_replacing_keeps_the_voice_and_moves_its_times(ws, recorder):
     voice, edit, _ = _voice_with_notes(ws, recorder)
-    saved = ws.voice_render.save(voice.id, edit, replace=True)
+    saved = ws.voice_render.save(voice.id, edit, replace=True, details=Detail.ALL)
 
     assert saved.id == voice.id and saved.file_path == voice.file_path
     assert abs(saved.duration_ms - (5000 - edit.saved_ms)) <= 30
@@ -175,6 +176,30 @@ def test_replacing_keeps_the_voice_and_moves_its_times(ws, recorder):
     assert len(ws.voices.list_all()) == 1
     # the recording it came from is still known: not offered again by the audio folder
     assert ws.source.pending() == []
+
+
+def test_a_copy_takes_only_what_was_ticked_and_can_join_the_episodes(ws, recorder):
+    voice, edit, _ = _voice_with_notes(ws, recorder)
+    episode = ws.episodes.create("اپیزود")
+    ws.episodes.set_linked(episode.id, [(LinkKind.VOICE, voice.id)], True)
+    picked = Detail.NOTES | Detail.EPISODES
+    copy = ws.voice_render.save(voice.id, edit, replace=False, details=picked)
+
+    assert copy.tag_ids == set() and ws.transcripts.get(copy.id) is None
+    assert ws.timestamp_notes.list_for_voice(copy.id)[0].position_ms == 4500 - edit.saved_ms
+    assert ws.episodes.get(episode.id).voice_ids == {voice.id, copy.id}
+
+
+def test_replacing_drops_what_was_not_ticked(ws, recorder):
+    voice, edit, tag = _voice_with_notes(ws, recorder)
+    episode = ws.episodes.create("اپیزود")
+    ws.episodes.set_linked(episode.id, [(LinkKind.VOICE, voice.id)], True)
+    saved = ws.voice_render.save(voice.id, edit, replace=True, details=Detail.TAGS)
+
+    assert saved.tag_ids == {tag.id}
+    assert ws.timestamp_notes.list_for_voice(voice.id) == []
+    assert ws.transcripts.get(voice.id) is None
+    assert ws.episodes.get(episode.id).voice_ids == set()
 
 
 def test_nothing_to_apply():

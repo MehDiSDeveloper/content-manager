@@ -48,8 +48,10 @@ from podcast_workspace.paths import voices_dir
 from podcast_workspace.repositories.unit_of_work import UnitOfWork
 from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS, probe
 from podcast_workspace.services.history import ChangeKind, HistoryService, Target, TargetKind
-from podcast_workspace.services.voice_render import copy_details
+from podcast_workspace.services.voice_details import copy_details, keep_details
 from podcast_workspace.services.voice_store import (
+    Detail,
+    NameAnswer,
     NameChoice,
     free_name,
     is_kept,
@@ -1095,6 +1097,17 @@ class VoiceService:
         with UnitOfWork(self._sf) as uow:
             return uow.voices.get(voice_id)
 
+    def detail_counts(self, voice_id: int) -> dict[Detail, int]:
+        """How much of each detail the voice has, for the box asking which go with it."""
+        with UnitOfWork(self._sf) as uow:
+            voice = uow.voices.get(voice_id)
+            return {
+                Detail.TAGS: len(voice.tag_ids),
+                Detail.NOTES: len(uow.timestamp_notes.list_for_voice(voice_id)),
+                Detail.TRANSCRIPT: int(uow.transcripts.for_voice(voice_id) is not None),
+                Detail.EPISODES: sum(voice_id in e.voice_ids for e in uow.episodes.list_all()),
+            }
+
     def name_conflicts(self, paths: Iterable[Path]) -> dict[Path, Voice]:
         """The files that would come in under a name a voice already has (voices are shown
         by file name), each with that voice — for the UI to ask about before importing.
@@ -1112,16 +1125,16 @@ class VoiceService:
         return conflicts
 
     def import_files(
-        self, paths: Iterable[Path], choices: Mapping[Path, NameChoice] | None = None
+        self, paths: Iterable[Path], answers: Mapping[Path, NameAnswer] | None = None
     ) -> ImportReport:
         """Blocking (copies and probes each file). Call it off the UI thread.
 
         A file from outside the workspace is copied into its store (`voice_store.py`) and
         the voice plays from the copy. A file whose name a voice already has is handled as
-        `choices` says, and when nobody was asked, comes in beside it as «name 02»:
-        an import never overwrites anything on its own.
+        `answers` says, and when nobody was asked, comes in beside it as «name 02» with
+        nothing of the other's: an import never overwrites anything on its own.
         """
-        choices = choices or {}
+        answers = answers or {}
         report = ImportReport()
         with UnitOfWork(self._sf) as uow:
             voices = uow.voices.list_all(include_trashed=True)
@@ -1150,19 +1163,19 @@ class VoiceService:
                         voice = uow.voices.add(voice)
                 else:
                     clash = _namesake(voices, path)
-                    choice = choices.get(path, NameChoice.KEEP_BOTH) if clash else None
-                    if choice is NameChoice.SKIP:
+                    answer = answers.get(path, NameAnswer(NameChoice.KEEP_BOTH))
+                    if clash is not None and answer.choice is NameChoice.SKIP:
                         report.skipped.append(path)
                         continue
-                    if clash is not None and choice is NameChoice.REPLACE:
-                        voice = self._replace(clash, path, voices)
+                    if clash is not None and answer.choice is NameChoice.REPLACE:
+                        voice = self._replace(clash, path, voices, answer.details)
                         voices.remove(clash)
                     else:
                         voice = self._copy_in(path, voices)
-                        if clash is not None and choice is NameChoice.KEEP_BOTH_WITH_DETAILS:
+                        if clash is not None and answer.details:
                             assert clash.id is not None
                             with UnitOfWork(self._sf) as uow:
-                                voice = copy_details(uow, clash.id, voice)
+                                voice = copy_details(uow, clash.id, voice, answer.details)
                 voices.append(voice)
                 report.imported.append(voice)
             except (OSError, DomainError) as exc:
@@ -1186,11 +1199,12 @@ class VoiceService:
             target.unlink(missing_ok=True)
             raise
 
-    def _replace(self, voice: Voice, path: Path, voices: list[Voice]) -> Voice:
-        """Give an existing voice the audio of `path`. Everything on it stays — tags,
-        notes, transcript, episodes: replacing is for the same recording again (a re-run
-        transcription fixes a transcript that no longer fits). Not undoable: the old audio
-        is written over (the UI says so when it asks)."""
+    def _replace(
+        self, voice: Voice, path: Path, voices: list[Voice], keep: Detail = Detail.ALL
+    ) -> Voice:
+        """Give an existing voice the audio of `path`, keeping the details in `keep` (tags,
+        notes, transcript, episodes) and dropping the rest. Not undoable: the old audio is
+        written over (the UI says so when it asks)."""
         assert voice.id is not None
         old = Path(voice.file_path)
         if is_stored(old) and name_key(old) == name_key(path):
@@ -1207,7 +1221,8 @@ class VoiceService:
             current.duration_ms = info.duration_ms
             current.format = info.format
             current.imported_at = utcnow()  # new audio: it goes to the top like a new one
-            return uow.voices.update(current)
+            uow.voices.update(current)
+            return keep_details(uow, voice.id, keep)
 
     def secure_external(self) -> int:
         """Copy into the store every voice still playing from a file outside the workspace

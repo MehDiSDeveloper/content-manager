@@ -13,7 +13,8 @@ new file with a new time.
 import os
 import re
 import shutil
-from enum import Enum, auto
+from dataclasses import dataclass
+from enum import Enum, Flag, auto
 from pathlib import Path
 
 from podcast_workspace.paths import data_dir, voices_dir
@@ -27,10 +28,29 @@ _NUMBER = re.compile(r"^(.*) (\d{2,})$")
 class NameChoice(Enum):
     """What to do with a file whose name a voice in the workspace already has."""
 
-    REPLACE = auto()  # the existing voice gets the new audio; everything on it stays
-    KEEP_BOTH = auto()  # the new one comes in as «name 02», bare
-    KEEP_BOTH_WITH_DETAILS = auto()  # …with the existing one's tags, notes and transcript
+    REPLACE = auto()  # the existing voice gets the new audio
+    KEEP_BOTH = auto()  # the new one comes in as «name 02»
     SKIP = auto()
+
+
+class Detail(Flag):
+    """What a voice carries besides its sound (`services/voice_details.py`)."""
+
+    NONE = 0
+    TAGS = auto()
+    NOTES = auto()  # timestamp notes
+    TRANSCRIPT = auto()
+    EPISODES = auto()  # the episodes it is linked to
+    ALL = TAGS | NOTES | TRANSCRIPT | EPISODES
+
+
+@dataclass(frozen=True)
+class NameAnswer:
+    """The user's answer about one clashing file. `details`: what a new copy takes from
+    the existing voice, or what a replaced voice keeps."""
+
+    choice: NameChoice
+    details: Detail = Detail.NONE
 
 
 def path_key(path: Path | str) -> str:

@@ -1,10 +1,10 @@
 """Saving a voice as it sounds in the player: pauses trimmed, volume applied.
 
-The result is either a new voice beside the original («name 02»), carrying its tags,
-timestamp notes and transcript when asked to (`copy_details`), or the same voice with its
-audio replaced, everything on it kept. Either way every note and transcript line keeps
-pointing at the same words: their times are moved back by the pauses cut before them
-(`audio/render.trimmed_ms`).
+The result is either a new voice beside the original («name 02»), carrying the details
+the user ticked (tags, notes, transcript, episodes), or the same voice with its audio
+replaced, keeping the ticked ones (`services/voice_details.py`). Either way every note and
+transcript line keeps pointing at the same words: their times are moved back by the pauses
+cut before them (`audio/render.trimmed_ms`).
 
 Neither is recorded for undo. A new copy is additive (like an import; it can go to the
 trash), and a replacement writes over the old audio, which the UI says before asking.
@@ -22,20 +22,21 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from podcast_workspace.audio.render import output_suffix, render, trimmed_ms
+from podcast_workspace.audio.render import output_suffix, render
 from podcast_workspace.audio.silence import Span, cuts_for, find_pauses, total_ms
 from podcast_workspace.audio.waveform import extract
-from podcast_workspace.domain.entities import (
-    TimestampNote,
-    Transcript,
-    TranscriptSegment,
-    Voice,
-    utcnow,
-)
+from podcast_workspace.domain.entities import Voice, utcnow
 from podcast_workspace.paths import voices_dir
 from podcast_workspace.repositories.unit_of_work import UnitOfWork
 from podcast_workspace.services.audio_probe import probe
-from podcast_workspace.services.voice_store import discard, free_name, is_stored, name_key
+from podcast_workspace.services.voice_details import copy_details, keep_details
+from podcast_workspace.services.voice_store import (
+    Detail,
+    discard,
+    free_name,
+    is_stored,
+    name_key,
+)
 
 log = logging.getLogger(__name__)
 
@@ -57,49 +58,6 @@ class PlaybackEdit:
     @property
     def saved_ms(self) -> int:
         return total_ms(self.cuts)
-
-
-def _shift_notes(notes: list[TimestampNote], cuts: tuple[Span, ...]) -> None:
-    for note in notes:
-        note.move_to(trimmed_ms(note.position_ms, cuts))
-
-
-def _shift_segments(
-    segments: list[TranscriptSegment], cuts: tuple[Span, ...]
-) -> list[TranscriptSegment]:
-    return [
-        TranscriptSegment(trimmed_ms(s.start_ms, cuts), trimmed_ms(s.end_ms, cuts), s.text)
-        for s in segments
-    ]
-
-
-def copy_details(
-    uow: UnitOfWork, source_id: int, copy: Voice, cuts: tuple[Span, ...] = ()
-) -> Voice:
-    """Give `copy` the tags, timestamp notes and transcript of voice `source_id`, their
-    times moved back by `cuts`. Not its episode links: a copy would appear twice in the
-    episode's materials."""
-    assert copy.id is not None
-    copy.set_tags(uow.voices.get(source_id).tag_ids)
-    copy = uow.voices.update(copy)
-    notes = uow.timestamp_notes.list_for_voice(source_id)
-    _shift_notes(notes, cuts)
-    for note in notes:
-        uow.timestamp_notes.add(
-            TimestampNote(copy.id, note.position_ms, note.text, note.created_at)
-        )
-    transcript = uow.transcripts.for_voice(source_id)
-    if transcript is not None:
-        uow.transcripts.add(
-            Transcript(
-                voice_id=copy.id,
-                segments=_shift_segments(transcript.segments, cuts),
-                language=transcript.language,
-                model=transcript.model,
-                created_at=transcript.created_at,
-            )
-        )
-    return copy
 
 
 def _swap(new: Path, target: Path) -> None:
@@ -136,14 +94,14 @@ class VoiceRenderService:
         voice_id: int,
         edit: PlaybackEdit,
         replace: bool,
-        details: bool = True,
+        details: Detail,
         cancel: threading.Event | None = None,
         on_progress: Callable[[float], None] | None = None,
     ) -> Voice:
         """Blocking: decodes and encodes the whole file. Run it off the UI thread.
 
-        Returns the new voice (with the original's tags, notes and transcript when
-        `details`), or the replaced one."""
+        Returns the new voice (with the original's `details`), or the replaced one
+        (keeping its `details`)."""
         with UnitOfWork(self._sf) as uow:
             voice = uow.voices.get(voice_id)
         source = Path(voice.file_path)
@@ -165,13 +123,13 @@ class VoiceRenderService:
         fresh = target.with_name(f".{target.stem}.new{suffix}")
         render(source, fresh, edit.cuts, edit.gain, cancel, on_progress)
         _swap(fresh, target)
-        replaced = self._replace_audio(voice_id, target, edit.cuts)
+        replaced = self._replace_audio(voice_id, target, edit.cuts, details)
         if target != source:
             discard(source)  # only ever deletes the store's own copy
         return replaced
 
     def _add_copy(
-        self, original: Voice, path: Path, cuts: tuple[Span, ...], details: bool
+        self, original: Voice, path: Path, cuts: tuple[Span, ...], details: Detail
     ) -> Voice:
         assert original.id is not None
         info = probe(path)
@@ -184,27 +142,19 @@ class VoiceRenderService:
                     imported_at=utcnow(),
                 )
             )
-            if details:
-                copy = copy_details(uow, original.id, copy, cuts)
-        return copy
+            return copy_details(uow, original.id, copy, details, cuts)
 
-    def _replace_audio(self, voice_id: int, path: Path, cuts: tuple[Span, ...]) -> Voice:
+    def _replace_audio(
+        self, voice_id: int, path: Path, cuts: tuple[Span, ...], details: Detail
+    ) -> Voice:
         info = probe(path)
         with UnitOfWork(self._sf) as uow:
             voice = uow.voices.get(voice_id)
             voice.file_path = str(path)
             voice.duration_ms = info.duration_ms
             voice.format = info.format
-            saved = uow.voices.update(voice)
-            notes = uow.timestamp_notes.list_for_voice(voice_id)
-            _shift_notes(notes, cuts)
-            for note in notes:
-                uow.timestamp_notes.update(note)
-            transcript = uow.transcripts.for_voice(voice_id)
-            if transcript is not None:
-                transcript.segments = _shift_segments(transcript.segments, cuts)
-                uow.transcripts.update(transcript)
-        return saved
+            uow.voices.update(voice)
+            return keep_details(uow, voice_id, details, cuts)
 
 
 def pause_cuts(path: Path, keep_ms: int) -> tuple[Span, ...]:
