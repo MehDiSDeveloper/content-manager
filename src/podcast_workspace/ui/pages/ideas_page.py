@@ -26,7 +26,6 @@ opens straight away (Back returns to this list as it was); adding to an existing
 leaves the user where they are, reviewing.
 """
 
-import subprocess
 from collections.abc import Callable, Hashable
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -89,6 +88,7 @@ from podcast_workspace.ui.support import (
     format_datetime,
     format_duration,
     local_digits,
+    reveal_in_explorer,
     run_async,
     show_error,
 )
@@ -367,8 +367,10 @@ class VoicePane(QWidget):
         col.addWidget(self.panels, 1)
 
         actions = QHBoxLayout()
-        show = QPushButton(strings.VOICE_SHOW_IN_FOLDER)
-        show.clicked.connect(self._show_in_folder)
+        show = QPushButton(strings.OPEN_FILE_LOCATION)
+        show.clicked.connect(
+            lambda: self.voice is not None and reveal_in_explorer(self.voice.file_path)
+        )
         actions.addWidget(show)
         self.save_as_heard = QPushButton(strings.VOICE_SAVE_AS_HEARD)
         self.save_as_heard.setToolTip(strings.VOICE_SAVE_AS_HEARD_TOOLTIP)
@@ -444,15 +446,6 @@ class VoicePane(QWidget):
             return
         self.voice_changed.emit(self.voice)
         self._events.data_changed.emit()
-
-    def _show_in_folder(self) -> None:
-        if self.voice is None:
-            return
-        path = Path(self.voice.file_path)
-        if path.exists():
-            subprocess.Popen(["explorer", "/select,", str(path)])
-        elif path.parent.exists():
-            subprocess.Popen(["explorer", str(path.parent)])
 
 
 class TextPane(QWidget):
@@ -1332,6 +1325,11 @@ class IdeasPage(ShelfListPage):
         if item is None:
             return
         menu = QMenu(self.list)
+        clicked = self.find_item(item.data(ID_ROLE))
+        if isinstance(clicked, Voice):
+            path = clicked.file_path
+            menu.addAction(strings.OPEN_FILE_LOCATION, lambda: reveal_in_explorer(path))
+            menu.addSeparator()
         menu.addMenu(self._episode_menu(menu))
         menu.addSeparator()
         if item.isSelected() and self._multi():

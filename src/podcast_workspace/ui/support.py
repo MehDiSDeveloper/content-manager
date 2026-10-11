@@ -2,10 +2,12 @@
 
 import contextlib
 import logging
+import subprocess
 import threading
 import unicodedata
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QCalendar, QDateTime, QLocale, QObject, QRunnable, QThreadPool, Signal
@@ -178,6 +180,16 @@ def confirm(parent: QWidget, text: str, action: str | None = None) -> bool:
     box.setEscapeButton(cancel)
     box.exec()
     return box.clickedButton() is ok
+
+
+def reveal_in_explorer(path: Path | str) -> None:
+    """Open the file's folder in File Explorer with the file selected (or just the folder,
+    when the file itself is gone)."""
+    path = Path(path)
+    if path.exists():
+        subprocess.Popen(["explorer", "/select,", str(path)])
+    elif path.parent.exists():
+        subprocess.Popen(["explorer", str(path.parent)])
 
 
 class AppEvents(QObject):

@@ -63,6 +63,7 @@ from podcast_workspace.ui.support import (
     local_digits,
     log_swallowed,
     numbered,
+    reveal_in_explorer,
     show_error,
 )
 from podcast_workspace.ui.widgets.key_hint import add_key_hint
@@ -104,13 +105,16 @@ def stale_text(episode: Episode, now: datetime | None = None) -> str:
 
 class _LinkedList(QListWidget):
     """Linked voices or ideas. Double-click/Enter opens, Delete unlinks. A single click only
-    selects: it must not carry the user off the episode."""
+    selects: it must not carry the user off the episode. A list of files (`files`) also
+    offers their location in its right-click menu."""
 
     open_item = Signal(int)
     unlink_item = Signal(int)
+    reveal_item = Signal(int)
 
-    def __init__(self) -> None:
+    def __init__(self, files: bool = False) -> None:
         super().__init__(objectName="linkedList")
+        self._files = files
         self.setItemDelegate(TwoLineDelegate(self))
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.itemDoubleClicked.connect(lambda item: self.open_item.emit(int(item.data(ID_ROLE))))
@@ -135,6 +139,8 @@ class _LinkedList(QListWidget):
         item_id = int(item.data(ID_ROLE))
         menu = QMenu(self)
         menu.addAction(strings.WS_OPEN, lambda: self.open_item.emit(item_id))
+        if self._files:
+            menu.addAction(strings.OPEN_FILE_LOCATION, lambda: self.reveal_item.emit(item_id))
         menu.addAction(strings.WS_UNLINK, lambda: self.unlink_item.emit(item_id))
         menu.exec(event.globalPos())  # type: ignore[attr-defined]
 
@@ -155,6 +161,7 @@ class MaterialsPanel(QFrame):
     open_item = Signal(object, int)  # LinkKind, item_id
     toggle_link = Signal(object, int, bool)  # LinkKind, item_id, link?
     add_requested = Signal(object)  # LinkKind
+    reveal_voice = Signal(int)
     record_requested = Signal()
 
     def __init__(self, preview: MaterialPreview) -> None:
@@ -185,7 +192,8 @@ class MaterialsPanel(QFrame):
         self.tabs.currentChanged.connect(self._on_tab_changed)
         col.addWidget(self.tabs)
 
-        self.voices_list = _LinkedList()
+        self.voices_list = _LinkedList(files=True)
+        self.voices_list.reveal_item.connect(self.reveal_voice)
         self.voices_list.open_item.connect(lambda i: self.open_item.emit(LinkKind.VOICE, i))
         self.voices_list.unlink_item.connect(
             lambda i: self.toggle_link.emit(LinkKind.VOICE, i, False)
@@ -460,6 +468,7 @@ class EpisodeWorkspacePage(QWidget):
         self.materials.toggle_link.connect(self._toggle_link)
         self.materials.open_item.connect(self._preview)
         self.materials.add_requested.connect(self._pick)
+        self.materials.reveal_voice.connect(self._reveal_voice)
         body.addWidget(self.materials, 2)
         root.addLayout(body, 1)
 
@@ -1149,6 +1158,12 @@ class EpisodeWorkspacePage(QWidget):
         self._body.setStretch(1, 1)
         if focus:
             self.preview.focus()
+
+    def _reveal_voice(self, voice_id: int) -> None:
+        try:
+            reveal_in_explorer(self._ws.voices.get(voice_id).file_path)
+        except NotFoundError:
+            return
 
     def close_preview(self, focus: bool = True) -> None:
         if not self.materials.previewing:

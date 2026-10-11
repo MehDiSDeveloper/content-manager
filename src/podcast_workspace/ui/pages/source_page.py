@@ -11,7 +11,6 @@ to the Windows Recycle Bin, after a confirmation).
 """
 
 import contextlib
-import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
@@ -41,6 +40,7 @@ from podcast_workspace.ui.support import (
     confirm,
     format_datetime,
     local_digits,
+    reveal_in_explorer,
     run_async,
     show_error,
 )
@@ -129,8 +129,8 @@ class SourcePage(ListPage):
         self.add_open_button.clicked.connect(lambda: self.add_current(open_after=True))
         actions.addWidget(self.add_open_button)
         actions.addStretch(1)
-        show = QPushButton(strings.VOICE_SHOW_IN_FOLDER)
-        show.clicked.connect(self._show_in_folder)
+        show = QPushButton(strings.OPEN_FILE_LOCATION)
+        show.clicked.connect(self._reveal_current)
         actions.addWidget(show)
         col.addLayout(actions)
         removal = QHBoxLayout()
@@ -267,8 +267,13 @@ class SourcePage(ListPage):
         return [
             (strings.SOURCE_ADD, lambda: self.add_current(open_after=False)),
             (hide, self.toggle_hidden_current),
+            (strings.OPEN_FILE_LOCATION, self._reveal_current),
             (strings.SOURCE_DELETE, self.delete_current),
         ]
+
+    def _reveal_current(self) -> None:
+        if self._file is not None:
+            reveal_in_explorer(self._file.path)
 
     @staticmethod
     def _id_of(item: QListWidgetItem) -> int:
@@ -421,15 +426,6 @@ class SourcePage(ListPage):
         self.status.setText("")
         self._sync_buttons()
         show_error(self, exc)
-
-    def _show_in_folder(self) -> None:
-        if self._file is None:
-            return
-        path = self._file.path
-        if path.exists():
-            subprocess.Popen(["explorer", "/select,", str(path)])
-        elif path.parent.exists():
-            subprocess.Popen(["explorer", str(path.parent)])
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if watched is self.list and event.type() == QEvent.Type.KeyPress:
