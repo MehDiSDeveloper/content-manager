@@ -44,10 +44,11 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
 - Workspace/board/resume: `ui/pages/{episode_workspace,board_page,resume_page}.py`; smart links `domain/smart_links.py`; stale `domain/pipeline.py`
 - Idea → episode: `EpisodeService.set_linked` (several items, one undo step), `create_from` (new episode named after the first item, with all their tags), `episodes_with`, `link_counts` (`EpisodeRepository.link_counts`, one GROUP BY per link table); UI `ui/widgets/episode_links.py` (`EpisodeMenu`, `EpisodeLinksRow`), wired in `IdeasPage` (editor rows, selection pane, row context menu, «in N ep.» in row subtitles) and `MainWindow.open_new_episode`. The list picker is `ui/widgets/picker.py`
 - Material preview: `ui/pages/material_preview.py` (`MaterialPreview`), shown by `MaterialsPanel.set_previewing` / `EpisodeWorkspacePage._preview` / `close_preview`; its player is `PlayerWidget(compact=True)` (transport on its own line)
-- Voice store: `services/voice_store.py` (`voices_dir()`, `NameChoice`, same-file = size + mtime, `free_name` → «name 02», `numbered=True` always numbers, a copy of «name 02» counts on to «name 03»). `VoiceService.import_files(paths, choices)` copies files from outside the data folder in; `name_conflicts` finds names a voice already has, asked about by `ui/widgets/name_conflict.py` (Ideas import, audio folder «add»); unasked clashes come in numbered, never overwritten. REPLACE keeps the voice and everything on it (tags, notes, transcript, episodes); not undoable. KEEP_BOTH_WITH_DETAILS also copies the namesake's tags, notes and transcript (`voice_render.copy_details`), asked by `ask_copy_details` after «هر دو بماند». `secure_external` copies older voices in, run at startup by `MainWindow`. Purge deletes the stored copy only. Tested in `test_voice_store.py`
+- Voice store: `services/voice_store.py` (`voices_dir()`, `NameChoice`, same-file = size + mtime, `free_name` → «name 02», `numbered=True` always numbers, a copy of «name 02» counts on to «name 03»). `VoiceService.import_files(paths, answers)` copies files from outside the data folder in; `name_conflicts` finds names a voice already has, asked about by `ui/widgets/name_conflict.py` (Ideas import, audio folder «add»), one `NameAnswer(choice, details)` per file; unasked clashes come in numbered and bare, never overwritten. REPLACE keeps the voice; not undoable.
+- Details that go with a new or replaced file: `Detail` flag in `voice_store.py` (tags, timestamp notes, transcript, episode links); `services/voice_details.py` (`copy_details` onto a new copy, `keep_details` drops the unticked from a replaced voice; both move times by the cuts); `VoiceService.detail_counts`; the checklist box `name_conflict.ask_details` (replace: all ticked, new: none; empty ones greyed out; nothing to ask → no box), used by import and export alike. Tested in `test_voice_store.py` / `test_voice_render.py` `secure_external` copies older voices in, run at startup by `MainWindow`. Purge deletes the stored copy only. Tested in `test_voice_store.py`
 - Publish checklist: `domain/publish.py` (`PublishStep`, `PublishChecklist`, tested in `test_publish_checklist.py`), `EpisodeService.check_publish_step` / `set_published_where`, chip + popup `ui/widgets/publish_checklist.py` in the workspace's stage row
 - Untagged filter: `FacetFilter.untagged` (`domain/list_filter.py`), the «بی‌برچسب N» toggle chip in `FacetSearchBar`; `IdeasPage.rows` feeds it the count
-- Export as heard: `audio/render.py` (decode → `Splicer` + gain → encode; `trimmed_ms` maps times), `services/voice_render.py` (`VoiceRenderService.save` new/replace, `details` = copy tags/notes/transcript, `copy_details`, `trimmed_for_sending` for the bot), `Player.active_cuts` / `level_gain`, dialog + job `ui/widgets/save_as_heard.py`, button in `VoicePane`. Tested in `test_voice_render.py`
+- Export as heard: `audio/render.py` (decode → `Splicer` + gain → encode; `trimmed_ms` maps times), `services/voice_render.py` (`VoiceRenderService.save` new/replace, `details` (required: what is copied / kept), `trimmed_for_sending` for the bot), `Player.active_cuts` / `level_gain`, dialog + job `ui/widgets/save_as_heard.py`, button in `VoicePane`. Tested in `test_voice_render.py`
 - Script prompt: brief `domain/script_brief.py` (options + `ScriptBrief`), template `domain/script_prompt.py` (`build_prompt`, all prompt wording), material `services/script_prompt.py` (`ScriptPromptService.material`), save + undo `EpisodeService.set_brief`, dialog `ui/widgets/script_prompt.py`, opened by «پرامپت متن» / Ctrl+P in the workspace header. Tested in `test_script_brief.py`
 - Idea inbox hotkey: `ui/hotkey.py` (RegisterHotKey, Ctrl+Alt+I), `ui/idea_inbox.py`
 - Recorder handoff: `services/recording.py` (os.startfile of the configured program); Ctrl+R is a MainWindow shortcut, so it works on every page
@@ -290,9 +291,12 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
     decodes and re-encodes in the source's format at generous quality (AMR → M4A: no
     encoder). The volume is the slider's level mute aside — it can only lower (100 = as is)
   - New copy: «name 02», «03»… (a copy of «name 02» counts on from «name» instead of
-    growing «02 02»); a second box asks whether it takes the tags, notes and transcript
-    (default yes); never the episode links (a copy would appear twice in the materials).
-    Imported-like: not undoable, can go to the trash
+    growing «02 02»). Imported-like: not undoable, can go to the trash
+  - Details (v1.24): after «صوت تازه» / «جایگزین کن» a checklist asks which of tags, notes,
+    transcript and episode links go with the file — for a replace all ticked (unticked ones
+    are deleted), for a new copy none (ticked ones are copied). The user asked for these
+    defaults; episode links are offered too even though a linked copy shows twice in the
+    episode's materials. Same box for an import under a taken name
   - Both ways move note and transcript times back by the cuts before them, so they still
     point at the same words. Replace lets go of the file in the player first (Windows won't
     write over an open file) and retries the swap briefly
@@ -398,10 +402,10 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
 ## Status
 - v1.24: «باز کردن محل فایل» in every file's right-click menu (it was «نمایش در پوشه», a
   button only). Export with nothing to change warns instead of refusing. Copies are numbered
-  «name 02» everywhere (import «keep both» was «name (2)», export «name 01»); choosing a new
-  copy (export or import) asks whether the original's tags, notes and transcript come too.
-  Replacing on import keeps everything, the transcript included (it used to drop it: the
-  user wants replace = same recording, all info kept; re-run transcription if it no longer fits)
+  «name 02» everywhere (import «keep both» was «name (2)», export «name 01»). New copy or
+  replace (export or import) then asks in one checklist which of tags, notes, transcript and
+  episode links go with the file: replace defaults to all (an import replace used to drop the
+  transcript), new to none
 - v1.23: text editor — every multi-line box is the new `TextEditor`: Persian lines are
   right-aligned again (QPlainTextEdit left-aligned them all), a line is RTL as soon as it
   holds a Persian letter (English words inside it no longer flip it), letterless lines
