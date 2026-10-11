@@ -3,7 +3,9 @@ trimming and volume (`services/voice_render.py`).
 
 It asks first — a new audio beside this one («name 01», with its tags, notes and
 transcript) or this one's sound replaced — then makes the file in the background behind a
-progress box that can cancel it. Replacing lets go of the file in the player first, since
+progress box that can cancel it. When the player changes nothing (no trimming, full
+volume) the same box warns about it, with Cancel as its default, but still lets it go
+ahead: the user may want the copy anyway. Replacing lets go of the file in the player first, since
 Windows will not write over a file that is open.
 """
 
@@ -53,14 +55,18 @@ def _ask(
             else strings.VOICE_SAVE_FULL_LEVEL
         )
     )
-    box = QMessageBox(QMessageBox.Icon.Question, strings.VOICE_SAVE_TITLE, "", parent=parent)
+    if edit.changes_nothing:
+        lines += ["", strings.VOICE_SAVE_NOTHING]
+    icon = QMessageBox.Icon.Warning if edit.changes_nothing else QMessageBox.Icon.Question
+    box = QMessageBox(icon, strings.VOICE_SAVE_TITLE, "", parent=parent)
     box.setText("\n".join(lines))
     box.setInformativeText(strings.VOICE_SAVE_HINT.format(copy=quote(text=copy_name)))
     new = box.addButton(strings.VOICE_SAVE_NEW, QMessageBox.ButtonRole.AcceptRole)
     new.setObjectName("primary")
     replace = box.addButton(strings.VOICE_SAVE_REPLACE, QMessageBox.ButtonRole.YesRole)
     cancel = box.addButton(strings.CANCEL, QMessageBox.ButtonRole.RejectRole)
-    box.setDefaultButton(new)  # the answer that loses nothing
+    # The answer that loses nothing; with nothing to change, not doing it at all.
+    box.setDefaultButton(cancel if edit.changes_nothing else new)
     box.setEscapeButton(cancel)
     box.exec()
     clicked = box.clickedButton()
@@ -94,11 +100,6 @@ class SaveAsHeard(QObject):
             QMessageBox.information(self._parent, strings.VOICE_SAVE_TITLE, strings.VOICE_SAVE_WAIT)
             return
         edit = PlaybackEdit(player.active_cuts(), player.level_gain)
-        if edit.changes_nothing:
-            QMessageBox.information(
-                self._parent, strings.VOICE_SAVE_TITLE, strings.VOICE_SAVE_NOTHING
-            )
-            return
         try:
             copy_name = self._ws.voice_render.copy_name(voice.id)
         except Exception as exc:

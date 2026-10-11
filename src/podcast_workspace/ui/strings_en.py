@@ -216,8 +216,8 @@ VOICE_SAVE_HINT = (
 VOICE_SAVE_NEW = "New audio"
 VOICE_SAVE_REPLACE = "Replace"
 VOICE_SAVE_NOTHING = (
-    "Pause trimming is off and the volume is full; the new file would be no different.\n"
-    "Turn on pause trimming or lower the volume, then try again."
+    "Neither pauses nor volume have changed; the file will sound exactly like this one.\n"
+    "You can turn on pause trimming or lower the volume, or export it as it is."
 )
 VOICE_SAVE_WAIT = "Still reading this audio's pauses; try again in a moment."
 VOICE_SAVE_PROGRESS = "Making the file…"
