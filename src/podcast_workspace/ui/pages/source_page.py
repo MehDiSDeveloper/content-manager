@@ -395,14 +395,14 @@ class SourcePage(ListPage):
         if file is None or self._busy:
             return
         conflicts = self._ws.voices.name_conflicts([file.path])
-        choice = next(iter(ask_name_choices(self, conflicts).values()), None)
-        if choice is NameChoice.SKIP:
+        answer = next(iter(ask_name_choices(self, self._ws, conflicts).values()), None)
+        if answer is not None and answer.choice is NameChoice.SKIP:
             return
         self._busy = True
         self._sync_buttons()
         self.status.setText(strings.SOURCE_ADDING)
         run_async(
-            lambda: self._ws.source.add(file.path, choice),
+            lambda: self._ws.source.add(file.path, answer),
             lambda voice: self._on_added(voice, file, open_after),
             self._on_add_failed,
         )

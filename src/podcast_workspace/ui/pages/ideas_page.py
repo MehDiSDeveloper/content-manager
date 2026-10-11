@@ -1044,7 +1044,7 @@ class IdeasPage(ShelfListPage):
 
     def import_paths(self, paths: list[Path]) -> None:
         # A name a voice already has is asked about first: nothing is overwritten unasked.
-        choices = ask_name_choices(self, self._ws.voices.name_conflicts(paths))
+        answers = ask_name_choices(self, self._ws, self._ws.voices.name_conflicts(paths))
         self.clear_filter(reload=False)  # imported files must not land behind a filter box
         if self.scope is ArchiveScope.ARCHIVED:  # ...nor behind the archive switch
             self.set_scope(ArchiveScope.ACTIVE)
@@ -1052,7 +1052,7 @@ class IdeasPage(ShelfListPage):
         self.import_button.setEnabled(False)
         self.status.setText(strings.VOICE_IMPORTING)
         run_async(
-            lambda: self._ws.voices.import_files(paths, choices),
+            lambda: self._ws.voices.import_files(paths, answers),
             self._on_imported,
             self._on_import_failed,
         )

@@ -1,9 +1,9 @@
 """«خروجی گرفتن»: an audio idea written out with the player's pause
 trimming and volume (`services/voice_render.py`).
 
-It asks first — a new audio beside this one («name 02»; a second question asks whether
-its tags, notes and transcript come too) or this one's sound replaced, everything on it
-kept — then makes the file in the background behind a
+It asks first — a new audio beside this one («name 02») or this one's sound replaced,
+then which of its tags, notes, transcript and episode links go with it
+(`name_conflict.ask_details`) — then makes the file in the background behind a
 progress box that can cancel it. When the player changes nothing (no trimming, full
 volume) the same box warns about it, with Cancel as its default, but still lets it go
 ahead: the user may want the copy anyway. Replacing lets go of the file in the player first, since
@@ -19,12 +19,13 @@ from PySide6.QtWidgets import QMessageBox, QProgressDialog, QWidget
 from podcast_workspace.audio.render import RenderCancelledError
 from podcast_workspace.domain.entities import Voice
 from podcast_workspace.services.voice_render import PlaybackEdit
+from podcast_workspace.services.voice_store import Detail
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.player.player_widget import PlayerWidget
 from podcast_workspace.ui.player.silence_control import seconds_label
 from podcast_workspace.ui.support import format_clock, local_digits, run_async, show_error
-from podcast_workspace.ui.widgets.name_conflict import ask_copy_details
+from podcast_workspace.ui.widgets.name_conflict import ask_details
 
 PROGRESS_STEPS = 1000
 
@@ -110,20 +111,18 @@ class SaveAsHeard(QObject):
         except Exception as exc:
             show_error(self._parent, exc)
             return
-        replace = _ask(self._parent, voice, copy_name, edit, player.level, player.keep_pause_ms)
-        if replace is None:
-            return
-        details = True
+        while True:  # cancelling the details box goes back to the first question
+            replace = _ask(self._parent, voice, copy_name, edit, player.level, player.keep_pause_ms)
+            if replace is None:
+                return
+            details = ask_details(self._parent, self._ws, voice.id, replace)
+            if details is not None:
+                break
         if replace:
             self._player.close_voice()  # Windows cannot write over a file being played
-        else:
-            answer = ask_copy_details(self._parent)
-            if answer is None:
-                return
-            details = answer
         self._run(voice, edit, replace, details)
 
-    def _run(self, voice: Voice, edit: PlaybackEdit, replace: bool, details: bool) -> None:
+    def _run(self, voice: Voice, edit: PlaybackEdit, replace: bool, details: Detail) -> None:
         assert voice.id is not None
         voice_id = voice.id
         self.running = True
