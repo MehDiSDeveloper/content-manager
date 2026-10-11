@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPlainTextEdit,
     QPushButton,
     QSizePolicy,
     QToolButton,
@@ -27,6 +26,7 @@ from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.support import AppEvents, local_digits, show_error
 from podcast_workspace.ui.widgets.number_box import NumberBox
+from podcast_workspace.ui.widgets.text_editor import TextEditor
 
 AUTOSAVE_DELAY_MS = 700
 CARD_LINES = 2
@@ -153,11 +153,11 @@ class SeasonBriefPage(QWidget):
         self._timer = QTimer(self, singleShot=True, interval=AUTOSAVE_DELAY_MS)
         self._timer.timeout.connect(self._save_brief)
 
-    def _column(self, row: QHBoxLayout, title: str, placeholder: str) -> QPlainTextEdit:
+    def _column(self, row: QHBoxLayout, title: str, placeholder: str) -> TextEditor:
         col = QVBoxLayout()
         col.setSpacing(8)
         col.addWidget(QLabel(title, objectName="sectionTitle"))
-        edit = QPlainTextEdit(objectName="noteBody")
+        edit = TextEditor(objectName="noteBody")
         edit.setPlaceholderText(placeholder)
         edit.setTabChangesFocus(True)
         edit.textChanged.connect(self._schedule_save)

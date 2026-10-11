@@ -16,7 +16,6 @@ from PySide6.QtGui import QKeySequence, QShortcut, QShowEvent
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QPlainTextEdit,
     QPushButton,
     QSizePolicy,
     QStackedWidget,
@@ -34,6 +33,7 @@ from podcast_workspace.ui import strings
 from podcast_workspace.ui.player.player_widget import PlayerWidget, install_player_keys
 from podcast_workspace.ui.player.transcript_panel import TranscriptionJobs, TranscriptPanel
 from podcast_workspace.ui.support import AppEvents, format_datetime, format_duration
+from podcast_workspace.ui.widgets.text_editor import TextEditor
 
 
 class MaterialPreview(QWidget):
@@ -77,7 +77,7 @@ class MaterialPreview(QWidget):
 
         self.body = QStackedWidget()
         # Read-only but selectable: copying a line into the note is the whole use of it.
-        self.text = QPlainTextEdit(objectName="ideaText")
+        self.text = TextEditor(objectName="ideaText")
         self.text.setReadOnly(True)
         self.text.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse

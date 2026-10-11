@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -39,6 +38,7 @@ from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.support import local_digits, show_error
 from podcast_workspace.ui.widgets.flow_layout import FlowLayout
+from podcast_workspace.ui.widgets.text_editor import TextEditor
 
 SAVE_DELAY_MS = 700
 COPIED_MS = 2000
@@ -119,7 +119,7 @@ class ScriptPromptDialog(QDialog):
         hint = QLabel(strings.SP_BRIEF_HINT, objectName="muted", wordWrap=True)
         col.addWidget(hint)
 
-        self.about = QPlainTextEdit()
+        self.about = TextEditor()
         self.about.setPlaceholderText(strings.SP_ABOUT_PLACEHOLDER)
         self.about.setTabChangesFocus(True)
         line = self.about.fontMetrics().lineSpacing()
@@ -263,13 +263,9 @@ class ScriptPromptDialog(QDialog):
         head.addWidget(self.size_label)
         col.addLayout(head)
         col.addWidget(QLabel(strings.SP_PROMPT_HINT, objectName="muted", wordWrap=True))
-        self.prompt = QPlainTextEdit(objectName="noteBody", readOnly=True)
-        # The prompt is Persian in either UI language: right to left and right-aligned, or a
-        # line opening with a markdown "#" or "-" is laid out with the mark at its far end.
-        option = self.prompt.document().defaultTextOption()
-        option.setTextDirection(Qt.LayoutDirection.RightToLeft)
-        option.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute)
-        self.prompt.document().setDefaultTextOption(option)
+        # Each line in its own direction, so the Persian prompt reads right to left in
+        # either UI language and a markdown "#" or "-" stays at the start of its line.
+        self.prompt = TextEditor(objectName="noteBody", readOnly=True)
         col.addWidget(self.prompt, 1)
         buttons = QHBoxLayout()
         buttons.addStretch(1)

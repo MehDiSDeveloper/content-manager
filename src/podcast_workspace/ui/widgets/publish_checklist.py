@@ -15,7 +15,6 @@ from PySide6.QtGui import QHideEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QLabel,
-    QPlainTextEdit,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -27,6 +26,7 @@ from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.player.popup import PlayerPopup
 from podcast_workspace.ui.support import local_digits, show_error
+from podcast_workspace.ui.widgets.text_editor import TextEditor
 
 SAVE_DELAY_MS = 700
 WHERE_LINES = 3
@@ -51,7 +51,7 @@ class _ChecklistPopup(PlayerPopup):
             self.boxes[step] = box
         col.addSpacing(4)
         col.addWidget(QLabel(strings.PUBLISH_WHERE, objectName="fieldLabel"))
-        self.where = QPlainTextEdit()
+        self.where = TextEditor()
         self.where.setPlaceholderText(strings.PUBLISH_WHERE_PLACEHOLDER)
         self.where.setTabChangesFocus(True)
         line = self.where.fontMetrics().lineSpacing()

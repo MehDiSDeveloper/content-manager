@@ -49,7 +49,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidgetItem,
     QMenu,
-    QPlainTextEdit,
     QPushButton,
     QStackedWidget,
     QTabBar,
@@ -102,6 +101,7 @@ from podcast_workspace.ui.widgets.name_conflict import ask_name_choices
 from podcast_workspace.ui.widgets.save_as_heard import SaveAsHeard
 from podcast_workspace.ui.widgets.scope_switch import ChoiceSwitch, ScopeSwitch
 from podcast_workspace.ui.widgets.tag_input import TagInput
+from podcast_workspace.ui.widgets.text_editor import TextEditor
 
 
 class IdeaKind(StrEnum):
@@ -474,7 +474,7 @@ class TextPane(QWidget):
         col = QVBoxLayout(self)
         col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(14)
-        self.text = QPlainTextEdit(objectName="ideaText")
+        self.text = TextEditor(objectName="ideaText")
         self.text.setPlaceholderText(strings.IDEA_PLACEHOLDER)
         self.text.setTabChangesFocus(True)
         self.text.textChanged.connect(self._schedule_save)

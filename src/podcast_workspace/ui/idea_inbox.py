@@ -5,12 +5,13 @@ Type, Enter saves an IdeaNote and closes; Esc (or clicking away with nothing typ
 
 from PySide6.QtCore import QEvent, QObject, QPoint, Qt, Signal
 from PySide6.QtGui import QCursor, QGuiApplication, QKeyEvent
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QPlainTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout, QWidget
 
 from podcast_workspace.services.workspace import Workspace
 from podcast_workspace.ui import strings
 from podcast_workspace.ui.hotkey import force_foreground
 from podcast_workspace.ui.support import show_error
+from podcast_workspace.ui.widgets.text_editor import TextEditor
 
 WIDTH, HEIGHT = 480, 190
 
@@ -39,7 +40,7 @@ class IdeaInbox(QWidget):
         col.setContentsMargins(18, 14, 18, 12)
         col.setSpacing(8)
         col.addWidget(QLabel(strings.INBOX_TITLE, objectName="sectionTitle"))
-        self.text = QPlainTextEdit(objectName="inboxText")
+        self.text = TextEditor(objectName="inboxText")
         self.text.setPlaceholderText(strings.INBOX_PLACEHOLDER)
         self.text.setTabChangesFocus(True)
         self.text.installEventFilter(self)

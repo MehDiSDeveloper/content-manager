@@ -25,7 +25,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QPlainTextEdit,
     QPushButton,
     QStackedWidget,
     QTabBar,
@@ -55,6 +54,7 @@ from podcast_workspace.ui.support import (
     show_error,
 )
 from podcast_workspace.ui.widgets.key_hint import attach_key_hint
+from podcast_workspace.ui.widgets.text_editor import TextEditor
 
 KEY_ROLE = ID_ROLE  # (TrashKind value, item id)
 _KINDS: tuple[str, ...] = ("all", TrashKind.VOICE.value, TrashKind.IDEA.value)
@@ -172,7 +172,7 @@ class TrashPage(QWidget):
         self.preview_tags = QLabel(objectName="muted")
         self.preview_tags.setWordWrap(True)
         col.addWidget(self.preview_tags)
-        self.preview_text = QPlainTextEdit(objectName="ideaText")
+        self.preview_text = TextEditor(objectName="ideaText")
         self.preview_text.setReadOnly(True)
         col.addWidget(self.preview_text, 1)
         self.preview_hint = QLabel(objectName="muted")

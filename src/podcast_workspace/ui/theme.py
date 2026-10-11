@@ -268,16 +268,16 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
         color: {c.muted}; background: {c.panel}; border-color: {c.border};
     }}
 
-    QLineEdit, QPlainTextEdit, QTextEdit {{
+    QLineEdit, QTextEdit {{
         background: {c.surface}; color: {c.text}; border: 1px solid {c.border};
         border-radius: 10px; padding: 8px 11px; selection-background-color: {c.accent};
         selection-color: {c.accent_text};
     }}
-    QLineEdit:hover, QPlainTextEdit:hover, QTextEdit:hover {{ border-color: {c.accent}; }}
-    QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus {{
+    QLineEdit:hover, QTextEdit:hover {{ border-color: {c.accent}; }}
+    QLineEdit:focus, QTextEdit:focus {{
         border: 2px solid {c.accent_strong}; padding: 7px 10px;
     }}
-    QLineEdit:disabled, QPlainTextEdit:disabled {{ background: {c.panel}; color: {c.muted}; }}
+    QLineEdit:disabled, QTextEdit:disabled {{ background: {c.panel}; color: {c.muted}; }}
     /* Not styled: a stylesheet on QComboBox makes Qt draw the drop-down as a separate
        square hanging outside the rounded frame in RTL. Fusion's own combo is correct. */
     QComboBox {{ min-width: 132px; padding: 5px 9px; }}
@@ -306,8 +306,8 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     }}
     QLineEdit#listFilter:hover {{ border-color: {c.border}; }}
     QLineEdit#listFilter:focus {{ background: {c.surface}; padding: 7px 10px; }}
-    QPlainTextEdit#ideaText {{ font-size: 12.5pt; padding: 14px; }}
-    QPlainTextEdit#ideaText:focus {{ padding: 13px; }}
+    QTextEdit#ideaText {{ font-size: 12.5pt; padding: 14px; }}
+    QTextEdit#ideaText:focus {{ padding: 13px; }}
 
     QListWidget, QTreeWidget {{
         background: {c.surface}; border: 1px solid {c.border}; border-radius: 14px;
@@ -513,8 +513,8 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     QLineEdit#noteTitle:focus {{
         border-bottom: 2px solid {c.accent_strong}; padding: 4px 2px 3px;
     }}
-    QPlainTextEdit#noteBody {{ font-size: 11.5pt; padding: 14px; }}
-    QPlainTextEdit#noteBody:focus {{ padding: 13px; }}
+    QTextEdit#noteBody {{ font-size: 11.5pt; padding: 14px; }}
+    QTextEdit#noteBody:focus {{ padding: 13px; }}
 
     /* Tabs are pills: the chosen one is filled, the rest are quiet labels. */
     QTabBar#noteTabs::tab, QTabBar#panelTabs::tab {{
@@ -558,7 +558,7 @@ def _stylesheet(c: Colors, dark: bool, rtl: bool) -> str:
     #inboxFrame {{
         background: {c.surface}; border: 2px solid {c.accent}; border-radius: 18px;
     }}
-    QPlainTextEdit#inboxText {{ font-size: 12.5pt; }}
+    QTextEdit#inboxText {{ font-size: 12.5pt; }}
 
     QToolTip {{
         background: {c.surface}; color: {c.text}; border: 1px solid {c.border}; padding: 6px 8px;

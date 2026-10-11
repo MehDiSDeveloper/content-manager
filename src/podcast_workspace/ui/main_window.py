@@ -43,7 +43,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
-    QPlainTextEdit,
     QPushButton,
     QStackedWidget,
     QTextEdit,
@@ -286,7 +285,7 @@ class TextEditorKeys(QObject):
         widget = self.target
         if isinstance(widget, QLineEdit):
             return widget.isRedoAvailable() if redo else widget.isUndoAvailable()
-        if isinstance(widget, QPlainTextEdit | QTextEdit):
+        if isinstance(widget, QTextEdit):
             document = widget.document()
             return document.isRedoAvailable() if redo else document.isUndoAvailable()
         return False
@@ -1000,7 +999,7 @@ class MainWindow(QMainWindow):
         """Follow the focus with the Ctrl+Z filter, instead of watching the whole app."""
         if self._key_filter.target is not None:
             self._key_filter.detach()
-        if isinstance(new, QLineEdit | QPlainTextEdit | QTextEdit):
+        if isinstance(new, QLineEdit | QTextEdit):
             self._key_filter.attach(new)
 
     # search ----------------------------------------------------------------------------

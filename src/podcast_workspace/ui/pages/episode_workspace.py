@@ -34,7 +34,6 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
-    QPlainTextEdit,
     QPushButton,
     QStackedWidget,
     QTabBar,
@@ -72,6 +71,7 @@ from podcast_workspace.ui.widgets.picker import PickerDialog
 from podcast_workspace.ui.widgets.publish_checklist import PublishChecklistButton
 from podcast_workspace.ui.widgets.script_prompt import ScriptPromptDialog
 from podcast_workspace.ui.widgets.tag_input import TagInput
+from podcast_workspace.ui.widgets.text_editor import TextEditor
 
 AUTOSAVE_DELAY_MS = 700
 SUMMARY_LINES = 3
@@ -567,7 +567,7 @@ class EpisodeWorkspacePage(QWidget):
         self.next_action.editingFinished.connect(self._save_fields)
         self.tag_input = TagInput(self._ws.tags, self._events)
         self.tag_input.tags_changed.connect(self._save_tags)
-        self.summary = QPlainTextEdit()
+        self.summary = TextEditor()
         self.summary.setPlaceholderText(strings.EPISODE_SUMMARY_PLACEHOLDER)
         self.summary.setTabChangesFocus(True)
         self.summary.setFixedHeight(self.summary.fontMetrics().lineSpacing() * SUMMARY_LINES + 18)
@@ -633,7 +633,7 @@ class EpisodeWorkspacePage(QWidget):
         self.note_title.textEdited.connect(lambda _t: self._schedule_save())
         self.note_title.returnPressed.connect(self._focus_body)
         ed.addWidget(self.note_title)
-        self.note_body = QPlainTextEdit(objectName="noteBody")
+        self.note_body = TextEditor(objectName="noteBody")
         self.note_body.setPlaceholderText(strings.WS_NOTE_BODY_PLACEHOLDER)
         self.note_body.setTabChangesFocus(True)
         self.note_body.textChanged.connect(self._schedule_save)
