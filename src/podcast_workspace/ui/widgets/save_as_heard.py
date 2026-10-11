@@ -1,8 +1,9 @@
 """«خروجی گرفتن»: an audio idea written out with the player's pause
 trimming and volume (`services/voice_render.py`).
 
-It asks first — a new audio beside this one («name 01», with its tags, notes and
-transcript) or this one's sound replaced — then makes the file in the background behind a
+It asks first — a new audio beside this one («name 02»; a second question asks whether
+its tags, notes and transcript come too) or this one's sound replaced, everything on it
+kept — then makes the file in the background behind a
 progress box that can cancel it. When the player changes nothing (no trimming, full
 volume) the same box warns about it, with Cancel as its default, but still lets it go
 ahead: the user may want the copy anyway. Replacing lets go of the file in the player first, since
@@ -23,6 +24,7 @@ from podcast_workspace.ui import strings
 from podcast_workspace.ui.player.player_widget import PlayerWidget
 from podcast_workspace.ui.player.silence_control import seconds_label
 from podcast_workspace.ui.support import format_clock, local_digits, run_async, show_error
+from podcast_workspace.ui.widgets.name_conflict import ask_copy_details
 
 PROGRESS_STEPS = 1000
 
@@ -60,7 +62,10 @@ def _ask(
     icon = QMessageBox.Icon.Warning if edit.changes_nothing else QMessageBox.Icon.Question
     box = QMessageBox(icon, strings.VOICE_SAVE_TITLE, "", parent=parent)
     box.setText("\n".join(lines))
-    box.setInformativeText(strings.VOICE_SAVE_HINT.format(copy=quote(text=copy_name)))
+    hint = strings.VOICE_SAVE_HINT.format(copy=quote(text=copy_name))
+    if edit.cuts:
+        hint += "\n" + strings.VOICE_SAVE_HINT_TIMES
+    box.setInformativeText(hint)
     new = box.addButton(strings.VOICE_SAVE_NEW, QMessageBox.ButtonRole.AcceptRole)
     new.setObjectName("primary")
     replace = box.addButton(strings.VOICE_SAVE_REPLACE, QMessageBox.ButtonRole.YesRole)
@@ -108,11 +113,17 @@ class SaveAsHeard(QObject):
         replace = _ask(self._parent, voice, copy_name, edit, player.level, player.keep_pause_ms)
         if replace is None:
             return
+        details = True
         if replace:
             self._player.close_voice()  # Windows cannot write over a file being played
-        self._run(voice, edit, replace)
+        else:
+            answer = ask_copy_details(self._parent)
+            if answer is None:
+                return
+            details = answer
+        self._run(voice, edit, replace, details)
 
-    def _run(self, voice: Voice, edit: PlaybackEdit, replace: bool) -> None:
+    def _run(self, voice: Voice, edit: PlaybackEdit, replace: bool, details: bool) -> None:
         assert voice.id is not None
         voice_id = voice.id
         self.running = True
@@ -143,6 +154,7 @@ class SaveAsHeard(QObject):
                 voice_id,
                 edit,
                 replace,
+                details,
                 cancel,
                 lambda share: self._progress.emit(round(share * PROGRESS_STEPS)),
             ),
