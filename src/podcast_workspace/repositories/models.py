@@ -112,9 +112,11 @@ class EpisodeRow(Base):
     summary: Mapped[str] = mapped_column(Text, default="")
     number: Mapped[int | None] = mapped_column(Integer)
 
-    tags: Mapped[list[TagRow]] = relationship(secondary=episode_tags)
-    voices: Mapped[list["VoiceRow"]] = relationship(secondary=episode_voices)
-    idea_notes: Mapped[list["IdeaNoteRow"]] = relationship(secondary=episode_idea_notes)
+    tags: Mapped[list[TagRow]] = relationship(secondary=episode_tags, lazy="selectin")
+    voices: Mapped[list["VoiceRow"]] = relationship(secondary=episode_voices, lazy="selectin")
+    idea_notes: Mapped[list["IdeaNoteRow"]] = relationship(
+        secondary=episode_idea_notes, lazy="selectin"
+    )
 
 
 class VoiceRow(Base):
@@ -131,7 +133,7 @@ class VoiceRow(Base):
     # The file a stored copy was made from (migration e8b3f1c6a492); "" = not a copy.
     source_path: Mapped[str] = mapped_column(Text, default="")
 
-    tags: Mapped[list[TagRow]] = relationship(secondary=voice_tags)
+    tags: Mapped[list[TagRow]] = relationship(secondary=voice_tags, lazy="selectin")
 
 
 class IdeaNoteRow(Base):
@@ -144,7 +146,7 @@ class IdeaNoteRow(Base):
     archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
-    tags: Mapped[list[TagRow]] = relationship(secondary=idea_note_tags)
+    tags: Mapped[list[TagRow]] = relationship(secondary=idea_note_tags, lazy="selectin")
 
 
 class TimestampNoteRow(Base):
