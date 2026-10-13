@@ -515,15 +515,23 @@ class EpisodeService:
     def smart_links(self, episode_id: int) -> list[SmartLink]:
         with UnitOfWork(self._sf) as uow:
             episode = uow.episodes.get(episode_id)
-            candidates = [
-                LinkCandidate(LinkKind.VOICE, v.id, frozenset(v.tag_ids), v.imported_at)
-                for v in uow.voices.list_all()
-                if v.id is not None and not v.archived
-            ] + [
-                LinkCandidate(LinkKind.IDEA, i.id, frozenset(i.tag_ids), i.updated_at)
-                for i in uow.idea_notes.list_all()
-                if i.id is not None and not i.archived
-            ]
+            voices, ideas = uow.voices.list_all(), uow.idea_notes.list_all()
+        return self.rank_links(episode, voices, ideas)
+
+    @staticmethod
+    def rank_links(
+        episode: Episode, voices: Iterable[Voice], ideas: Iterable[IdeaNote]
+    ) -> list[SmartLink]:
+        """`smart_links` over voices and ideas the caller has already read."""
+        candidates = [
+            LinkCandidate(LinkKind.VOICE, v.id, frozenset(v.tag_ids), v.imported_at)
+            for v in voices
+            if v.id is not None and not v.archived
+        ] + [
+            LinkCandidate(LinkKind.IDEA, i.id, frozenset(i.tag_ids), i.updated_at)
+            for i in ideas
+            if i.id is not None and not i.archived
+        ]
         return rank_smart_links(episode.tag_ids, candidates)
 
     def resume(self) -> "ResumeInfo | None":

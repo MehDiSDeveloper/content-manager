@@ -1035,7 +1035,6 @@ class EpisodeWorkspacePage(QWidget):
         try:
             voices = {v.id: v for v in self._ws.voices.list_all()}
             ideas = {i.id: i for i in self._ws.ideas.list_all()}
-            links = self._ws.episodes.smart_links(episode.id)
         except Exception as exc:
             show_error(self, exc)
             return
@@ -1089,6 +1088,7 @@ class EpisodeWorkspacePage(QWidget):
             idea_rows.append((idea.id, _first_line(idea.text), "  ·  ".join(p for p in parts if p)))
         self.materials.show_linked(LinkKind.IDEA, idea_rows)
 
+        links = self._ws.episodes.rank_links(episode, voices.values(), ideas.values())
         linked = {(LinkKind.VOICE, v) for v in episode.voice_ids} | {
             (LinkKind.IDEA, i) for i in episode.idea_note_ids
         }
