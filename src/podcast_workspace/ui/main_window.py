@@ -369,12 +369,8 @@ class MainWindow(QMainWindow):
 
         self._search_timer = QTimer(self, singleShot=True, interval=SEARCH_DEBOUNCE_MS)
         self._search_timer.timeout.connect(self._run_search)
-        self._warm_timer = QTimer(self, singleShot=True, interval=WARM_UP_DELAY_MS)
-        self._warm_timer.timeout.connect(self._warm_up_search)
         self._counts_timer = QTimer(self, singleShot=True, interval=COUNTS_DELAY_MS)
         self._counts_timer.timeout.connect(self._refresh_counts)
-        self.events.data_changed.connect(self._warm_timer.start)
-        self.events.tags_changed.connect(self._warm_timer.start)
         self.events.data_changed.connect(self._counts_timer.start)
         self.source_page.pending_changed.connect(self._counts_timer.start)
         self.events.tags_changed.connect(self._counts_timer.start)
@@ -388,7 +384,7 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app is not None:
             app.focusChanged.connect(self._watch_for_history_keys)
-        self._warm_timer.start()
+        QTimer.singleShot(WARM_UP_DELAY_MS, self._warm_up_search)
         # Items 30 days in the trash go before anything is counted or shown.
         self._auto_purged = self._purge_trash()
         self._purge_timer = QTimer(self, interval=PURGE_INTERVAL_MS)
@@ -1063,6 +1059,10 @@ class MainWindow(QMainWindow):
         run_async(self._ws.search.warm_up, lambda _r: None, lambda _e: None)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if watched is self.search and event.type() == QEvent.Type.FocusIn:
+            # About to search: bring the typo vocabulary up to date (a no-op when nothing
+            # was written since), rather than after every change made anywhere.
+            self._warm_up_search()
         if watched is self.search and event.type() == QEvent.Type.KeyPress:
             assert isinstance(event, QKeyEvent)
             if event.key() == Qt.Key.Key_Escape:
