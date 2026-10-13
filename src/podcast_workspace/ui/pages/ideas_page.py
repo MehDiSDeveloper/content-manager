@@ -796,9 +796,7 @@ class IdeasPage(ShelfListPage):
             (i.updated_at, self._idea_row(i, tags)) for i in ideas if self.scope.shows(i.archived)
         ]
         dated.sort(key=lambda pair: pair[0], reverse=True)  # newest first, either kind
-        rows = [row for _, row in dated]
-        self.facets.set_untagged_count(sum(1 for row in rows if not row.tag_ids))
-        return rows
+        return [row for _, row in dated]
 
     def _voice_row(self, voice: Voice, tags: dict[int, str] | None = None) -> Row:
         assert voice.id is not None
@@ -872,11 +870,14 @@ class IdeasPage(ShelfListPage):
         return not self._facets.is_empty
 
     def _on_facets_changed(self) -> None:
+        content_was_read = self._facets.in_content
         self._facets = self.facets.facet_filter()
-        self.refresh()
+        # Rows carry the ideas' text and transcripts only while «in content» is on.
+        self.refresh(reread=self._facets.in_content and not content_was_read)
 
     def _update_filter_count(self, shown_rows: list[Row], rows: list[Row]) -> None:
         super()._update_filter_count(shown_rows, rows)
+        self.facets.set_untagged_count(sum(1 for row in rows if not row.tag_ids))
         if not self.filter_active():
             return
         if self.kind == KIND_ALL:  # the answer to "how many of each?"
@@ -1205,8 +1206,10 @@ class IdeasPage(ShelfListPage):
             self.list.setCurrentItem(current, QItemSelectionModel.SelectionFlag.ClearAndSelect)
         self.list.setFocus()
 
-    def refresh(self, select_id: Hashable | None = None, load: bool = True) -> None:
-        super().refresh(select_id, load)
+    def refresh(
+        self, select_id: Hashable | None = None, load: bool = True, reread: bool = True
+    ) -> None:
+        super().refresh(select_id, load, reread)
         self._selection_timer.start()  # a reload drops the selection without a signal
 
     def _first_selected_row(self) -> int:

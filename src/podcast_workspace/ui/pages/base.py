@@ -211,6 +211,7 @@ class ListPage(QWidget):
         super().__init__()
         self.nav_title = title
         self._filter = ListFilter()
+        self._rows: list[Row] = []  # as last read; a change of filter only narrows these
         # Three panes, each with its own head: the list column carries the page's name,
         # its "new" button and its filter, and the detail pane gets the full height.
         body = QHBoxLayout(self)
@@ -353,7 +354,7 @@ class ListPage(QWidget):
 
     def _on_filter_changed(self, text: str) -> None:
         self._filter = parse_list_filter(text)
-        self.refresh()
+        self.refresh(reread=False)
 
     def _update_filter_count(self, shown_rows: list[Row], rows: list[Row]) -> None:
         """Say how much is hidden, and only then — a pill on an unfiltered list is noise."""
@@ -379,14 +380,20 @@ class ListPage(QWidget):
         item = self.list.currentItem()
         return None if item is None else item.data(ID_ROLE)
 
-    def refresh(self, select_id: Hashable | None = None, load: bool = True) -> None:
+    def refresh(
+        self, select_id: Hashable | None = None, load: bool = True, reread: bool = True
+    ) -> None:
         """Reload the list. With load=False the editor keeps its content (used mid-typing).
 
         `select_id` also pins that row past the filter: a row the caller just created or
         was sent to must not vanish under a filter box it happens not to match.
+        `reread=False` filters the rows already read again (a keystroke in the filter)
+        instead of reading them all from the database.
         """
         keep = select_id if select_id is not None else self.current_id()
-        rows = self.rows()
+        if reread:
+            self._rows = self.rows()
+        rows = self._rows
         shown = [r for r in rows if r.item_id == select_id or self.row_matches(r)]
         self._update_filter_count(shown, rows)
         self.list.blockSignals(True)
@@ -407,6 +414,8 @@ class ListPage(QWidget):
         if target is None and self.list.count():
             target = self.list.item(0)
         if target is not None:
+            # Only narrowed, with the same row still chosen: its editor is already right.
+            load = load and (reread or target.data(ID_ROLE) != keep)
             self.list.blockSignals(not load)
             self.list.setCurrentItem(target)
             self.list.blockSignals(False)
@@ -418,6 +427,7 @@ class ListPage(QWidget):
 
     def update_row(self, row: Row) -> None:
         """Refresh one list entry in place (after an autosave) without reloading."""
+        self._rows = [row if r.item_id == row.item_id else r for r in self._rows]
         for i in range(self.list.count()):
             item = self.list.item(i)
             if item.data(ID_ROLE) == row.item_id:

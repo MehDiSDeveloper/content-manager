@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QHideEvent, QKeyEvent, QKeySequence, QShortcut, QShowEvent
+from PySide6.QtGui import QHideEvent, QKeyEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -1196,12 +1196,6 @@ class EpisodeWorkspacePage(QWidget):
     def _on_data_changed(self) -> None:
         # Changes made elsewhere (tags on a voice, a new idea...) can change the suggestions.
         if self.isVisible() and not self._own_change:
-            self._refresh_links()
-
-    def showEvent(self, event: QShowEvent) -> None:
-        super().showEvent(event)
-        if self._episode is not None:
-            self._reload_episode()
             self._refresh_links()
 
     def hideEvent(self, event: QHideEvent) -> None:

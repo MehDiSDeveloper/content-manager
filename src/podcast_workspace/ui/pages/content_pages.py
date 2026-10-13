@@ -480,19 +480,21 @@ class EpisodesPage(ListPage):
         """Season names changed: redraw the subtitles without reloading the episode."""
         self.refresh(load=False)
 
-    def refresh(self, select_id: Hashable | None = None, load: bool = True) -> None:
+    def refresh(
+        self, select_id: Hashable | None = None, load: bool = True, reread: bool = True
+    ) -> None:
         """While the brief is open, the list is rebuilt beside it and nothing in it is
         chosen. Going to an episode (`select_id`), or leaving the season, closes it."""
         if not self._brief_open or select_id is not None:
             self._leave_brief()
-            super().refresh(select_id, load)
+            super().refresh(select_id, load, reread)
             return
         self.brief.flush()  # the list reads the season's brief for its card
-        super().refresh(load=False)
+        super().refresh(load=False, reread=reread)
         season = self._current_season()
         if season is None:  # the season was left, deleted or undone meanwhile
             self._leave_brief()
-            super().refresh(load=load)
+            super().refresh(load=load, reread=False)
             return
         self._show_brief(season)
 
