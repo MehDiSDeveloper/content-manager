@@ -54,6 +54,9 @@ ESTIMATE_TAIL = 2.0  # expected durations past the knee to cover most of the res
 SPEED_LEARNING_RATE = 0.5
 # Runs this short are dominated by fixed costs and would skew the speed.
 MIN_MEASURED_AUDIO_S = 5.0
+# A loaded model holds ~1.7 GB (large-v3) and takes ~16 s to load again. It is kept
+# between jobs (a batch, or one voice after another) and let go after this long unused.
+MODEL_IDLE_RELEASE_S = 120.0
 
 
 class TranscriptionUnavailableError(RuntimeError):
@@ -139,7 +142,8 @@ class _Progress:
 
 
 class TranscriptionService:
-    """One transcription at a time (it saturates the CPU); the loaded model is kept."""
+    """One transcription at a time (it saturates the CPU). The loaded model is kept while
+    it is being used and released `MODEL_IDLE_RELEASE_S` after the last job."""
 
     def __init__(self, session_factory: sessionmaker[Session], settings: SettingsService) -> None:
         self._sf = session_factory
@@ -147,6 +151,8 @@ class TranscriptionService:
         self._lock = threading.Lock()
         self._model: Any = None
         self._model_key: str | None = None
+        self._last_used = 0.0
+        self._release_timer: threading.Timer | None = None
 
     # stored transcripts ----------------------------------------------------------------
     def get(self, voice_id: int) -> Transcript | None:
@@ -195,6 +201,28 @@ class TranscriptionService:
             raise ModelMissingError(str(target))
         return target
 
+    def _schedule_release(self) -> None:
+        if self._release_timer is not None:
+            self._release_timer.cancel()
+        self._release_timer = threading.Timer(MODEL_IDLE_RELEASE_S, self.release_if_idle)
+        self._release_timer.daemon = True
+        self._release_timer.start()
+
+    def release_if_idle(self) -> bool:
+        """Free the model if no job has used it for `MODEL_IDLE_RELEASE_S`. Never waits
+        for, or frees under, a running job. True if it was released."""
+        if not self._lock.acquire(blocking=False):
+            return False  # a job is running; its end schedules the next check
+        try:
+            if self._model is None or time.monotonic() - self._last_used < MODEL_IDLE_RELEASE_S:
+                return False
+            self._model = None
+            self._model_key = None
+            log.info("transcription model released after %.0f s unused", MODEL_IDLE_RELEASE_S)
+            return True
+        finally:
+            self._lock.release()
+
     def _load(self, path: Path) -> Any:
         key = str(path.resolve())
         if self._model is None or self._model_key != key:
@@ -213,6 +241,49 @@ class TranscriptionService:
         return self._model
 
     # run -------------------------------------------------------------------------------
+    def _run_model(
+        self,
+        path: Path,
+        audio_file: Path,
+        on_progress: ProgressCallback,
+        cancel: threading.Event,
+    ) -> list[TranscriptSegment]:
+        """Decode and transcribe `audio_file`. Called holding the lock: one job at a time."""
+        model = self._load(path)
+        if cancel.is_set():
+            raise TranscriptionCancelledError
+        audio = np.frombuffer(decode_mono_f32(audio_file, SAMPLE_RATE), dtype=np.float32)
+        total_s = max(len(audio) / SAMPLE_RATE, 0.001)
+        speed = self._settings.transcription_speed(path.name) or default_speed(path.name)
+        # Only now: until the model is loaded the panel shows "preparing", not 0%.
+        with _Progress(on_progress, total_s * speed) as progress:
+            segments, _info = model.transcribe(
+                audio,
+                language=LANGUAGE,
+                task="transcribe",
+                beam_size=5,
+                vad_filter=True,
+                condition_on_previous_text=False,  # avoids runaway repetition loops
+                initial_prompt=INITIAL_PROMPT,
+            )
+            collected: list[TranscriptSegment] = []
+            for segment in segments:  # decoding happens lazily, window by window
+                if cancel.is_set():
+                    raise TranscriptionCancelledError
+                collected.append(
+                    TranscriptSegment(
+                        int(segment.start * 1000), int(segment.end * 1000), segment.text
+                    )
+                )
+                progress.decoded(segment.end / total_s)
+            elapsed_s = progress.elapsed_s
+        if total_s >= MIN_MEASURED_AUDIO_S:
+            measured = elapsed_s / total_s
+            self._settings.set_transcription_speed(
+                path.name, speed + SPEED_LEARNING_RATE * (measured - speed)
+            )
+        return collected
+
     def transcribe(
         self,
         voice_id: int,
@@ -234,39 +305,11 @@ class TranscriptionService:
             raise FileNotFoundError(audio_file)
 
         with self._lock:
-            model = self._load(path)
-            if cancel.is_set():
-                raise TranscriptionCancelledError
-            audio = np.frombuffer(decode_mono_f32(audio_file, SAMPLE_RATE), dtype=np.float32)
-            total_s = max(len(audio) / SAMPLE_RATE, 0.001)
-            speed = self._settings.transcription_speed(path.name) or default_speed(path.name)
-            # Only now: until the model is loaded the panel shows "preparing", not 0%.
-            with _Progress(on_progress, total_s * speed) as progress:
-                segments, _info = model.transcribe(
-                    audio,
-                    language=LANGUAGE,
-                    task="transcribe",
-                    beam_size=5,
-                    vad_filter=True,
-                    condition_on_previous_text=False,  # avoids runaway repetition loops
-                    initial_prompt=INITIAL_PROMPT,
-                )
-                collected: list[TranscriptSegment] = []
-                for segment in segments:  # decoding happens lazily, window by window
-                    if cancel.is_set():
-                        raise TranscriptionCancelledError
-                    collected.append(
-                        TranscriptSegment(
-                            int(segment.start * 1000), int(segment.end * 1000), segment.text
-                        )
-                    )
-                    progress.decoded(segment.end / total_s)
-                elapsed_s = progress.elapsed_s
-            if total_s >= MIN_MEASURED_AUDIO_S:
-                measured = elapsed_s / total_s
-                self._settings.set_transcription_speed(
-                    path.name, speed + SPEED_LEARNING_RATE * (measured - speed)
-                )
+            try:
+                collected = self._run_model(path, audio_file, on_progress, cancel)
+            finally:
+                self._last_used = time.monotonic()
+                self._schedule_release()
 
         transcript = Transcript(voice_id=voice_id, segments=collected, model=path.name)
         with UnitOfWork(self._sf) as uow:
