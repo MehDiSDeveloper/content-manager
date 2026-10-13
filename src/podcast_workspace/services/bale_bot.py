@@ -33,13 +33,14 @@ from podcast_workspace.domain.bot_input import (
     ItemKind,
     ItemRef,
     parse_message,
-    persian_digits,
+    persian_clock,
     search_query,
     shorten,
     split_tag_list,
 )
 from podcast_workspace.domain.errors import DomainError, NotFoundError
 from podcast_workspace.domain.rules import MAX_TAGS_PER_ITEM
+from podcast_workspace.domain.text import persian_digits
 from podcast_workspace.integrations.bale_api import (
     MAX_DOWNLOAD_BYTES,
     BaleApiError,
@@ -748,9 +749,7 @@ class _Worker(threading.Thread):
         if ref.kind is ItemKind.IDEA:
             return f"«{shorten(self._svc._ideas.get(ref.item_id).text)}»"
         voice = self._svc._voices.get(ref.item_id)
-        seconds = voice.duration_ms // 1000
-        clock = persian_digits(f"{seconds // 60}:{seconds % 60:02d}")
-        return f"{Path(voice.file_path).name} ({clock})"
+        return f"{Path(voice.file_path).name} ({persian_clock(voice.duration_ms)})"
 
     def _tags_line(self, tag_ids: set[int]) -> str:
         names = [t.name for t in self._svc._tags.by_ids(tag_ids)]

@@ -34,14 +34,14 @@ from podcast_workspace.domain.bot_input import (
     ItemKind,
     ItemRef,
     parse_message,
-    persian_digits,
+    persian_clock,
     shorten,
 )
 from podcast_workspace.domain.errors import NotFoundError
 from podcast_workspace.domain.lifecycle import ArchiveScope
 from podcast_workspace.domain.list_filter import parse_list_filter
 from podcast_workspace.domain.pocket_search import Entry, Found, find, narrowing_tags
-from podcast_workspace.domain.text import make_snippet
+from podcast_workspace.domain.text import make_snippet, persian_digits
 from podcast_workspace.integrations.bale_api import (
     MAX_UPLOAD_BYTES,
     BaleApiError,
@@ -117,11 +117,6 @@ class _Search:
     @property
     def pages(self) -> int:
         return max(1, -(-len(self.found) // PAGE_SIZE))
-
-
-def _clock(ms: int) -> str:
-    seconds = ms // 1000
-    return persian_digits(f"{seconds // 60}:{seconds % 60:02d}")
 
 
 def _split_idea(text: str) -> tuple[str, str]:
@@ -226,7 +221,7 @@ class SearchFlow:
             assert voice.id is not None
             name = Path(voice.file_path).name
             content = "\n".join(t for t in (notes.get(voice.id), transcripts.get(voice.id)) if t)
-            label = f"{shorten(name, 45)} · {_clock(voice.duration_ms)}"
+            label = f"{shorten(name, 45)} · {persian_clock(voice.duration_ms)}"
             entries.append(
                 Entry(
                     _Item(ItemRef(ItemKind.VOICE, voice.id), label, voice.archived),
@@ -400,13 +395,13 @@ class SearchFlow:
     ) -> str:
         """Name, length, tags and notes, with the times as they fall in the audio sent."""
         notes = [
-            f"{_clock(trimmed_ms(n.position_ms, cuts))} {n.text}"
+            f"{persian_clock(trimmed_ms(n.position_ms, cuts))} {n.text}"
             for n in self._notes.list_for_voice(voice_id)
         ]
         saved = total_ms(cuts)
-        head = f"{ICON_VOICE} {path.name} · {_clock(duration_ms - saved)}"
+        head = f"{ICON_VOICE} {path.name} · {persian_clock(duration_ms - saved)}"
         if saved:
-            head += "\n" + T_TRIMMED.format(saved=_clock(saved))
+            head += "\n" + T_TRIMMED.format(saved=persian_clock(saved))
         caption = "\n\n".join(p for p in [head, "\n".join(extra), "\n".join(notes)] if p)
         if len(caption) > MAX_CAPTION:
             caption = caption[:MAX_CAPTION].rstrip() + "…"

@@ -10,10 +10,18 @@ _DIACRITICS = re.compile("[ً-ٰٟـ]")  # harakat, superscript alef, tatweel
 _BIDI_MARKS = re.compile("[‎‏‪-‮⁦-⁩]")
 _SEPARATORS = re.compile(r"[\s‌_\-/\\.,،؛:;!?؟«»()\[\]{}\"']+")
 _DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+_HAS_DIGIT = re.compile("[۰-۹٠-٩]")
+_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
+
+
+def persian_digits(value: object) -> str:
+    return str(value).translate(_FA_DIGITS)
 
 
 def _base(text: str) -> str:
-    text = normalize_persian(text).translate(_DIGITS)
+    text = normalize_persian(text)
+    if _HAS_DIGIT.search(text):  # translate is slow on long text: only when it has work
+        text = text.translate(_DIGITS)
     text = _BIDI_MARKS.sub("", text)
     return _DIACRITICS.sub("", text).casefold()
 

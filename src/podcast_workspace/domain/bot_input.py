@@ -12,13 +12,13 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from podcast_workspace.domain.rules import MAX_TAG_NAME_LENGTH, normalize_persian
+from podcast_workspace.domain.text import persian_digits
 
 # A hashtag starts at a word boundary and runs until whitespace or punctuation (not _ or ZWNJ).
 _HASHTAG = re.compile(r"(?:(?<=\s)|^)[#＃]([^\s#＃,،;؛.!?؟:«»()\[\]{}\"']+)")
 _LIST_SEPARATORS = re.compile(r"[,،;؛\n\r#＃]+")
 
 
-_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 SEARCH_MARKS = ("؟", "?")
 
 
@@ -35,8 +35,10 @@ class ItemRef:
     item_id: int
 
 
-def persian_digits(value: object) -> str:
-    return str(value).translate(_FA_DIGITS)
+def persian_clock(ms: int) -> str:
+    """«۳:۰۵»: a length or a place in a voice, as the bot writes it."""
+    seconds = ms // 1000
+    return persian_digits(f"{seconds // 60}:{seconds % 60:02d}")
 
 
 def shorten(text: str, width: int = 80) -> str:

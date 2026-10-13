@@ -24,6 +24,7 @@ from podcast_workspace.domain.script_brief import (
     ScriptBrief,
     ScriptFormat,
 )
+from podcast_workspace.domain.text import persian_digits
 
 WORDS_PER_MINUTE = 130  # Persian speech at an ordinary pace
 
@@ -286,13 +287,6 @@ class ScriptMaterial:
     unread_voices: tuple[str, ...] = ()
 
 
-_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
-
-
-def _fa(value: object) -> str:
-    return str(value).translate(_FA_DIGITS)
-
-
 def _section(title: str, *lines: str) -> str:
     return "\n".join([title, *lines])
 
@@ -340,7 +334,7 @@ def _episode(material: ScriptMaterial, brief: ScriptBrief) -> str:
 
 def _named(episode: SeasonEpisode) -> str:
     if episode.depth:
-        return f"{episode.title} (پلهٔ عمق {_fa(episode.depth)})"
+        return f"{episode.title} (پلهٔ عمق {persian_digits(episode.depth)})"
     return episode.title
 
 
@@ -354,7 +348,7 @@ def _season(season: SeasonMaterial, brief: ScriptBrief) -> str:
             for number, episode in enumerate(season.before, 1):
                 lines += [
                     "",
-                    f"### {_fa(number)}. {_named(episode)}",
+                    f"### {persian_digits(number)}. {_named(episode)}",
                     episode.summary.strip() or NO_SUMMARY,
                 ]
         else:
@@ -379,9 +373,9 @@ def _specs(brief: ScriptBrief) -> str:
         blocks.append(
             _section(
                 "## مدت",
-                f"حدود {_fa(brief.minutes)} دقیقه، یعنی تقریباً "
-                f"{_fa(brief.minutes * WORDS_PER_MINUTE)} کلمه "
-                f"(با آهنگ معمول گفتار، حدود {_fa(WORDS_PER_MINUTE)} کلمه در دقیقه).",
+                f"حدود {persian_digits(brief.minutes)} دقیقه، یعنی تقریباً "
+                f"{persian_digits(brief.minutes * WORDS_PER_MINUTE)} کلمه "
+                f"(با آهنگ معمول گفتار، حدود {persian_digits(WORDS_PER_MINUTE)} کلمه در دقیقه).",
             )
         )
     if brief.audiences:
@@ -391,7 +385,7 @@ def _specs(brief: ScriptBrief) -> str:
     name, guide = DEPTH_LEVELS[brief.depth]
     blocks.append(
         _section(
-            f"## عمق: پلهٔ {_fa(brief.depth)} از {_fa(DEPTHS[-1])} — {name}",
+            f"## عمق: پلهٔ {persian_digits(brief.depth)} از {persian_digits(DEPTHS[-1])} — {name}",
             guide,
             LADDER,
             *([LADDER_ABOVE] if brief.depth > DEPTHS[0] else []),
@@ -420,7 +414,7 @@ def _draft(notes: list[DraftNote]) -> str:
         "صدای من را نگه دار، نه لزوماً جمله‌هایم را."
     ]
     for number, note in enumerate(notes, 1):
-        title = note.title.strip() or f"یادداشت {_fa(number)}"
+        title = note.title.strip() or f"یادداشت {persian_digits(number)}"
         lines += ["", f"## {title}", note.body.strip()]
     return _section("# پیش‌نویس من", *lines)
 
@@ -429,7 +423,7 @@ def _ideas(ideas: tuple[IdeaMaterial, ...]) -> str:
     lines = ["تکه‌هایی که در طول زمان برای این اپیزود جمع کرده‌ام، نوشته یا ضبط‌شده."]
     for number, idea in enumerate(ideas, 1):
         if idea.audio:
-            lines += ["", f"## ایدهٔ صوتی {_fa(number)} — {idea.name}"]
+            lines += ["", f"## ایدهٔ صوتی {persian_digits(number)} — {idea.name}"]
             if idea.text.strip():
                 lines += [
                     "(متن پیاده‌شده از صدای خودم؛ ممکن است خطای رونویسی داشته باشد)",
@@ -439,7 +433,7 @@ def _ideas(ideas: tuple[IdeaMaterial, ...]) -> str:
                 lines.append("یادداشت‌هایم روی این صوت:")
                 lines += [f"- {note}" for note in idea.notes]
         else:
-            lines += ["", f"## ایدهٔ متنی {_fa(number)}", idea.text.strip()]
+            lines += ["", f"## ایدهٔ متنی {persian_digits(number)}", idea.text.strip()]
     return _section("# ایده‌ها", *lines)
 
 
@@ -447,5 +441,5 @@ def _process(has_mine: bool, continuity: bool = False) -> str:
     """Check my material first, and against the season where there is one to check it by."""
     steps = [CHECK, CONTINUITY] if has_mine and continuity else [CHECK] if has_mine else []
     steps += [RESEARCH, OUTLINE, CHANGES]
-    numbered = [f"{_fa(i)}. {step}" for i, step in enumerate(steps, 1)]
+    numbered = [f"{persian_digits(i)}. {step}" for i, step in enumerate(steps, 1)]
     return "\n".join(["# روند کار", STEP_ONE, *numbered, WAIT, "", STEP_TWO])

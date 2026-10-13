@@ -22,6 +22,7 @@ from podcast_workspace.domain.errors import (
     TagLimitExceededError,
     ValidationError,
 )
+from podcast_workspace.domain.text import persian_digits
 from podcast_workspace.services.history import Change, ChangeKind, TargetKind
 from podcast_workspace.ui import strings
 
@@ -29,13 +30,12 @@ _FA_LOCALE = QLocale(QLocale.Language.Persian, QLocale.Country.Iran)
 _EN_LOCALE = QLocale(QLocale.Language.English, QLocale.Country.UnitedStates)
 _JALALI = QCalendar(QCalendar.System.Jalali)
 _GREGORIAN = QCalendar(QCalendar.System.Gregorian)
-_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 
 def local_digits(value: object) -> str:
     """Numbers in the script of the UI language: Persian digits, or left as they are."""
     text = str(value)
-    return text.translate(_FA_DIGITS) if strings.LANGUAGE == "fa" else text
+    return persian_digits(text) if strings.LANGUAGE == "fa" else text
 
 
 def numbered(title: str, number: int | None) -> str:

@@ -12,12 +12,12 @@ import pytest
 
 from podcast_workspace.audio.ffmpeg import probe_stream
 from podcast_workspace.audio.render import output_suffix, render, trimmed_ms
+from podcast_workspace.domain.bot_input import persian_clock
 from podcast_workspace.domain.entities import Transcript, TranscriptSegment
 from podcast_workspace.domain.smart_links import LinkKind
 from podcast_workspace.paths import voices_dir
 from podcast_workspace.repositories.unit_of_work import UnitOfWork
 from podcast_workspace.services.bale_bot import _Worker
-from podcast_workspace.services.bale_search import _clock
 from podcast_workspace.services.settings_service import BotOwner
 from podcast_workspace.services.voice_render import PlaybackEdit, pause_cuts
 from podcast_workspace.services.voice_store import Detail, free_name
@@ -251,5 +251,5 @@ def test_the_bot_sends_a_voice_with_its_pauses_trimmed(ws, recorder):
     assert field == "document"  # a wav goes as a file, as before
     assert abs(length - (5000 - edit.saved_ms)) <= 30
     assert "✂️" in caption
-    assert f"{_clock(4500 - edit.saved_ms)} بعد از مکث" in caption
+    assert f"{persian_clock(4500 - edit.saved_ms)} بعد از مکث" in caption
     assert again == "bale-file-1"  # the trimmed upload is reused
