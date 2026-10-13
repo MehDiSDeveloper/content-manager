@@ -1,4 +1,4 @@
-# Podcast Workspace — architecture (v1.24)
+# Podcast Workspace — architecture (v1.25)
 
 Local-first Windows desktop workspace for a solo Persian podcaster: episodes, voices, ideas,
 tags, notes, transcripts. Not a recorder, not an editor: playback only. Python 3.12, PySide6.
@@ -193,7 +193,7 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
   - First private chat becomes owner (shown/resettable in settings); others get "private" and nothing is saved; groups ignored
   - Offset stored in settings after each update (at-least-once). Updates sent while the app was closed arrive on next start
   - Errors: 401/403 → UNAUTHORIZED, stop until token changes; network/5xx/other → OFFLINE, exponential backoff 3 s → 120 s; per-update exceptions logged, never raised
-- Transcription: faster-whisper, CPU int8, language fa, VAD on, condition_on_previous_text off (repetition loops), Persian initial prompt. Audio decoded by our ffmpeg to 16 kHz float32. Model is a local folder: managed download (`models/faster-whisper-<name>`, explicit button, one-time network) or a user folder; loaded with local_files_only. Default model large-v3-turbo. One job at a time; cancel checked per segment. «Transcribe all» (under the Voices list) queues what the switch shows with no transcript and a file on disk; `TranscriptionJobs` runs the queue one by one, cancel skips one voice, a missing model/library ends the batch; progress in the sidebar. 0% is reported only after the model is loaded
+- Transcription: faster-whisper, CPU int8, language fa, VAD on, condition_on_previous_text off (repetition loops), Persian initial prompt. Audio decoded by our ffmpeg to 16 kHz float32. Model is a local folder: managed download (`models/faster-whisper-<name>`, explicit button, one-time network) or a user folder; loaded with local_files_only. Default model large-v3-turbo. One job at a time; cancel checked per segment. The loaded model is kept between jobs and released 120 s after the last one (`MODEL_IDLE_RELEASE_S`; the user chose 2 minutes: large-v3 holds ~1.7 GB, loading it again takes ~16 s; the transcription itself is untouched). «Transcribe all» (under the Voices list) queues what the switch shows with no transcript and a file on disk; `TranscriptionJobs` runs the queue one by one, cancel skips one voice, a missing model/library ends the batch; progress in the sidebar. 0% is reported only after the model is loaded
 - Transcripts are their own entity (not TimestampNotes): the user's notes stay the user's words
 - Transcript copy: `domain/transcript_export.py` joins whisper segments into paragraphs (new one
   after a 1.5 s pause, or at a sentence end past 400 chars, or anywhere past 900). «کپی خروجی»
@@ -343,7 +343,31 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
   (keys and context menu) step over them: Ctrl+Z always changes text. Shift+Space after a
   Persian letter types a ZWNJ (the legacy Persian layout has no easy key for it)
 
+- Performance (v1.25): rules the code now follows; keep to them.
+  - Relationships load with `lazy="selectin"` (never a query per row). An episode's voices
+    and ideas load as ids only (`EpisodeRepository.load_options`; anything else read later
+    loads on access, so a partly loaded row is never wrong, only slower)
+  - Count with SQL (`count`, `season_counts`, `trash.count`), never `len(list_all())`; find
+    by query (`episodes.with_item`, `by_ids`, `TagService.tagged`), never by filtering
+    `list_all()` in Python
+  - `ListPage` keeps the rows of its last read: a filter keystroke re-filters them
+    (`refresh(reread=False)`) and leaves the editor alone while the same row stays chosen;
+    `update_row` keeps them current. Ideas' «in content» rereads (only then do rows carry text)
+  - Icons are painted once per colour (`@painted` in `ui/icons.py`); transcript rows are
+    built when the transcript is first on screen, not for every voice clicked
+  - The search's typo vocabulary is read at startup and when the search box gets focus,
+    not after every write. Startup skips Alembic when the database is at `HEAD_REVISION`
+  - `normalize_persian` uses `str.replace`: `str.translate` with a table is ~100× slower
+    on Persian text, and it runs on every row read
+  - Measured (766 ideas/voices, 67 episodes): startup 7.0–8.2 s → 4.7–5.1 s, RAM after
+    start 291 → 237 MB; Ideas reload ~400 → ~140 ms; a filter keystroke ~150 → ~30 ms on
+    Ideas and ~190 → ~2 ms on Episodes; 611 queries → 3 to list the ideas
+
 ## Gotchas
+- `setVisible(True)` on a widget with no parent yet makes it a native top-level window
+  (≈16 ms each, and it may flash): add it to its layout first, then show or hide it
+- Qt's first font fallback (a glyph Vazirmatn lacks: ←, →, ▾, ×, ✓) costs about a second
+  once per run, whoever draws it first. Moving it only moves the wait; it was left as is
 - QSS: an id selector (`QPushButton#danger`) outranks `QPushButton:disabled`, so every coloured button needs its own `:disabled` rule or a disabled one still looks pressable
 - New migration: set `PODCAST_WORKSPACE_HOME=<tmp>` before `alembic revision --autogenerate`, else it diffs your real DB. Then set `HEAD_REVISION` in `repositories/db.py` to the new revision: startup skips Alembic when the database is already there (`test_migrations.py` fails until it matches). Replace autogenerated `UTCDateTime()` with `sa.DateTime()`; keep `render_as_batch=True`; `alembic check` must stay clean (env.py ignores `search_*`)
 - Migrations run with foreign keys off (`db.migration_connection`, used by `migrate()` and the CLI env), then `PRAGMA foreign_key_check` must come back empty. A table rebuild would otherwise drop the old table under foreign_keys=ON and every CASCADE child would go with it (tag links, notes, transcripts). Adding a column is still best done with a plain `ALTER TABLE … ADD COLUMN` (see b8d4e6f1a320)
@@ -400,6 +424,13 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
   HighlightedText (unreadable in dark). Lines/focus/markers use the Link role (accent_strong)
 
 ## Status
+- v1.25: performance pass, nothing in the UI changed. One query per relationship instead
+  of one per row, counts and lookups by query, filter keystrokes without a reread, cached
+  icons, transcript rows built on show, the whisper model released after 2 minutes unused,
+  no Alembic at startup, a 100× faster Persian normalizer (see «Performance (v1.25)»).
+  Duplicates folded: episode undo setters (`EpisodeService._put`), `FlowLayout.clear`
+  (also fixes old tag chips painted under new ones), the icon canvas, the Ideas panes'
+  tag row, `persian_digits` (was in three modules)
 - v1.24: «باز کردن محل فایل» in every file's right-click menu (it was «نمایش در پوشه», a
   button only). Export with nothing to change warns instead of refusing. Copies are numbered
   «name 02» everywhere (import «keep both» was «name (2)», export «name 01»). New copy or
