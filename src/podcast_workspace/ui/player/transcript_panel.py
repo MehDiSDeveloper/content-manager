@@ -13,7 +13,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QGuiApplication, QKeyEvent, QMouseEvent
+from PySide6.QtGui import QGuiApplication, QKeyEvent, QMouseEvent, QShowEvent
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -342,6 +342,7 @@ class TranscriptPanel(QFrame):
 
     def highlight_query(self, query: str) -> None:
         """Search hit: focus the first segment containing the query terms."""
+        self._build_rows()
         terms = query_terms(query)
         for row in self._rows:
             if terms and find_spans(row.segment.text, terms):
@@ -364,16 +365,29 @@ class TranscriptPanel(QFrame):
             except Exception:
                 self._transcript = None
         if self._transcript is not None:
-            self.host.setUpdatesEnabled(False)
-            for index, segment in enumerate(self._transcript.segments):
-                row = _SegmentRow(index, segment)
-                row.activated.connect(self._seek)
-                row.move_focus.connect(self._move_focus)
-                self.rows_layout.insertWidget(index, row)
-                self._rows.append(row)
-            self.host.setUpdatesEnabled(True)
             self._starts = [s.start_ms for s in self._transcript.segments]
+        if self.isVisible():  # otherwise once it is shown: most voices are opened on Notes
+            self._build_rows()
         self._show_state()
+
+    def _build_rows(self) -> None:
+        """A row per segment, made when the transcript is first on screen: an hour of
+        speech is hundreds of rows, too many to build for every voice that is clicked."""
+        if self._rows or self._transcript is None or not self._transcript.segments:
+            return
+        self.host.setUpdatesEnabled(False)
+        for index, segment in enumerate(self._transcript.segments):
+            row = _SegmentRow(index, segment)
+            row.activated.connect(self._seek)
+            row.move_focus.connect(self._move_focus)
+            self.rows_layout.insertWidget(index, row)
+            self._rows.append(row)
+        self.host.setUpdatesEnabled(True)
+        self._on_position(self._player.player.position)  # light up where playback is
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        self._build_rows()
 
     def _show_state(self, message: str | None = None) -> None:
         self._copied_timer.stop()
