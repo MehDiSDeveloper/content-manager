@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from podcast_workspace.domain.entities import Tag
+from podcast_workspace.domain.entities import Episode, IdeaNote, Tag, Voice
 from podcast_workspace.domain.errors import DuplicateTagError, NearDuplicateTagError
 from podcast_workspace.domain.tag_matching import TagMatch, find_exact, near_duplicates, rank_tags
 from podcast_workspace.repositories.repos import TagUses
@@ -35,6 +35,15 @@ class TagResolution:
     tag: Tag
     created: bool  # a new tag was made
     corrected: bool  # an existing tag with a different (near-duplicate) name was used
+
+
+@dataclass(frozen=True)
+class Tagged:
+    """What carries one tag, outside the trash, most recent first."""
+
+    episodes: list[Episode]
+    voices: list[Voice]
+    ideas: list[IdeaNote]
 
 
 class TagService:
@@ -93,6 +102,18 @@ class TagService:
     def usage_counts(self) -> dict[int, int]:
         with UnitOfWork(self._session_factory) as uow:
             return uow.tags.usage_counts()
+
+    def tagged(self, tag_id: int) -> Tagged:
+        with UnitOfWork(self._session_factory) as uow:
+            uses = uow.tags.uses_of(tag_id)
+            episodes = uow.episodes.by_ids(uses.episodes)
+            voices = [v for v in uow.voices.by_ids(uses.voices) if not v.in_trash]
+            ideas = [i for i in uow.idea_notes.by_ids(uses.ideas) if not i.in_trash]
+        return Tagged(
+            sorted(episodes, key=lambda e: e.updated_at, reverse=True),
+            sorted(voices, key=lambda v: v.imported_at, reverse=True),
+            sorted(ideas, key=lambda i: i.updated_at, reverse=True),
+        )
 
     def suggest(
         self, query: str, exclude_ids: set[int] | None = None, limit: int = 8

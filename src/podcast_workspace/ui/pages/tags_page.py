@@ -272,11 +272,11 @@ class TagsPage(QWidget):
             self.uses_hint.setText(strings.TAG_USES_NONE)
             self.uses_hint.show()
             return
-        tag_id = tag.id
         rows: list[tuple[SearchKind, int, str, str]] = []
         try:
-            for episode in self._ws.episodes.list_all():
-                if tag_id in episode.tag_ids and episode.id is not None:
+            tagged = self._ws.tags.tagged(tag.id)
+            for episode in tagged.episodes:
+                if episode.id is not None:
                     rows.append(
                         (
                             SearchKind.EPISODE,
@@ -287,8 +287,8 @@ class TagsPage(QWidget):
                             + strings.STATUS_LABELS[episode.status],
                         )
                     )
-            for voice in self._ws.voices.list_all():
-                if tag_id in voice.tag_ids and voice.id is not None:
+            for voice in tagged.voices:
+                if voice.id is not None:
                     rows.append(
                         (
                             SearchKind.VOICE,
@@ -297,8 +297,8 @@ class TagsPage(QWidget):
                             strings.KIND_LABELS[SearchKind.VOICE] + "  ·  " + voice.format.upper(),
                         )
                     )
-            for idea in self._ws.ideas.list_all():
-                if tag_id in idea.tag_ids and idea.id is not None:
+            for idea in tagged.ideas:
+                if idea.id is not None:
                     text = idea.text.strip().splitlines()[0] if idea.text.strip() else ""
                     rows.append(
                         (

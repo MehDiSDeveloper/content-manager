@@ -51,6 +51,13 @@ class SqlRepository[E: HasId, R: Base](ABC):
         rows = self.session.scalars(self._select().order_by(self.row_type.id))
         return [self._to_domain(row) for row in rows]
 
+    def by_ids(self, entity_ids: Collection[int]) -> list[E]:
+        """These rows (unknown ids are left out), in no particular order."""
+        if not entity_ids:
+            return []
+        query = self._select().where(self.row_type.id.in_(entity_ids))  # type: ignore[attr-defined]
+        return [self._to_domain(row) for row in self.session.scalars(query)]
+
     def add(self, entity: E) -> E:
         row = self.row_type()
         if entity.id is not None:  # restoring an export keeps the original ids
