@@ -186,16 +186,22 @@ class EpisodeService:
                 current.next_action,
             ):
                 return current
-            before = (current.title, current.status, current.next_action, current.updated_at)
+            before = {
+                "title": current.title,
+                "status": current.status,
+                "next_action": current.next_action,
+            }
+            stamp = current.updated_at
             edited.touch()
             saved = uow.episodes.update(edited)
-        after = (saved.title, saved.status, saved.next_action, saved.updated_at)
+        after = {"title": saved.title, "status": saved.status, "next_action": saved.next_action}
+        touched = saved.updated_at
         # One step per run of typing, not one per field committed.
         self._history.record(
             ChangeKind.EDIT,
             Target(TargetKind.EPISODE, episode_id),
-            undo=lambda: self._set_fields(episode_id, before),
-            redo=lambda: self._set_fields(episode_id, after),
+            undo=lambda: self._put(episode_id, stamp, **before),
+            redo=lambda: self._put(episode_id, touched, **after),
             details=(saved.title,),
             weight=len(saved.title) + len(saved.next_action),
             merge_key=f"episode-fields:{episode_id}",
@@ -239,8 +245,8 @@ class EpisodeService:
         self._history.record(
             ChangeKind.STATUS,
             Target(TargetKind.EPISODE, episode_id),
-            undo=lambda: self._set_status(episode_id, before, stamp),
-            redo=lambda: self._set_status(episode_id, status, touched),
+            undo=lambda: self._put(episode_id, stamp, status=before),
+            redo=lambda: self._put(episode_id, touched, status=status),
             details=(status.value, title),
             weight=len(title),
         )
@@ -410,8 +416,8 @@ class EpisodeService:
         self._history.record(
             ChangeKind.CHECKLIST,
             Target(TargetKind.EPISODE, episode_id),
-            undo=lambda: self._set_publish(episode_id, before, stamp),
-            redo=lambda: self._set_publish(episode_id, checklist, touched),
+            undo=lambda: self._put(episode_id, stamp, publish=before),
+            redo=lambda: self._put(episode_id, touched, publish=checklist),
             details=(title,),
             weight=len(title) + len(checklist.where),
             merge_key=merge_key,
@@ -434,8 +440,8 @@ class EpisodeService:
         self._history.record(
             ChangeKind.BRIEF,
             Target(TargetKind.EPISODE, episode_id),
-            undo=lambda: self._set_brief(episode_id, before, stamp),
-            redo=lambda: self._set_brief(episode_id, brief, touched),
+            undo=lambda: self._put(episode_id, stamp, brief=before),
+            redo=lambda: self._put(episode_id, touched, brief=brief),
             details=(title,),
             weight=len(title) + len(brief.about),
             merge_key=f"episode-brief:{episode_id}",
@@ -457,8 +463,8 @@ class EpisodeService:
         self._history.record(
             ChangeKind.SUMMARY,
             Target(TargetKind.EPISODE, episode_id),
-            undo=lambda: self._set_summary(episode_id, before, stamp),
-            redo=lambda: self._set_summary(episode_id, after, touched),
+            undo=lambda: self._put(episode_id, stamp, summary=before),
+            redo=lambda: self._put(episode_id, touched, summary=after),
             details=(title,),
             weight=len(title) + len(after),
             merge_key=f"episode-summary:{episode_id}",
@@ -477,19 +483,13 @@ class EpisodeService:
         self._history.record(
             ChangeKind.NUMBER,
             Target(TargetKind.EPISODE, episode_id),
-            undo=lambda: self._set_number(episode_id, before),
-            redo=lambda: self._set_number(episode_id, number),
+            undo=lambda: self._put(episode_id, number=before),
+            redo=lambda: self._put(episode_id, number=number or None),
             details=(saved.title,),
             weight=len(saved.title),
             merge_key=f"episode-number:{episode_id}",
         )
         return saved
-
-    def _set_number(self, episode_id: int, number: int | None) -> None:
-        with UnitOfWork(self._sf) as uow:
-            episode = uow.episodes.get(episode_id)
-            episode.number = number or None
-            uow.episodes.update(episode)
 
     @staticmethod
     def _item_title(uow: UnitOfWork, kind: LinkKind, item_id: int) -> str:
@@ -557,27 +557,21 @@ class EpisodeService:
         )
 
     # inverses ---------------------------------------------------------------------------
-    def _set_fields(
-        self, episode_id: int, values: tuple[str, EpisodeStatus, str, datetime]
-    ) -> None:
-        title, status, next_action, updated_at = values
+    def _put(self, episode_id: int, updated_at: datetime | None = None, **fields: object) -> None:
+        """Write fields back as an undo or redo had them, `updated_at` included (an undone
+        change must not leave the episode looking touched, nor stale)."""
         with UnitOfWork(self._sf) as uow:
             episode = uow.episodes.get(episode_id)
-            episode.title, episode.status, episode.next_action = title, status, next_action
-            episode.updated_at = updated_at
+            for name, value in fields.items():
+                setattr(episode, name, value)
+            if updated_at is not None:
+                episode.updated_at = updated_at
             uow.episodes.update(episode)
 
     def _set_tags(self, episode_id: int, tag_ids: set[int], updated_at: datetime) -> None:
         with UnitOfWork(self._sf) as uow:
             episode = uow.episodes.get(episode_id)
             episode.set_tags(_known_tags(uow, tag_ids))
-            episode.updated_at = updated_at
-            uow.episodes.update(episode)
-
-    def _set_status(self, episode_id: int, status: EpisodeStatus, updated_at: datetime) -> None:
-        with UnitOfWork(self._sf) as uow:
-            episode = uow.episodes.get(episode_id)
-            episode.status = status
             episode.updated_at = updated_at
             uow.episodes.update(episode)
 
@@ -619,29 +613,6 @@ class EpisodeService:
                     ids.discard(item_id)
                 elif (uow.voices if kind is LinkKind.VOICE else uow.idea_notes).find(item_id):
                     ids.add(item_id)  # one gone meanwhile has nothing to link back
-            episode.updated_at = updated_at
-            uow.episodes.update(episode)
-
-    def _set_publish(
-        self, episode_id: int, checklist: PublishChecklist, updated_at: datetime
-    ) -> None:
-        with UnitOfWork(self._sf) as uow:
-            episode = uow.episodes.get(episode_id)
-            episode.publish = checklist
-            episode.updated_at = updated_at
-            uow.episodes.update(episode)
-
-    def _set_brief(self, episode_id: int, brief: ScriptBrief, updated_at: datetime) -> None:
-        with UnitOfWork(self._sf) as uow:
-            episode = uow.episodes.get(episode_id)
-            episode.brief = brief
-            episode.updated_at = updated_at
-            uow.episodes.update(episode)
-
-    def _set_summary(self, episode_id: int, summary: str, updated_at: datetime) -> None:
-        with UnitOfWork(self._sf) as uow:
-            episode = uow.episodes.get(episode_id)
-            episode.write_summary(summary)
             episode.updated_at = updated_at
             uow.episodes.update(episode)
 
