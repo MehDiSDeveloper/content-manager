@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Collection
-from typing import Protocol
+from typing import Any, Protocol
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,6 +18,8 @@ class HasId(Protocol):
 class SqlRepository[E: HasId, R: Base](ABC):
     row_type: type[R]
     entity_name: str
+    # Loader options for every read of a row (how its relationships are fetched).
+    load_options: tuple[Any, ...] = ()
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -30,7 +32,7 @@ class SqlRepository[E: HasId, R: Base](ABC):
         """Copy entity state onto the row (the entity has already validated itself)."""
 
     def _row(self, entity_id: int) -> R:
-        row = self.session.get(self.row_type, entity_id)
+        row = self.session.get(self.row_type, entity_id, options=self.load_options)
         if row is None:
             raise NotFoundError(self.entity_name, entity_id)
         return row
@@ -39,11 +41,14 @@ class SqlRepository[E: HasId, R: Base](ABC):
         return self._to_domain(self._row(entity_id))
 
     def find(self, entity_id: int) -> E | None:
-        row = self.session.get(self.row_type, entity_id)
+        row = self.session.get(self.row_type, entity_id, options=self.load_options)
         return None if row is None else self._to_domain(row)
 
+    def _select(self) -> Any:
+        return select(self.row_type).options(*self.load_options)
+
     def list_all(self) -> list[E]:
-        rows = self.session.scalars(select(self.row_type).order_by(self.row_type.id))
+        rows = self.session.scalars(self._select().order_by(self.row_type.id))
         return [self._to_domain(row) for row in rows]
 
     def add(self, entity: E) -> E:

@@ -374,12 +374,7 @@ class EpisodeService:
     def episodes_with(self, kind: LinkKind, item_id: int) -> list[Episode]:
         """The episodes a voice / idea is used in, most recently worked on first."""
         with UnitOfWork(self._sf) as uow:
-            episodes = uow.episodes.list_all()
-        return [
-            e
-            for e in episodes
-            if item_id in (e.voice_ids if kind is LinkKind.VOICE else e.idea_note_ids)
-        ]
+            return uow.episodes.with_item(kind, item_id)
 
     def link_counts(self) -> dict[ItemRef, int]:
         """How many episodes each linked voice / idea is in (one query, for whole lists)."""
@@ -1130,7 +1125,7 @@ class VoiceService:
                 Detail.TAGS: len(voice.tag_ids),
                 Detail.NOTES: len(uow.timestamp_notes.list_for_voice(voice_id)),
                 Detail.TRANSCRIPT: int(uow.transcripts.for_voice(voice_id) is not None),
-                Detail.EPISODES: sum(voice_id in e.voice_ids for e in uow.episodes.list_all()),
+                Detail.EPISODES: len(uow.episodes.with_item(LinkKind.VOICE, voice_id)),
             }
 
     def name_conflicts(self, paths: Iterable[Path]) -> dict[Path, Voice]:

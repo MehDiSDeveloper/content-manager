@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select, text
+from sqlalchemy.orm import selectinload
 
 from podcast_workspace.domain.entities import (
     Episode,
@@ -185,6 +186,12 @@ class TagRepository(SqlRepository[Tag, TagRow]):
 class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
     row_type = EpisodeRow
     entity_name = "Episode"
+    # An episode holds its voices and ideas as ids: load just those, not the rows (an
+    # idea's whole text) and their tags. Anything else read later loads on access.
+    load_options = (
+        selectinload(EpisodeRow.voices).load_only(VoiceRow.id).lazyload(VoiceRow.tags),
+        selectinload(EpisodeRow.idea_notes).load_only(IdeaNoteRow.id).lazyload(IdeaNoteRow.tags),
+    )
 
     def _to_domain(self, row: EpisodeRow) -> Episode:
         return Episode(
@@ -240,8 +247,23 @@ class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
         return rows
 
     def list_all(self) -> list[Episode]:
-        rows = self.session.scalars(select(EpisodeRow).order_by(EpisodeRow.updated_at.desc()))
+        rows = self.session.scalars(self._select().order_by(EpisodeRow.updated_at.desc()))
         return [self._to_domain(row) for row in rows]
+
+    def with_item(self, kind: LinkKind, item_id: int) -> list[Episode]:
+        """The episodes holding this voice / idea, most recently changed first."""
+        table, column = (
+            (episode_voices, episode_voices.c.voice_id)
+            if kind is LinkKind.VOICE
+            else (episode_idea_notes, episode_idea_notes.c.idea_note_id)
+        )
+        query = (
+            self._select()
+            .join(table, table.c.episode_id == EpisodeRow.id)
+            .where(column == item_id)
+            .order_by(EpisodeRow.updated_at.desc())
+        )
+        return [self._to_domain(row) for row in self.session.scalars(query)]
 
     def count(self) -> int:
         return self.session.scalar(select(func.count()).select_from(EpisodeRow)) or 0
