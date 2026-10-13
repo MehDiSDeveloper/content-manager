@@ -316,18 +316,14 @@ class EpisodesPage(ListPage):
         self.season_card.hide()
         side.insertWidget(3, self.season_card)
 
-    def _fill_seasons(self, episodes: list[Episode] | None = None) -> None:
+    def _fill_seasons(self) -> None:
         """Rebuild the season box: all, each season with its count, then the unfiled."""
         try:
             self._seasons = self._ws.seasons.list_all()
-            if episodes is None:
-                episodes = self._ws.episodes.list_all()
+            counts = self._ws.episodes.season_counts()
         except Exception:
             log_swallowed("season box")
             return
-        counts: dict[int | None, int] = {}
-        for episode in episodes:
-            counts[episode.season_id] = counts.get(episode.season_id, 0) + 1
         known = {s.id for s in self._seasons}
         if self._season not in (SEASON_ALL, SEASON_NONE) and int(self._season) not in known:
             self._season = SEASON_ALL  # the season was deleted (or undone) meanwhile
@@ -537,7 +533,7 @@ class EpisodesPage(ListPage):
     def rows(self) -> list[Row]:
         tags = tag_map(self._ws)
         episodes = self._ws.episodes.list_all()
-        self._fill_seasons(episodes)
+        self._fill_seasons()
         self._empty_text = {
             SEASON_ALL: strings.EPISODE_EMPTY,
             SEASON_NONE: strings.SEASON_NONE_EMPTY,

@@ -126,6 +126,15 @@ class EpisodeService:
         with UnitOfWork(self._sf) as uow:
             return uow.episodes.get(episode_id)
 
+    def count(self) -> int:
+        with UnitOfWork(self._sf) as uow:
+            return uow.episodes.count()
+
+    def season_counts(self) -> dict[int | None, int]:
+        """Season id (None: no season) -> how many episodes it holds."""
+        with UnitOfWork(self._sf) as uow:
+            return uow.episodes.season_counts()
+
     def open(self, episode_id: int) -> Episode:
         """Fetch and record that the user opened it (drives 'recently opened')."""
         with UnitOfWork(self._sf) as uow:
@@ -914,6 +923,10 @@ class IdeaService:
         with UnitOfWork(self._sf) as uow:
             return [i for i in uow.idea_notes.list_all() if scope.shows(i.archived)]
 
+    def count(self, scope: ArchiveScope) -> int:
+        with UnitOfWork(self._sf) as uow:
+            return uow.idea_notes.count(scope)
+
     def list_trashed(self) -> list[IdeaNote]:
         with UnitOfWork(self._sf) as uow:
             return uow.idea_notes.list_trashed()
@@ -1088,6 +1101,10 @@ class VoiceService:
         with UnitOfWork(self._sf) as uow:
             voices = uow.voices.list_all(include_trashed=include_trashed)
         return [v for v in voices if v.in_trash or scope.shows(v.archived)]
+
+    def count(self, scope: ArchiveScope) -> int:
+        with UnitOfWork(self._sf) as uow:
+            return uow.voices.count(scope)
 
     def list_trashed(self) -> list[Voice]:
         with UnitOfWork(self._sf) as uow:

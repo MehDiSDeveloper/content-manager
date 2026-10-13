@@ -649,10 +649,10 @@ class MainWindow(QMainWindow):
         """Item counts beside the nav labels: 'is there anything in here?' at a glance."""
         try:
             counts = [
-                len(self._ws.episodes.list_all()),
+                self._ws.episodes.count(),
                 None,  # the board shows the same episodes
-                len(self._ws.voices.list_all(ArchiveScope.ACTIVE))
-                + len(self._ws.ideas.list_all(ArchiveScope.ACTIVE)),
+                self._ws.voices.count(ArchiveScope.ACTIVE)
+                + self._ws.ideas.count(ArchiveScope.ACTIVE),
                 self.source_page.pending_count(),  # files waiting to be reviewed
                 len(self._ws.tags.list_all()),
                 self._ws.trash.count() or None,  # an empty trash shows no number

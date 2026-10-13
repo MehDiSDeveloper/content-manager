@@ -20,6 +20,7 @@ from podcast_workspace.domain.entities import (
     Voice,
 )
 from podcast_workspace.domain.errors import NotFoundError
+from podcast_workspace.domain.lifecycle import ArchiveScope
 from podcast_workspace.domain.publish import PublishChecklist, PublishStep
 from podcast_workspace.domain.rules import MAX_TAGS_PER_ITEM, ensure_tag_limit
 from podcast_workspace.domain.script_brief import ScriptBrief
@@ -61,6 +62,24 @@ _USE_TABLES = (
     ("voices", "voice_tags", "voice_id", MAX_TAGS_PER_ITEM),
     ("idea_notes", "idea_note_tags", "idea_note_id", MAX_TAGS_PER_ITEM),
 )
+
+
+def _count_shelved(
+    session: Any, row: type[VoiceRow] | type[IdeaNoteRow], scope: ArchiveScope | None
+) -> int:
+    """How many voices / ideas the archive switch shows outside the trash; with no
+    scope, how many are in the trash."""
+    query = select(func.count()).select_from(row)
+    if scope is None:
+        query = query.where(row.deleted_at.is_not(None))
+    else:
+        query = query.where(row.deleted_at.is_(None))
+        if scope is not ArchiveScope.ALL:
+            archived = scope is ArchiveScope.ARCHIVED
+            query = query.where(
+                row.archived_at.is_not(None) if archived else row.archived_at.is_(None)
+            )
+    return session.scalar(query) or 0
 
 
 class TagRepository(SqlRepository[Tag, TagRow]):
@@ -224,6 +243,14 @@ class EpisodeRepository(SqlRepository[Episode, EpisodeRow]):
         rows = self.session.scalars(select(EpisodeRow).order_by(EpisodeRow.updated_at.desc()))
         return [self._to_domain(row) for row in rows]
 
+    def count(self) -> int:
+        return self.session.scalar(select(func.count()).select_from(EpisodeRow)) or 0
+
+    def season_counts(self) -> dict[int | None, int]:
+        """Season id (None: no season) -> how many episodes it holds."""
+        query = select(EpisodeRow.season_id, func.count()).group_by(EpisodeRow.season_id)
+        return {season_id: n for season_id, n in self.session.execute(query)}
+
     def link_counts(self) -> dict[tuple[LinkKind, int], int]:
         """How many episodes each voice / idea is linked to (only the linked ones)."""
         counts: dict[tuple[LinkKind, int], int] = {}
@@ -323,6 +350,10 @@ class VoiceRepository(SqlRepository[Voice, VoiceRow]):
             query = query.where(VoiceRow.deleted_at.is_(None))
         return [self._to_domain(row) for row in self.session.scalars(query)]
 
+    def count(self, scope: ArchiveScope | None) -> int:
+        """Outside the trash, as the switch shows them; None: in the trash."""
+        return _count_shelved(self.session, VoiceRow, scope)
+
     def list_trashed(self) -> list[Voice]:
         query = select(VoiceRow).where(VoiceRow.deleted_at.is_not(None))
         return [self._to_domain(row) for row in self.session.scalars(query)]
@@ -361,6 +392,10 @@ class IdeaNoteRepository(SqlRepository[IdeaNote, IdeaNoteRow]):
         if not include_trashed:
             query = query.where(IdeaNoteRow.deleted_at.is_(None))
         return [self._to_domain(row) for row in self.session.scalars(query)]
+
+    def count(self, scope: ArchiveScope | None) -> int:
+        """Outside the trash, as the switch shows them; None: in the trash."""
+        return _count_shelved(self.session, IdeaNoteRow, scope)
 
     def list_trashed(self) -> list[IdeaNote]:
         query = select(IdeaNoteRow).where(IdeaNoteRow.deleted_at.is_not(None))

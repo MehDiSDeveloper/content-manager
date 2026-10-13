@@ -133,6 +133,23 @@ def test_the_trash_hides_an_item_from_everything_but_itself(ws) -> None:
     assert ws.trash.list() == []
 
 
+def test_counts_agree_with_the_lists(ws) -> None:
+    """The sidebar counts with a query; it must say what the lists show."""
+    _active, archived, trashed = (ws.ideas.create(t) for t in ("یک", "دو", "سه"))
+    ws.ideas.set_archived(archived.id, True)
+    ws.ideas.delete(trashed.id)
+    kept, gone = _voice(ws, "a.wav"), _voice(ws, "b.wav")
+    ws.voices.set_archived(kept.id, True)
+    ws.voices.delete(gone.id)
+    for scope in ArchiveScope:
+        assert ws.ideas.count(scope) == len(ws.ideas.list_all(scope))
+        assert ws.voices.count(scope) == len(ws.voices.list_all(scope))
+    assert ws.trash.count() == len(ws.trash.list()) == 2
+    season_less = ws.episodes.create("قسمت")
+    assert ws.episodes.count() == 1
+    assert ws.episodes.season_counts() == {season_less.season_id: 1}
+
+
 def test_undo_takes_an_item_back_out_of_the_trash(ws) -> None:
     voice = _voice(ws)
     ws.voices.delete(voice.id)

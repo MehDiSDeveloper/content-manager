@@ -104,7 +104,7 @@ class TrashService:
 
     def count(self) -> int:
         with UnitOfWork(self._sf) as uow:
-            return len(uow.voices.list_trashed()) + len(uow.idea_notes.list_trashed())
+            return uow.voices.count(None) + uow.idea_notes.count(None)
 
     def restore(self, keys: Iterable[TrashKey]) -> int:
         """Back where they were — archived items back into the archive. Returns how many."""
