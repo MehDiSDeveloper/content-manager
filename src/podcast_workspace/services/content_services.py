@@ -145,6 +145,10 @@ class EpisodeService:
     def create(self, title: str, season_id: int | None = None) -> Episode:
         with UnitOfWork(self._sf) as uow:
             episode = uow.episodes.add(Episode(title=title, season_id=season_id))
+        return self._created(episode)
+
+    def _created(self, episode: Episode) -> Episode:
+        """Record a new episode for undo: taking it back removes it, links and all."""
         assert episode.id is not None
         snapshot = deepcopy(episode)
         self._history.record(
@@ -365,17 +369,7 @@ class EpisodeService:
                     idea_note_ids=idea_ids,
                 )
             )
-        assert episode.id is not None
-        snapshot = deepcopy(episode)
-        self._history.record(
-            ChangeKind.CREATE,
-            Target(TargetKind.EPISODE, episode.id),
-            undo=lambda: self._erase(snapshot.id),
-            redo=lambda: self._restore(snapshot, ()),
-            details=(episode.title,),
-            weight=len(episode.title),
-        )
-        return episode
+        return self._created(episode)
 
     def episodes_with(self, kind: LinkKind, item_id: int) -> list[Episode]:
         """The episodes a voice / idea is used in, most recently worked on first."""

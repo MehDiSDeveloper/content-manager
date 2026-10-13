@@ -175,12 +175,7 @@ class EpisodeLinksRow(QWidget):
         self.reload()
 
     def reload(self) -> None:
-        while self._flow.count():
-            item = self._flow.takeAt(0)
-            widget = item.widget() if item is not None else None
-            if widget is not None:
-                widget.setParent(None)  # gone now, not at the next turn of the event loop
-                widget.deleteLater()
+        self._flow.clear()
         episodes: list[Episode] = []
         if self._item is not None:
             try:

@@ -240,10 +240,7 @@ class FacetSearchBar(QWidget):
         self.changed.emit()
 
     def _render(self) -> None:
-        while self._flow.count():
-            item = self._flow.takeAt(0)
-            if item is not None and item.widget() is not None:
-                item.widget().deleteLater()
+        self._flow.clear()
         for phrase in self._phrases:
             chip = PhraseChip(phrase)
             chip.remove_requested.connect(self._unpin)

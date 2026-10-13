@@ -3,26 +3,16 @@
 import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QPainterPath, QPen
 
-from podcast_workspace.ui.icons import painted
+from podcast_workspace.ui.icons import canvas, painted
 
 ICON_SIZE = 20
-_SCALE = 3  # paint oversampled; Qt scales down per screen
-
-
-def _canvas() -> tuple[QPixmap, QPainter]:
-    pixmap = QPixmap(ICON_SIZE * _SCALE, ICON_SIZE * _SCALE)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.scale(_SCALE, _SCALE)
-    return pixmap, painter
 
 
 @painted
 def play_icon(color: QColor) -> QIcon:
-    pixmap, p = _canvas()
+    pixmap, p = canvas(ICON_SIZE)
     path = QPainterPath(QPointF(6, 3.5))
     path.lineTo(17, 10)
     path.lineTo(6, 16.5)
@@ -38,7 +28,7 @@ def play_icon(color: QColor) -> QIcon:
 
 @painted
 def pause_icon(color: QColor) -> QIcon:
-    pixmap, p = _canvas()
+    pixmap, p = canvas(ICON_SIZE)
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(color)
     p.drawRoundedRect(QRectF(5, 3.5, 3.6, 13), 1.2, 1.2)
@@ -50,7 +40,7 @@ def pause_icon(color: QColor) -> QIcon:
 @painted
 def skip_icon(color: QColor, clockwise: bool, label: str = "10") -> QIcon:
     """Circular arrow with the skip amount inside, turning clockwise or against it."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas(ICON_SIZE)
     center, radius = QPointF(10, 10.5), 7.2
     pen = QPen(color, 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
     p.setPen(pen)
@@ -81,7 +71,7 @@ def skip_icon(color: QColor, clockwise: bool, label: str = "10") -> QIcon:
 @painted
 def silence_icon(color: QColor) -> QIcon:
     """Two runs of waveform bars with arrows squeezing out the pause between them."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas(ICON_SIZE)
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(color)
     for x, height in ((1.6, 6.0), (4.2, 11.0), (14.2, 9.0), (16.8, 5.0)):
@@ -102,7 +92,7 @@ def silence_icon(color: QColor) -> QIcon:
 @painted
 def chevron_icon(color: QColor) -> QIcon:
     """A small downward chevron: «more settings» beside a button."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas(ICON_SIZE)
     p.setPen(
         QPen(color, 1.6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
     )
@@ -117,7 +107,7 @@ def chevron_icon(color: QColor) -> QIcon:
 @painted
 def volume_icon(color: QColor, waves: int) -> QIcon:
     """A speaker with 0–2 sound waves; `waves` < 0 draws it muted (a cross instead)."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas(ICON_SIZE)
     body = QPainterPath(QPointF(2.5, 7.6))
     body.lineTo(5.8, 7.6)
     body.lineTo(9.8, 4.0)

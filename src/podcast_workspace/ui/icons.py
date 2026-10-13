@@ -31,7 +31,7 @@ def painted[**P](paint: Callable[P, QIcon]) -> Callable[P, QIcon]:
     return icon
 
 
-def _canvas(size: int = NAV_ICON_SIZE) -> tuple[QPixmap, QPainter]:
+def canvas(size: int = NAV_ICON_SIZE) -> tuple[QPixmap, QPainter]:
     pixmap = QPixmap(size * _SCALE, size * _SCALE)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
@@ -52,7 +52,7 @@ def _stroke(painter: QPainter, color: QColor, width: float = 1.4) -> None:
 @painted
 def episodes_icon(color: QColor) -> QIcon:
     """Stacked cards: the episode list."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     _stroke(p, color)
     p.drawRoundedRect(QRectF(2.5, 5.5, 13, 10), 2, 2)
     p.drawLine(QPointF(4.5, 3.5), QPointF(13.5, 3.5))
@@ -65,7 +65,7 @@ def episodes_icon(color: QColor) -> QIcon:
 @painted
 def board_icon(color: QColor) -> QIcon:
     """Three kanban columns."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     _stroke(p, color)
     p.drawRoundedRect(QRectF(2.5, 3.5, 3.6, 11), 1.2, 1.2)
     p.drawRoundedRect(QRectF(7.2, 3.5, 3.6, 7.5), 1.2, 1.2)
@@ -77,7 +77,7 @@ def board_icon(color: QColor) -> QIcon:
 @painted
 def voices_icon(color: QColor) -> QIcon:
     """A waveform: five bars of different heights."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     _stroke(p, color, 1.6)
     for x, half in ((3.2, 2.2), (6.1, 5.0), (9.0, 6.6), (11.9, 4.0), (14.8, 1.8)):
         p.drawLine(QPointF(x, 9 - half), QPointF(x, 9 + half))
@@ -88,7 +88,7 @@ def voices_icon(color: QColor) -> QIcon:
 @painted
 def text_icon(color: QColor) -> QIcon:
     """Lines of writing: a text idea, beside the waveform of an audio one."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     _stroke(p, color, 1.6)
     for y, end in ((4.5, 15.0), (8.0, 15.0), (11.5, 15.0), (15.0, 10.0)):
         p.drawLine(QPointF(3.0, y), QPointF(end, y))
@@ -99,7 +99,7 @@ def text_icon(color: QColor) -> QIcon:
 @painted
 def folder_icon(color: QColor) -> QIcon:
     """A folder with a small waveform inside: the audio source folder."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     _stroke(p, color)
     path = QPainterPath(QPointF(2.5, 14.5))
     path.lineTo(2.5, 4.2)
@@ -118,7 +118,7 @@ def folder_icon(color: QColor) -> QIcon:
 @painted
 def ideas_icon(color: QColor) -> QIcon:
     """A lamp: the idea inbox."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     _stroke(p, color)
     p.drawArc(QRectF(4, 2, 10, 10), 0, 180 * 16)
     p.drawLine(QPointF(4, 7), QPointF(6.3, 11.2))
@@ -132,7 +132,7 @@ def ideas_icon(color: QColor) -> QIcon:
 @painted
 def tags_icon(color: QColor) -> QIcon:
     """A luggage tag with its hole."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     _stroke(p, color)
     path = QPainterPath(QPointF(8.6, 2.6))
     path.lineTo(15.2, 9.2)
@@ -149,7 +149,7 @@ def tags_icon(color: QColor) -> QIcon:
 @painted
 def trash_icon(color: QColor) -> QIcon:
     """A bin with its lid: the trash."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     _stroke(p, color)
     p.drawLine(QPointF(2.8, 4.6), QPointF(15.2, 4.6))
     p.drawLine(QPointF(7.2, 4.6), QPointF(7.6, 2.6))
@@ -169,7 +169,7 @@ def trash_icon(color: QColor) -> QIcon:
 @painted
 def settings_icon(color: QColor) -> QIcon:
     """Two sliders."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     _stroke(p, color)
     p.drawLine(QPointF(3, 6.2), QPointF(15, 6.2))
     p.drawLine(QPointF(3, 11.8), QPointF(15, 11.8))
@@ -183,7 +183,7 @@ def settings_icon(color: QColor) -> QIcon:
 @painted
 def theme_icon(color: QColor, dark: bool) -> QIcon:
     """A moon when the next theme is dark, a sun when it is light."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     _stroke(p, color)
     if dark:
         # A crescent is a disc with a second, offset disc taken out of it. Building it
@@ -214,7 +214,7 @@ def history_icon(color: QColor, forward: bool) -> QIcon:
 
     They sit undo-left, redo-right in every language, so the arrows point outwards.
     """
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     _stroke(p, color, 1.5)
     if forward:
         p.translate(NAV_ICON_SIZE, 0)
@@ -239,7 +239,7 @@ def back_icon(color: QColor, rtl: bool = True) -> QIcon:
     It points against the reading direction — right in Persian, left in English; the
     curved `history_icon` is undo's, and the two must not be mistaken for each other.
     """
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     _stroke(p, color, 1.5)
     if not rtl:
         p.translate(NAV_ICON_SIZE, 0)
@@ -255,7 +255,7 @@ def back_icon(color: QColor, rtl: bool = True) -> QIcon:
 
 @painted
 def search_icon(color: QColor) -> QIcon:
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     _stroke(p, color, 1.5)
     p.drawEllipse(QPointF(8, 7.8), 4.6, 4.6)
     p.drawLine(QPointF(11.5, 11.3), QPointF(15, 14.8))
@@ -266,7 +266,7 @@ def search_icon(color: QColor) -> QIcon:
 @painted
 def sidebar_icon(color: QColor, rtl: bool, collapse: bool) -> QIcon:
     """A window with its side rail, and a chevron saying which way the rail will move."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     _stroke(p, color, 1.4)
     if rtl:  # the rail sits on the right in RTL; draw for LTR and mirror
         p.translate(NAV_ICON_SIZE, 0)
@@ -286,7 +286,7 @@ def sidebar_icon(color: QColor, rtl: bool, collapse: bool) -> QIcon:
 @painted
 def list_pane_icon(color: QColor, rtl: bool, hidden: bool) -> QIcon:
     """Two panes side by side; the list pane is filled when it is showing."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     _stroke(p, color, 1.4)
     if rtl:
         p.translate(NAV_ICON_SIZE, 0)
@@ -307,7 +307,7 @@ def list_pane_icon(color: QColor, rtl: bool, hidden: bool) -> QIcon:
 @painted
 def more_icon(color: QColor) -> QIcon:
     """Three dots in a row: "more actions"."""
-    pixmap, p = _canvas()
+    pixmap, p = canvas()
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(color)
     for x in (4.2, 9, 13.8):

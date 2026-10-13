@@ -128,11 +128,25 @@ def text_key(idea_id: int) -> IdeaKey:
     return IdeaKey(IdeaKind.TEXT, idea_id)
 
 
-def _align_labels(*labels: QLabel) -> None:
-    """Field labels stacked in one column share its width, so the fields line up."""
-    width = max(label.sizeHint().width() for label in labels)
-    for label in labels:
-        label.setMinimumWidth(width)
+def _tags_and_episodes(
+    col: QVBoxLayout, workspace: Workspace, events: AppEvents
+) -> tuple[TagInput, EpisodeLinksRow]:
+    """An idea's «tags» row and, under it, the episodes it is in, labels lined up."""
+    row = QHBoxLayout()
+    row.setSpacing(10)
+    label = QLabel(strings.TAG_LABEL, objectName="fieldLabel")
+    label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+    row.addWidget(label)
+    tag_input = TagInput(workspace.tags, events, limit=MAX_TAGS_PER_ITEM)
+    row.addWidget(tag_input, 1)
+    col.addLayout(row)
+    episodes = EpisodeLinksRow(workspace)
+    # Stacked field labels share the column's width, so the fields line up.
+    width = max(label.sizeHint().width(), episodes.label.sizeHint().width())
+    label.setMinimumWidth(width)
+    episodes.label.setMinimumWidth(width)
+    col.addWidget(episodes)
+    return tag_input, episodes
 
 
 class ShelfControls:
@@ -331,18 +345,8 @@ class VoicePane(QWidget):
         meta_row.addWidget(self.path, 2)
         col.addLayout(meta_row)
 
-        tags_row = QHBoxLayout()
-        tags_row.setSpacing(10)
-        tag_label = QLabel(strings.TAG_LABEL, objectName="fieldLabel")
-        tag_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
-        tags_row.addWidget(tag_label)
-        self.tag_input = TagInput(workspace.tags, events, limit=MAX_TAGS_PER_ITEM)
+        self.tag_input, self.episodes = _tags_and_episodes(col, workspace, events)
         self.tag_input.tags_changed.connect(self._save_tags)
-        tags_row.addWidget(self.tag_input, 1)
-        col.addLayout(tags_row)
-        self.episodes = EpisodeLinksRow(workspace)
-        _align_labels(tag_label, self.episodes.label)
-        col.addWidget(self.episodes)
 
         self.player = PlayerWidget(player)
         self.player.exact_duration.connect(self._store_exact_duration)
@@ -472,18 +476,8 @@ class TextPane(QWidget):
         self.text.setTabChangesFocus(True)
         self.text.textChanged.connect(self._schedule_save)
         col.addWidget(self.text, 1)
-        tags_row = QHBoxLayout()
-        tags_row.setSpacing(10)
-        tag_label = QLabel(strings.TAG_LABEL, objectName="fieldLabel")
-        tag_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
-        tags_row.addWidget(tag_label)
-        self.tag_input = TagInput(workspace.tags, events, limit=MAX_TAGS_PER_ITEM)
+        self.tag_input, self.episodes = _tags_and_episodes(col, workspace, events)
         self.tag_input.tags_changed.connect(self._save_tags)
-        tags_row.addWidget(self.tag_input, 1)
-        col.addLayout(tags_row)
-        self.episodes = EpisodeLinksRow(workspace)
-        _align_labels(tag_label, self.episodes.label)
-        col.addWidget(self.episodes)
         bottom = QHBoxLayout()
         bottom.setSpacing(10)
         self.meta = ElidedLabel(objectName="muted")  # shortens rather than push the buttons out
@@ -1123,11 +1117,7 @@ class IdeasPage(ShelfListPage):
         if self._jobs.batching:
             self._jobs.stop()
             return
-        if not whisper_installed():
-            self.status.setText(strings.TR_NOT_INSTALLED)
-            return
-        if self._ws.transcripts.model_path() is None:
-            self.status.setText(strings.TR_MODEL_MISSING)
+        if not self._can_transcribe():
             return
         done = self._ws.transcripts.voice_ids()
         todo = [
@@ -1298,12 +1288,18 @@ class IdeasPage(ShelfListPage):
         ]
         return todo, len(voice_ids & done)
 
-    def transcribe_selected(self) -> None:
+    def _can_transcribe(self) -> bool:
+        """faster-whisper and a model are there; if not, the status line says which."""
         if not whisper_installed():
             self.status.setText(strings.TR_NOT_INSTALLED)
-            return
+            return False
         if self._ws.transcripts.model_path() is None:
             self.status.setText(strings.TR_MODEL_MISSING)
+            return False
+        return True
+
+    def transcribe_selected(self) -> None:
+        if not self._can_transcribe():
             return
         voice_ids = {k.item_id for k in self.selected_keys() if k.kind is IdeaKind.AUDIO}
         todo, skipped = self._to_transcribe(voice_ids)

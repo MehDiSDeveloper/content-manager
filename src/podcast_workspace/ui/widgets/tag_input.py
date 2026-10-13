@@ -85,10 +85,7 @@ class TagInput(QWidget):
         return self._limit is not None and len(self._ids) >= self._limit
 
     def _render(self) -> None:
-        while self._flow.count():
-            item = self._flow.takeAt(0)
-            if item is not None and item.widget() is not None:
-                item.widget().deleteLater()
+        self._flow.clear()
         by_id = {t.id: t for t in self._tags.by_ids(self._ids)}
         self._ids = [i for i in self._ids if i in by_id]  # a tag may have been deleted/merged
         for tag_id in self._ids:

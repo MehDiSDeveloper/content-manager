@@ -23,6 +23,15 @@ class FlowLayout(QLayout):
     def takeAt(self, index: int) -> QLayoutItem | None:
         return self._items.pop(index) if 0 <= index < len(self._items) else None
 
+    def clear(self) -> None:
+        """Remove every widget for a rebuild. Each leaves its parent at once: one only
+        deleteLater()'d is still painted, over its replacement, until the event loop turns."""
+        while self._items:
+            widget = self._items.pop().widget()  # before setParent: then the item lets go
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+
     def expandingDirections(self) -> Qt.Orientation:
         return Qt.Orientation(0)
 
