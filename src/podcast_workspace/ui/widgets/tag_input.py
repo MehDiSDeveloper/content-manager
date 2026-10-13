@@ -56,9 +56,9 @@ class TagInput(QWidget):
         self.edit.installEventFilter(self)
         row.addWidget(self.edit, 1)
         self._counter = QLabel(objectName="muted")
-        self._counter.setVisible(limit is not None)
         row.addWidget(self._counter)
         col.addLayout(row)
+        self._counter.setVisible(limit is not None)  # parented first, or it opens a window
 
         self._list = SuggestionList()
         self._list.setVisible(False)

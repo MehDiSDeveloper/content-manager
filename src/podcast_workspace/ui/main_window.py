@@ -174,8 +174,8 @@ class NavButton(QPushButton):
         self.count.setFont(count_font)
         row.addWidget(self.count)
         self.keys = KeyHint(keys)
-        self.keys.setVisible(bool(keys))
         row.addWidget(self.keys)
+        self.keys.setVisible(bool(keys))  # once in the row: shown parentless, it is a window
         for child in (self.glyph, self.label, self.count):
             child.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.toggled.connect(self._restyle)
