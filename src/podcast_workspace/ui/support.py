@@ -224,12 +224,12 @@ class _Task(QRunnable):
 _live_relays: set[_Relay] = set()
 
 
-def run_async(
+def _task(
     fn: Callable[[], Any],
     on_done: Callable[[Any], None],
     on_failed: Callable[[BaseException], None],
-) -> None:
-    """Run `fn` on the global thread pool; callbacks run on the GUI thread."""
+) -> _Task:
+    """`fn` wrapped to report back on the GUI thread; the relay lives until it has."""
     relay = _Relay()
     _live_relays.add(relay)
 
@@ -239,7 +239,16 @@ def run_async(
 
     relay.done.connect(lambda value: finish(on_done, value))
     relay.failed.connect(lambda exc: finish(on_failed, exc))
-    QThreadPool.globalInstance().start(_Task(fn, relay))
+    return _Task(fn, relay)
+
+
+def run_async(
+    fn: Callable[[], Any],
+    on_done: Callable[[Any], None],
+    on_failed: Callable[[BaseException], None],
+) -> None:
+    """Run `fn` on the global thread pool; callbacks run on the GUI thread."""
+    QThreadPool.globalInstance().start(_task(fn, on_done, on_failed))
 
 
 def run_detached(
@@ -249,13 +258,4 @@ def run_detached(
 ) -> None:
     """Like run_async, but on a daemon thread: for work that cannot be cancelled (a model
     download) and must not keep the app from exiting, as the thread pool would."""
-    relay = _Relay()
-    _live_relays.add(relay)
-
-    def finish(callback: Callable[[Any], None], value: Any) -> None:
-        _live_relays.discard(relay)
-        callback(value)
-
-    relay.done.connect(lambda value: finish(on_done, value))
-    relay.failed.connect(lambda exc: finish(on_failed, exc))
-    threading.Thread(target=_Task(fn, relay).run, daemon=True).start()
+    threading.Thread(target=_task(fn, on_done, on_failed).run, daemon=True).start()
