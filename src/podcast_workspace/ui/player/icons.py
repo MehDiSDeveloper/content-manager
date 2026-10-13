@@ -5,6 +5,8 @@ import math
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
 
+from podcast_workspace.ui.icons import painted
+
 ICON_SIZE = 20
 _SCALE = 3  # paint oversampled; Qt scales down per screen
 
@@ -18,6 +20,7 @@ def _canvas() -> tuple[QPixmap, QPainter]:
     return pixmap, painter
 
 
+@painted
 def play_icon(color: QColor) -> QIcon:
     pixmap, p = _canvas()
     path = QPainterPath(QPointF(6, 3.5))
@@ -33,6 +36,7 @@ def play_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def pause_icon(color: QColor) -> QIcon:
     pixmap, p = _canvas()
     p.setPen(Qt.PenStyle.NoPen)
@@ -43,6 +47,7 @@ def pause_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def skip_icon(color: QColor, clockwise: bool, label: str = "10") -> QIcon:
     """Circular arrow with the skip amount inside, turning clockwise or against it."""
     pixmap, p = _canvas()
@@ -73,6 +78,7 @@ def skip_icon(color: QColor, clockwise: bool, label: str = "10") -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def silence_icon(color: QColor) -> QIcon:
     """Two runs of waveform bars with arrows squeezing out the pause between them."""
     pixmap, p = _canvas()
@@ -93,6 +99,7 @@ def silence_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def chevron_icon(color: QColor) -> QIcon:
     """A small downward chevron: «more settings» beside a button."""
     pixmap, p = _canvas()
@@ -107,6 +114,7 @@ def chevron_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def volume_icon(color: QColor, waves: int) -> QIcon:
     """A speaker with 0–2 sound waves; `waves` < 0 draws it muted (a cross instead)."""
     pixmap, p = _canvas()

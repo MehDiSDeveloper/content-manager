@@ -4,11 +4,31 @@ Same approach as `ui/player/icons.py`: no image assets, crisp at any DPI, correc
 both themes. Callers repaint on QEvent.Type.PaletteChange.
 """
 
+from collections.abc import Callable
+from functools import wraps
+
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 
 NAV_ICON_SIZE = 18
 _SCALE = 3
+
+
+def painted[**P](paint: Callable[P, QIcon]) -> Callable[P, QIcon]:
+    """Paint each icon once per colour and arguments: a list of 700 ideas otherwise
+    paints 700 identical pixmaps on every reload. The colours come from the two themes,
+    so the cache stays small."""
+    cache: dict[tuple[object, ...], QIcon] = {}
+
+    @wraps(paint)
+    def icon(*args: P.args, **kwargs: P.kwargs) -> QIcon:
+        key = tuple(a.rgba() if isinstance(a, QColor) else a for a in args)
+        key += tuple(sorted(kwargs.items()))
+        if key not in cache:
+            cache[key] = paint(*args, **kwargs)
+        return cache[key]
+
+    return icon
 
 
 def _canvas(size: int = NAV_ICON_SIZE) -> tuple[QPixmap, QPainter]:
@@ -29,6 +49,7 @@ def _stroke(painter: QPainter, color: QColor, width: float = 1.4) -> None:
     painter.setBrush(Qt.BrushStyle.NoBrush)
 
 
+@painted
 def episodes_icon(color: QColor) -> QIcon:
     """Stacked cards: the episode list."""
     pixmap, p = _canvas()
@@ -41,6 +62,7 @@ def episodes_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def board_icon(color: QColor) -> QIcon:
     """Three kanban columns."""
     pixmap, p = _canvas()
@@ -52,6 +74,7 @@ def board_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def voices_icon(color: QColor) -> QIcon:
     """A waveform: five bars of different heights."""
     pixmap, p = _canvas()
@@ -62,6 +85,7 @@ def voices_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def text_icon(color: QColor) -> QIcon:
     """Lines of writing: a text idea, beside the waveform of an audio one."""
     pixmap, p = _canvas()
@@ -72,6 +96,7 @@ def text_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def folder_icon(color: QColor) -> QIcon:
     """A folder with a small waveform inside: the audio source folder."""
     pixmap, p = _canvas()
@@ -90,6 +115,7 @@ def folder_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def ideas_icon(color: QColor) -> QIcon:
     """A lamp: the idea inbox."""
     pixmap, p = _canvas()
@@ -103,6 +129,7 @@ def ideas_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def tags_icon(color: QColor) -> QIcon:
     """A luggage tag with its hole."""
     pixmap, p = _canvas()
@@ -119,6 +146,7 @@ def tags_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def trash_icon(color: QColor) -> QIcon:
     """A bin with its lid: the trash."""
     pixmap, p = _canvas()
@@ -138,6 +166,7 @@ def trash_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def settings_icon(color: QColor) -> QIcon:
     """Two sliders."""
     pixmap, p = _canvas()
@@ -151,6 +180,7 @@ def settings_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def theme_icon(color: QColor, dark: bool) -> QIcon:
     """A moon when the next theme is dark, a sun when it is light."""
     pixmap, p = _canvas()
@@ -178,6 +208,7 @@ def theme_icon(color: QColor, dark: bool) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def history_icon(color: QColor, forward: bool) -> QIcon:
     """A curved arrow: back (left) for undo, forward (mirrored, right) for redo.
 
@@ -201,6 +232,7 @@ def history_icon(color: QColor, forward: bool) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def back_icon(color: QColor, rtl: bool = True) -> QIcon:
     """A plain arrow for "the page before".
 
@@ -221,6 +253,7 @@ def back_icon(color: QColor, rtl: bool = True) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def search_icon(color: QColor) -> QIcon:
     pixmap, p = _canvas()
     _stroke(p, color, 1.5)
@@ -230,6 +263,7 @@ def search_icon(color: QColor) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def sidebar_icon(color: QColor, rtl: bool, collapse: bool) -> QIcon:
     """A window with its side rail, and a chevron saying which way the rail will move."""
     pixmap, p = _canvas()
@@ -249,6 +283,7 @@ def sidebar_icon(color: QColor, rtl: bool, collapse: bool) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def list_pane_icon(color: QColor, rtl: bool, hidden: bool) -> QIcon:
     """Two panes side by side; the list pane is filled when it is showing."""
     pixmap, p = _canvas()
@@ -269,6 +304,7 @@ def list_pane_icon(color: QColor, rtl: bool, hidden: bool) -> QIcon:
     return QIcon(pixmap)
 
 
+@painted
 def more_icon(color: QColor) -> QIcon:
     """Three dots in a row: "more actions"."""
     pixmap, p = _canvas()
