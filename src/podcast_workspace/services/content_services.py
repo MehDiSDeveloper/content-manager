@@ -930,6 +930,13 @@ class IdeaService:
         with UnitOfWork(self._sf) as uow:
             return uow.idea_notes.count(scope)
 
+    def by_ids(self, idea_ids: Iterable[int]) -> list[IdeaNote]:
+        """These ideas (outside the trash), in `list_all` order."""
+        with UnitOfWork(self._sf) as uow:
+            ideas = uow.idea_notes.by_ids(set(idea_ids))
+        kept = [i for i in ideas if not i.in_trash]
+        return sorted(kept, key=lambda i: i.updated_at, reverse=True)
+
     def list_trashed(self) -> list[IdeaNote]:
         with UnitOfWork(self._sf) as uow:
             return uow.idea_notes.list_trashed()
@@ -1108,6 +1115,13 @@ class VoiceService:
     def count(self, scope: ArchiveScope) -> int:
         with UnitOfWork(self._sf) as uow:
             return uow.voices.count(scope)
+
+    def by_ids(self, voice_ids: Iterable[int]) -> list[Voice]:
+        """These voices (outside the trash), in `list_all` order."""
+        with UnitOfWork(self._sf) as uow:
+            voices = uow.voices.by_ids(set(voice_ids))
+        kept = [v for v in voices if not v.in_trash]
+        return sorted(kept, key=lambda v: v.imported_at, reverse=True)
 
     def list_trashed(self) -> list[Voice]:
         with UnitOfWork(self._sf) as uow:

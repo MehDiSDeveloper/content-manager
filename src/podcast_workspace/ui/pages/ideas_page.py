@@ -1184,8 +1184,8 @@ class IdeasPage(ShelfListPage):
         keys = self.selected_keys()
         voice_ids = {k.item_id for k in keys if k.kind is IdeaKind.AUDIO}
         idea_ids = {k.item_id for k in keys if k.kind is IdeaKind.TEXT}
-        archived = [v.archived for v in self._ws.voices.list_all() if v.id in voice_ids]
-        archived += [i.archived for i in self._ws.ideas.list_all() if i.id in idea_ids]
+        archived = [v.archived for v in self._ws.voices.by_ids(voice_ids)]
+        archived += [i.archived for i in self._ws.ideas.by_ids(idea_ids)]
         if self.detail.currentWidget() is not self.selection_pane:
             self.flush()
             self.clear_editor()  # nothing plays from a pane that is not on screen
@@ -1290,9 +1290,8 @@ class IdeasPage(ShelfListPage):
         done = self._ws.transcripts.voice_ids()
         todo = [
             v.id
-            for v in self._ws.voices.list_all()
-            if v.id in voice_ids
-            and v.id not in done
+            for v in self._ws.voices.by_ids(voice_ids)
+            if v.id not in done
             and v.id != self._jobs.running
             and not self._jobs.is_queued(v.id)
             and Path(v.file_path).is_file()
