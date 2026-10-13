@@ -3,16 +3,21 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import Connection, Engine, create_engine, event
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from podcast_workspace.domain.text import normalize_for_index
 
+if TYPE_CHECKING:
+    from alembic.config import Config
+
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+# The newest migration. A database already there skips Alembic altogether (importing it
+# costs most of a second at every start). A new migration updates this; a test checks it.
+HEAD_REVISION = "f5c2a8d1e7b4"
 
 
 def _on_connect(dbapi_connection: Any, _record: Any) -> None:
@@ -36,7 +41,9 @@ def engine_for_file(path: Path) -> Engine:
     return create_sqlite_engine(f"sqlite:///{path.as_posix()}")
 
 
-def alembic_config(url: str | None = None) -> Config:
+def alembic_config(url: str | None = None) -> "Config":
+    from alembic.config import Config
+
     config = Config()
     config.set_main_option("script_location", str(MIGRATIONS_DIR))
     if url:
@@ -67,8 +74,21 @@ def migration_connection(engine: Engine) -> Iterator[Connection]:
             connection.commit()
 
 
+def current_revision(engine: Engine) -> str | None:
+    """The revision the database is at; None for a new (empty) one."""
+    with engine.connect() as connection:
+        try:
+            return connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar()
+        except OperationalError:  # no alembic_version table yet
+            return None
+
+
 def migrate(engine: Engine) -> None:
     """Upgrade the database behind `engine` to the latest revision."""
+    if current_revision(engine) == HEAD_REVISION:
+        return
+    from alembic import command
+
     config = alembic_config()
     with migration_connection(engine) as connection:
         config.attributes["connection"] = connection
