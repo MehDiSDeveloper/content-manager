@@ -18,7 +18,8 @@ Local Windows desktop app (Python 3.12, PySide6) for a solo Persian podcaster.
 
 ## Rules
 - Layers: `domain/` (pure) → `repositories/` (SQLAlchemy) → `services/` → `ui/` (PySide6). The UI only calls services.
-- A schema change needs an Alembic migration in `repositories/migrations/versions/`.
+- A schema change needs an Alembic migration in `repositories/migrations/versions/`, and `HEAD_REVISION` in `repositories/db.py` set to it.
+- Data access: count and find with queries, never `len(list_all())` or filtering `list_all()` in Python; no per-row queries. See «Performance (v1.25)» in `PROJECT_LOG.md`.
 - Multi-line text boxes are `ui/widgets/text_editor.TextEditor` (per-paragraph RTL/LTR), never QPlainTextEdit.
 - UI text lives in `ui/strings.py` and `ui/strings_en.py`, with the same names in both.
 - Never write the real data folder (`%APPDATA%\PodcastWorkspace`) while testing. Set `PODCAST_WORKSPACE_HOME` to a temp folder.
