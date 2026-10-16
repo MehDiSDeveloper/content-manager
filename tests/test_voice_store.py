@@ -71,6 +71,15 @@ def test_a_new_take_under_a_reused_name_is_offered_again(ws, recorder) -> None:
     assert [f.name for f in ws.source.pending()] == ["take.wav"]
 
 
+def test_only_the_folders_own_files_are_listed_not_its_subfolders(ws, recorder) -> None:
+    ws.source.set_folder(recorder)
+    _wav(recorder / "take.wav")
+    episode = recorder / "episode 1"
+    episode.mkdir()
+    _wav(episode / "kept apart.wav")
+    assert [f.name for f in ws.source.pending()] == ["take.wav"]
+
+
 def test_a_namesake_comes_in_numbered_unless_told_otherwise(ws, tmp_path) -> None:
     first = ws.voices.import_files([_wav(tmp_path / "a.wav")]).imported[0]
     other = tmp_path / "other"

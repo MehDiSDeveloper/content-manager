@@ -53,7 +53,7 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
 - Idea inbox hotkey: `ui/hotkey.py` (RegisterHotKey, Ctrl+Alt+I), `ui/idea_inbox.py`
 - Recorder handoff: `services/recording.py` (os.startfile of the configured program); Ctrl+R is a MainWindow shortcut, so it works on every page
 - Shortcuts: app-wide ones in `MainWindow._install_shortcuts`, shown as keycaps (`ui/widgets/key_hint.py`: `KeyHint` beside a button, `attach_key_hint` inside an empty line edit, `NavButton(keys=…)` in the sidebar)
-- Audio folder (review before import): `services/source_folder.py` (scan, add), `ui/pages/source_page.py` (QFileSystemWatcher on the folder + subfolders, 400 ms debounce). Setting `voices.source_folder`
+- Audio folder (review before import): `services/source_folder.py` (scan, add), `ui/pages/source_page.py` (QFileSystemWatcher on the folder only, 400 ms debounce). Setting `voices.source_folder`
 - Seasons: `SeasonService` in `services/content_services.py`, `EpisodeService.set_season`; the season box over the Episodes list (`ui/pages/content_pages.py`, choice kept in `ui.episode_season_filter`) and beside the status in the workspace; name prompts in `ui/seasons.py`
 - Archive / trash: rules in `domain/lifecycle.py` (ArchiveScope, 30-day period, tested in `test_archive_trash.py`); `set_archived` / `delete` (= move to trash) in `IdeaService` / `VoiceService`; `services/trash.py` (list, restore, purge, purge_expired); `ShelfListPage` in `ui/pages/content_pages.py`; switch widget `ui/widgets/scope_switch.py`; `ui/pages/trash_page.py`; hourly purge timer in MainWindow
 - Bale bot: `integrations/bale_api.py` (HTTP), `domain/bot_input.py` (hashtag/tag-list parsing), `services/bale_bot.py` (worker + conversation), `ui/bot_controller.py` (Qt relay)
@@ -81,6 +81,8 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
   a voice removed from the workspace reappears there. No tagging before adding, on purpose:
   that page is for deciding, the Voices page for working. Rows use per-session int ids keyed
   by path; the player gets negative ids so they never collide with a voice's
+- Audio folder, only its own files: subfolders are not read or watched, so the user can keep
+  files apart (e.g. an «episode 1» folder inside it) without them showing in the app.
 - Seasons (v1.5): a flat, optional grouping — one season per episode.
   The Episodes list filters by season rather than growing section headers, so selection,
   filter box and Back keep working unchanged; an episode opened from elsewhere switches the

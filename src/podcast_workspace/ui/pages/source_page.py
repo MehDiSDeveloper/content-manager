@@ -160,17 +160,17 @@ class SourcePage(ListPage):
 
     # the folder --------------------------------------------------------------------------
     def _watch(self) -> None:
-        """Follow the folder and its subfolders, so a file saved by the recorder shows up
-        without the user asking for it."""
+        """Follow the folder, so a file saved by the recorder shows up without the user
+        asking for it. Its subfolders are not read, so they are not watched."""
         watched = self._watcher.directories()
         if watched:
             self._watcher.removePaths(watched)
-        folders = [str(p) for p in self._ws.source.subfolders()]
-        if folders:
-            self._watcher.addPaths(folders)
+        folder = self._ws.source.folder()
+        if folder is not None and folder.is_dir():
+            self._watcher.addPath(str(folder))
 
     def _on_folder_changed(self) -> None:
-        self._watch()  # a new subfolder needs watching too
+        self._watch()  # the folder may have been made again
         self.pending_changed.emit()
         if self.isVisible() and not self._busy:
             self.refresh()
