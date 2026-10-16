@@ -72,6 +72,7 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
 - Errors: `show_error` (`ui/support.py`) logs a traceback to app.log for anything that is not a `DomainError`; a handler that must stay quiet calls `log_swallowed(what)`; "the item is gone" is caught as `NotFoundError`, never `Exception`
 - Shell chrome: `ui/main_window.py` (sidebar = title + search + nav + undo/redo + settings/theme), nav/chrome icons painted in `ui/icons.py`
 - Tests (essential only): tag_matching, tag_limit, activation_window, smart_link_ranking, undo_history, list_filter, navigation_history, publish_checklist, idea_to_episode (plus the feature tests beside them)
+- Demo workspace for promo videos: `scripts/seed_demo.py` (its own data folder, removed with `--remove`; commands in CLAUDE.md). The capture that uses it is `G:\Repos\promo\podcast-workspace\capture.py`. The release in promo file names is this file's heading (v1.25), since `__version__` is still the placeholder 1.0.0
 
 ## Key decisions (why)
 - Audio folder (v1.5): the folder is read, never mirrored into the database. A file becomes a
