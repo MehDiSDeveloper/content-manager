@@ -616,11 +616,8 @@ class _Worker(threading.Thread):
         return question
 
     def _receive_spoken_name(self, chat_id: int, question: int, audio: dict[str, Any]) -> None:
-        """A short voice is the name: transcribe it here, keep nothing of it."""
-        seconds = audio.get("duration")
-        if seconds is not None and float(seconds) > MAX_NAME_VOICE_S:
-            self._send(chat_id, T_NAME_TOO_LONG)
-            return
+        """A short voice is the name: transcribe it here, keep nothing of it. Its length is
+        measured on the file: Bale's own `duration` is not in seconds (a 4 s voice failed)."""
         transcripts = self._svc._transcripts
         if not transcripts.can_transcribe():
             self._send(chat_id, T_NAME_NO_MODEL)
@@ -629,7 +626,7 @@ class _Worker(threading.Thread):
         if clip is None:
             return
         try:
-            if seconds is None and probe(clip).duration_ms > MAX_NAME_VOICE_S * 1000:
+            if probe(clip).duration_ms > MAX_NAME_VOICE_S * 1000:
                 self._send(chat_id, T_NAME_TOO_LONG)
                 return
             self._edit(chat_id, question, T_NAME_LISTENING)

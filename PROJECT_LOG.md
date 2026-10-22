@@ -195,7 +195,8 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
     question also asks for a name, and the next message answers it. Text → the name (its
     hashtags → tags); a voice ≤15 s → transcribed on the spot by `TranscriptionService.transcribe_clip`
     (same Whisper model, nothing stored, clip deleted); a longer one is refused in Bale and the
-    question keeps waiting. Name cut to 100 chars or less if the path would pass 240; a clash
+    question keeps waiting. The length is measured on the downloaded file (`probe`): Bale's
+    `duration` field is not in seconds, and trusting it refused 2–4 s voices. Name cut to 100 chars or less if the path would pass 240; a clash
     becomes «name 02». «بی‌نام اضافه شود» keeps the old date name. No model → asks to type it.
     `_ChatState.awaiting_name`; /cancel, /search and «برچسب دلخواه» end the wait. Tested in
     `test_bale_bot_voice_name.py`

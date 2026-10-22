@@ -48,7 +48,7 @@ class FakeClient:
         return {"file_path": f"{file_id}.wav"}
 
     def download(self, file_path: str, target: Path) -> None:
-        _wav(target)
+        _wav(target, LENGTHS.get(Path(file_path).stem, 1))
 
 
 @pytest.fixture
@@ -70,10 +70,15 @@ def bot(ws):
 
 
 CHAT = {"id": OWNER, "type": "private"}
+LENGTHS: dict[str, float] = {}  # file_id -> seconds of the file Bale hands over
 
 
-def voice(file_id: str = "v", seconds: int = 40) -> dict[str, Any]:
-    return {"message": {"chat": CHAT, "voice": {"file_id": file_id, "duration": seconds}}}
+def voice(file_id: str = "v", seconds: float = 40) -> dict[str, Any]:
+    """Bale's `duration` is not in seconds (a 4 s voice came as far more), so the bot must
+    measure the file; here it is sent in ms to keep that honest."""
+    LENGTHS[file_id] = seconds
+    meta = {"file_id": file_id, "duration": int(seconds * 1000)}
+    return {"message": {"chat": CHAT, "voice": meta}}
 
 
 def text(body: str) -> dict[str, Any]:
@@ -100,7 +105,7 @@ def test_a_short_spoken_name_is_transcribed_and_leaves_no_clip(ws, bot, monkeypa
     worker, _ = bot
     hear(ws, monkeypatch, " ایدهٔ خواب. ")
     worker._handle(voice("idea"))
-    worker._handle(voice("name", seconds=4))
+    worker._handle(voice("name", seconds=2.5))
     [saved] = ws.voices.list_all()
     assert Path(saved.file_path).stem == "ایدهٔ خواب"
     assert [p.name for p in Path(saved.file_path).parent.iterdir()] == ["ایدهٔ خواب.wav"]
