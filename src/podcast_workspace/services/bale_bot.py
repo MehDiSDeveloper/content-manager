@@ -9,6 +9,9 @@
   source folder (the same place a recorder like Audacity leaves takes), for later manual
   review; nothing is registered and no tags are asked for. Accepting imports it into the voice
   ideas (caption hashtags become tags, the rest of the caption a TimestampNote at 0:00).
+- Voice name: the save question also asks for a name. The next text (its hashtags become
+  tags) or a voice of up to 15 s (transcribed on the spot, nothing stored) is the name; it
+  saves the voice under that file name, cut to what fits. A longer voice is refused.
 - Tags: inline keyboard of the 20 most-used tags (toggle), or free text / hashtags, which go
   through TagService.resolve_or_create so no near-duplicate tag is ever created.
 - Search (`services/bale_search.py`): «؟ words #tag», /search, or «🔍 جستجو» under the save
@@ -50,7 +53,7 @@ from podcast_workspace.integrations.bale_api import (
     BaleUnauthorizedError,
 )
 from podcast_workspace.paths import bale_voices_dir
-from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS
+from podcast_workspace.services.audio_probe import SUPPORTED_EXTENSIONS, probe
 from podcast_workspace.services.bale_search import PREFIX as SEARCH_PREFIX
 from podcast_workspace.services.bale_search import SearchFlow
 from podcast_workspace.services.content_services import (
@@ -75,6 +78,9 @@ MAX_PENDING = 50
 SAVE_YES = "iy"
 SAVE_NO = "in"
 SAVE_SEARCH = "is"  # search for the text instead of saving it
+MAX_NAME_VOICE_S = 15
+MAX_NAME_CHARS = 100
+MAX_PATH_CHARS = 240  # stay clear of Windows' 260
 
 _MIME_EXTENSIONS = {
     "audio/ogg": ".ogg",
@@ -101,8 +107,9 @@ T_WELCOME = (
     "پیش از ذخیره می‌پرسم که ذخیره شود یا نه.\n"
     "• برچسب: روی دکمه‌ها بزنید یا نامش را با # بفرستید (مثلاً #روان_شناسی).\n"
     "• پیامی که فقط هشتگ دارد، به آخرین مورد برچسب می‌زند.\n"
+    "• پس از هر وویس نامش را می‌پرسم: بنویسید یا در وویسی تا ۱۵ ثانیه بگویید.\n"
     "• جستجو: پیام را با ؟ شروع کنید (مثلاً «؟ خواب #سلامت») یا /search را بزنید.\n"
-    "/cancel لغو انتظار برای برچسب یا جستجو"
+    "/cancel لغو انتظار برای نام، برچسب یا جستجو"
 )
 T_PRIVATE = "این بازو خصوصی است."
 T_ONLY_TEXT_AND_VOICE = "فقط پیام متنی (ایدهٔ متنی) و صوتی (ایدهٔ صوتی) ذخیره می‌شود."
@@ -135,8 +142,16 @@ T_TOO_LARGE = "حجم فایل بیش از ۲۰ مگابایت است و باز�
 T_UNSUPPORTED_AUDIO = "این قالب صوتی پشتیبانی نمی‌شود."
 T_VOICE_FAILED = "دریافت فایل صوتی ممکن نشد؛ دوباره بفرستید."
 T_SAVE_FAILED = "ذخیره ممکن نشد: {error}"
-T_IMPORT_ASK = "وویس دریافت شد. به کتابخانه اضافه شود؟"
-T_BUTTON_IMPORT_YES = "✅ اضافه شود"
+T_IMPORT_ASK = (
+    "🎙 وویس دریافت شد. نامش چه باشد؟\nنام را بنویسید، یا در وویسی کوتاه (تا ۱۵ ثانیه) بگویید."
+)
+T_BUTTON_IMPORT_YES = "✅ بی‌نام اضافه شود"
+T_NAME_TOO_LONG = "⏱ این وویس بیش از ۱۵ ثانیه است و برای نام طولانی است؛ نام کوتاه‌تری بگویید."
+T_NAME_LISTENING = "🎧 در حال تبدیل نام به متن…"
+T_NAME_NO_MODEL = (
+    "تبدیل گفتار به متن در برنامه آماده نیست (مدل را در تنظیمات دریافت کنید)؛ نام را بنویسید."
+)
+T_NAME_UNHEARD = "نامی شنیده نشد؛ دوباره بگویید یا بنویسید."
 T_TEXT_ASK = "ایدهٔ متنی ذخیره شود؟\n«{summary}»"
 T_BUTTON_SAVE_YES = "✅ ذخیره شود"
 T_BUTTON_NO = "❌ نه"
@@ -205,6 +220,7 @@ class _Prompt:
 class _PendingVoice:
     path: Path
     caption: str
+    tags: list[str] = field(default_factory=list)  # hashtags sent with its name
 
 
 @dataclass
@@ -217,6 +233,7 @@ class _ChatState:
     last_item: ItemRef | None = None
     awaiting_tags: ItemRef | None = None
     awaiting_query: bool = False  # after /search: the next text is what to look for
+    awaiting_name: int | None = None  # the voice question whose name the next message is
     active_prompt: _Prompt | None = None
     prompts: dict[int, _Prompt] = field(default_factory=dict)
     pending: dict[int, _PendingVoice | _PendingText] = field(default_factory=dict)  # by question
@@ -468,6 +485,7 @@ class _Worker(threading.Thread):
         if command == "/cancel":
             state.awaiting_tags = None
             state.awaiting_query = False
+            state.awaiting_name = None
             self._send(chat_id, T_CANCELLED)
         elif command == "/search":
             self._open_search_menu(chat_id)
@@ -490,6 +508,7 @@ class _Worker(threading.Thread):
     def _open_search_menu(self, chat_id: int) -> None:
         state = self._state(chat_id)
         state.awaiting_tags = None
+        state.awaiting_name = None
         state.awaiting_query = True
         self._search.menu(chat_id)
 
@@ -506,6 +525,13 @@ class _Worker(threading.Thread):
             state.awaiting_tags = None
             self._search.search(chat_id, query)
             return
+        question = self._naming(state)
+        if question is not None:
+            parsed = parse_message(text)
+            name = self._voice_name(parsed.text, state.pending[question].path.suffix)
+            if name:
+                self._save_named(chat_id, question, name, parsed.tags)
+                return
         if state.awaiting_tags is not None:
             target, state.awaiting_tags = state.awaiting_tags, None
             names = split_tag_list(text)
@@ -541,29 +567,111 @@ class _Worker(threading.Thread):
         self._send_prompt(chat_id, ref, T_IDEA_SAVED, report, message_id)
 
     def _receive_voice(self, chat_id: int, audio: dict[str, Any], caption: str) -> None:
+        state = self._state(chat_id)
+        question = self._naming(state)
+        if question is not None:
+            self._receive_spoken_name(chat_id, question, audio)
+            return
+        target = self._download(chat_id, audio)
+        if target is None:
+            return
+        pending = _PendingVoice(target, caption)
+        if self._ask_save(chat_id, pending, T_IMPORT_ASK, T_BUTTON_IMPORT_YES):
+            state.awaiting_name = next(k for k, v in state.pending.items() if v is pending)
+            state.awaiting_tags = None
+            state.awaiting_query = False
+
+    def _download(self, chat_id: int, audio: dict[str, Any]) -> Path | None:
+        """Fetch a voice into `bale_voices/`; None (the owner told why) if it can't be."""
         size = int(audio.get("file_size") or 0)
         if size > MAX_DOWNLOAD_BYTES:
             self._send(chat_id, T_TOO_LARGE)
-            return
+            return None
         try:
             info = self._client.get_file(str(audio["file_id"]))
             remote_path = str(info["file_path"])
         except (BaleError, KeyError, TypeError):
             log.warning("getFile failed", exc_info=True)
             self._send(chat_id, T_VOICE_FAILED)
-            return
+            return None
         suffix = self._suffix_for(audio, remote_path)
         if suffix is None:
             self._send(chat_id, T_UNSUPPORTED_AUDIO)
-            return
+            return None
         target = self._target_path(audio, suffix)
         try:
             self._client.download(remote_path, target)
         except (BaleError, OSError):
             log.warning("voice download failed", exc_info=True)
             self._send(chat_id, T_VOICE_FAILED)
+            return None
+        return target
+
+    # voice name ------------------------------------------------------------------------
+    def _naming(self, state: _ChatState) -> int | None:
+        """The voice question still waiting for a name, if any."""
+        question = state.awaiting_name
+        if question is not None and not isinstance(state.pending.get(question), _PendingVoice):
+            state.awaiting_name = question = None  # answered by a button meanwhile
+        return question
+
+    def _receive_spoken_name(self, chat_id: int, question: int, audio: dict[str, Any]) -> None:
+        """A short voice is the name: transcribe it here, keep nothing of it."""
+        seconds = audio.get("duration")
+        if seconds is not None and float(seconds) > MAX_NAME_VOICE_S:
+            self._send(chat_id, T_NAME_TOO_LONG)
             return
-        self._ask_save(chat_id, _PendingVoice(target, caption), T_IMPORT_ASK, T_BUTTON_IMPORT_YES)
+        transcripts = self._svc._transcripts
+        if not transcripts.can_transcribe():
+            self._send(chat_id, T_NAME_NO_MODEL)
+            return
+        clip = self._download(chat_id, audio)
+        if clip is None:
+            return
+        try:
+            if seconds is None and probe(clip).duration_ms > MAX_NAME_VOICE_S * 1000:
+                self._send(chat_id, T_NAME_TOO_LONG)
+                return
+            self._edit(chat_id, question, T_NAME_LISTENING)
+            try:
+                heard = transcripts.transcribe_clip(clip)
+            except Exception:
+                log.warning("voice name not transcribed", exc_info=True)
+                heard = ""
+        finally:
+            clip.unlink(missing_ok=True)
+        pending = self._state(chat_id).pending[question]
+        name = self._voice_name(parse_message(heard).text, pending.path.suffix)
+        if not name:  # the question goes back as it was
+            self._edit(chat_id, question, T_IMPORT_ASK, self._save_keyboard(T_BUTTON_IMPORT_YES))
+            self._send(chat_id, T_NAME_UNHEARD)
+            return
+        self._save_named(chat_id, question, name, [])
+
+    @staticmethod
+    def _voice_name(text: str, suffix: str) -> str:
+        """`text` as a file name: unsafe characters out, cut to what fits (at most 100)."""
+        name = " ".join(_UNSAFE_NAME.sub(" ", text).split())
+        room = MAX_PATH_CHARS - len(str(bale_voices_dir())) - 1 - len(suffix)
+        return name[: max(0, min(MAX_NAME_CHARS, room))].strip(" .")
+
+    def _save_named(self, chat_id: int, question: int, name: str, tags: list[str]) -> None:
+        state = self._state(chat_id)
+        pending = state.pending.pop(question)
+        assert isinstance(pending, _PendingVoice)
+        state.awaiting_name = None
+        pending.tags = tags
+        target = pending.path.with_name(f"{name}{pending.path.suffix}")
+        counter = 2
+        while target.exists():
+            target = pending.path.with_name(f"{name} {counter:02d}{pending.path.suffix}")
+            counter += 1
+        try:
+            pending.path = pending.path.rename(target)
+        except OSError:
+            log.warning("could not rename voice to its name", exc_info=True)
+        self._edit(chat_id, question, T_IMPORT_ACCEPTED)
+        self._import_voice(chat_id, question, pending)
 
     def _ask_save(
         self,
@@ -572,21 +680,26 @@ class _Worker(threading.Thread):
         question: str,
         yes: str,
         searchable: bool = False,
-    ) -> None:
-        """`searchable` adds «🔍 جستجو»: a text meant as a query needs no /search first."""
-        buttons = [{"text": yes, "callback_data": SAVE_YES}]
-        if searchable:
-            buttons.append({"text": T_BUTTON_SEARCH, "callback_data": SAVE_SEARCH})
-        buttons.append({"text": T_BUTTON_NO, "callback_data": SAVE_NO})
-        markup = {"inline_keyboard": [buttons]}
-        message_id = self._send(chat_id, question, markup)
+    ) -> bool:
+        """`searchable` adds «🔍 جستجو»: a text meant as a query needs no /search first.
+        False if the question could not be asked (the idea is let go)."""
+        message_id = self._send(chat_id, question, self._save_keyboard(yes, searchable))
         if message_id is None:  # couldn't even ask
             self._discard(pending)
-            return
+            return False
         state = self._state(chat_id)
         state.pending[message_id] = pending
         while len(state.pending) > MAX_PENDING:  # abandoned questions never answered
             self._discard(state.pending.pop(next(iter(state.pending))))
+        return True
+
+    @staticmethod
+    def _save_keyboard(yes: str, searchable: bool = False) -> dict[str, Any]:
+        buttons = [{"text": yes, "callback_data": SAVE_YES}]
+        if searchable:
+            buttons.append({"text": T_BUTTON_SEARCH, "callback_data": SAVE_SEARCH})
+        buttons.append({"text": T_BUTTON_NO, "callback_data": SAVE_NO})
+        return {"inline_keyboard": [buttons]}
 
     def _discard(self, pending: _PendingVoice | _PendingText) -> bool:
         """Let an unsaved idea go. A text simply vanishes; a downloaded voice is moved to the
@@ -656,7 +769,8 @@ class _Worker(threading.Thread):
         assert voice.id is not None
         ref = ItemRef(ItemKind.VOICE, voice.id)
         parsed = parse_message(pending.caption)
-        tag_report = self._add_tags(ref, parsed.tags) if parsed.tags else TagReport()
+        tags = parsed.tags + pending.tags
+        tag_report = self._add_tags(ref, tags) if tags else TagReport()
         if parsed.text:
             try:
                 self._svc._notes.add(voice.id, 0, parsed.text)
@@ -858,6 +972,7 @@ class _Worker(threading.Thread):
                     self._toggle(callback_id, chat_id, message_id, ref, int(parts[3]))
                 case "f":
                     state.awaiting_tags = ref
+                    state.awaiting_name = None
                     self._answer(callback_id)
                     self._send(chat_id, T_FREE_PROMPT)
                 case "d":
