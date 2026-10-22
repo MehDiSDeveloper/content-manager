@@ -3,6 +3,13 @@
 Local Windows desktop app (Python 3.12, PySide6) for a solo Persian podcaster.
 **Read `PROJECT_LOG.md` first**: architecture, data model, where things live, decisions. Record every change there.
 
+## Backlog (`BACKLOG.md` → `DONE.md`)
+
+- When the user says to put something in the backlog, only add one line to `BACKLOG.md`; don't implement or deploy it now.
+- At the start of every task, read `BACKLOG.md`. If it has open items, tell the user in one short line (count + titles); if one fits the current work, suggest doing it now.
+- Small items are batched: do several together, then one commit/deploy (for Android, one version bump).
+- When an item is done, remove it from `BACKLOG.md`, add it at the top of `DONE.md` (date, item, commit/version), and tell the user what is still open.
+
 ## Principles (apply to every change)
 
 - **Simple code:** the simplest solution that works; no needless abstraction or complexity.
