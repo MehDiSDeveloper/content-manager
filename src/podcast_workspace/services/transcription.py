@@ -284,13 +284,8 @@ class TranscriptionService:
             )
         return collected
 
-    def transcribe(
-        self,
-        voice_id: int,
-        on_progress: ProgressCallback,
-        cancel: threading.Event,
-    ) -> Transcript:
-        """Blocking; call it off the UI thread. Replaces any earlier transcript."""
+    def _ready_model(self) -> Path:
+        """The model to run, or why there is none."""
         if not whisper_installed():
             raise TranscriptionUnavailableError
         path = self.model_path()
@@ -298,6 +293,30 @@ class TranscriptionService:
             raise ModelMissingError(
                 self._settings.whisper_model_dir() or self._settings.whisper_model()
             )
+        return path
+
+    def can_transcribe(self) -> bool:
+        return whisper_installed() and self.model_path() is not None
+
+    def transcribe_clip(self, audio_file: Path) -> str:
+        """Blocking: the text of a short clip, stored nowhere (a name the bot was told)."""
+        path = self._ready_model()
+        with self._lock:
+            try:
+                segments = self._run_model(path, audio_file, lambda _f: None, threading.Event())
+            finally:
+                self._last_used = time.monotonic()
+                self._schedule_release()
+        return " ".join(s.text.strip() for s in segments).strip()
+
+    def transcribe(
+        self,
+        voice_id: int,
+        on_progress: ProgressCallback,
+        cancel: threading.Event,
+    ) -> Transcript:
+        """Blocking; call it off the UI thread. Replaces any earlier transcript."""
+        path = self._ready_model()
         with UnitOfWork(self._sf) as uow:
             voice = uow.voices.get(voice_id)
         audio_file = Path(voice.file_path)
