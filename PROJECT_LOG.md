@@ -191,6 +191,14 @@ Source code: GitHub `MehDiSDeveloper/content-manager` (public).
     never written; a declined voice goes to the audio source folder. Unanswered questions
     live in the worker's memory only: after a restart their buttons say to send again
   - Text → IdeaNote (hashtags become tags); a hashtag-only message tags the last item; voice/audio/audio-document → file into `bale_voices/`, then a normal voice import. Caption hashtags → tags, rest of caption → TimestampNote at 0:00
+  - Voice name (a voice's name is its file name; Bale's own was a date): the voice's save
+    question also asks for a name, and the next message answers it. Text → the name (its
+    hashtags → tags); a voice ≤15 s → transcribed on the spot by `TranscriptionService.transcribe_clip`
+    (same Whisper model, nothing stored, clip deleted); a longer one is refused in Bale and the
+    question keeps waiting. Name cut to 100 chars or less if the path would pass 240; a clash
+    becomes «name 02». «بی‌نام اضافه شود» keeps the old date name. No model → asks to type it.
+    `_ChatState.awaiting_name`; /cancel, /search and «برچسب دلخواه» end the wait. Tested in
+    `test_bale_bot_voice_name.py`
   - Free-text tags go through `TagService.resolve_or_create`: exact reuse, near-duplicate reuse (reported to the user as a correction), otherwise create. No tag is created that would then be dropped by the limit
   - Keyboard = 20 most-used tags, frozen per prompt message so buttons do not reorder while tapping; toggles; callback_data self-contained (`t|kind|item|tag`), so old prompts still work
   - First private chat becomes owner (shown/resettable in settings); others get "private" and nothing is saved; groups ignored
